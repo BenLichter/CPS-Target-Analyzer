@@ -308,10 +308,13 @@ async function runAnalysis(company, onStep, keys) {
     // Run 7 targeted searches — Tavily days param does the date filtering
     onStep("📡 Searching news for "+company+"...");
     const searches = await Promise.all([
-      // 3 broad news searches cover 90%+ of what 7 narrow searches found
-      tavilySearchRaw(company+" news 2025 2026",                            tKey, 10, NEWS_DAYS),
-      tavilySearchRaw(company+" payments crypto blockchain fintech IPO",    tKey, 8,  NEWS_DAYS),
-      tavilySearchRaw(company+" executive partnership funding announcement", tKey, 6,  NEWS_DAYS),
+      // 6 targeted searches — specific angles most likely to reveal actionable intelligence
+      tavilySearchRaw(company+" partnership deal integration announcement 2025 2026",         tKey, 8, NEWS_DAYS),
+      tavilySearchRaw(company+" stablecoin blockchain crypto remittance payments 2025 2026",  tKey, 8, NEWS_DAYS),
+      tavilySearchRaw(company+" banking sponsor Bancorp Stride Evolve program 2025 2026",     tKey, 6, NEWS_DAYS),
+      tavilySearchRaw(company+" product launch expansion regulation compliance 2025 2026",    tKey, 6, NEWS_DAYS),
+      tavilySearchRaw(company+" funding valuation revenue growth metrics 2025 2026",          tKey, 6, NEWS_DAYS),
+      tavilySearchRaw(company+" executive hire strategy international 2025 2026",             tKey, 6, NEWS_DAYS),
     ]);
 
     // Merge all raw results, deduplicate by URL
@@ -418,7 +421,13 @@ async function runAnalysis(company, onStep, keys) {
     // We want to find people like: CMO, CPO, CTO, VPs of Product/Payments/Growth/Partnerships,
     // Directors, and mid-level leaders who appear in press, blogs, podcasts, LinkedIn, job postings.
 
-    const [rPeople1, rPeople2, rPeople3, rPeople4, rPeople5] = await Promise.all([
+    // Also run a dedicated partnership search to supplement NinjaPear company data
+    const partnerSearch = tKey ? tavilySearchRaw(
+      company + " partner integrated with powered by built on works with API 2024 2025", tKey, 8, 730
+    ) : Promise.resolve([]);
+
+    const [rPartners, rPeople1, rPeople2, rPeople3, rPeople4, rPeople5] = await Promise.all([
+      partnerSearch,
       // 1. Press quotes + LinkedIn profiles — highest yield for named individuals
       tavilySearchRaw(company + " VP Director Head Chief executive said linkedin.com/in 2024 2025", tKey, 10, 730),
       // 2. Conference speakers + podcast guests — confirms real people publicly
@@ -432,6 +441,12 @@ async function runAnalysis(company, onStep, keys) {
     ]);
 
     // Merge and deduplicate by URL
+    // Extract partnership signals before merging into people pool
+    const partnerCtx = (rPartners||[]).slice(0,6).map(r =>
+      r.title + " | " + (r.content||"").slice(0,300)
+    ).join("\n");
+    if (partnerCtx) liveCtx += "=== PARTNERSHIP SIGNALS ===\n" + partnerCtx + "\n=== END ===\n\n";
+
     const seenU = new Set();
     const allRaw = [rPeople1, rPeople2, rPeople3, rPeople4, rPeople5].flat()
       .filter(r => r && r.url && !seenU.has(r.url) && seenU.add(r.url));
@@ -527,7 +542,7 @@ async function runAnalysis(company, onStep, keys) {
       key_contacts:[], // populated separately from scraped sources
 
       intent_data:[{contact:"name",signal:"signal",source:"source",date:"date",strength:"High|Medium|Low"}],
-      partnerships:[{partner:"name",type:"Strategic|Co-Marketing|Technology|Channel",rationale:"why",incumbent_cost:"$X if incumbent",cp_advantage:"CP advantage"}],
+      partnerships:[{partner:"exact company name from live data or known relationship",type:"Banking Partner|Technology|Distribution|Compliance|Co-Marketing|API Integration",relationship:"what they do together",since:"year if known",cp_angle:"how CoinPayments fits or competes here"}],
       geography:{markets:["list"],expansions:["recent"],crypto_licensed:["list"],missing_us:true,gaps:"narrative"},
       incumbent:{name:"provider or None",annual_cost:"$X",cp_saving:"$X",weaknesses:"why CP wins"},
       missed_opportunity:{crypto_share:"XX%",revenue_at_risk:"$XM/yr",narrative:"4-sentence argument",stats:["stat1","stat2","stat3"],urgency:"High|Medium|Low",urgency_reason:"why now"},
