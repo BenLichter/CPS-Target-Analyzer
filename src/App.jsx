@@ -317,10 +317,15 @@ async function runAnalysis(company, onStep, keys) {
       tavilySearchRaw(company+" executive hire strategy international 2025 2026",             tKey, 6, NEWS_DAYS),
     ]);
 
-    // Merge all raw results, deduplicate by URL
+    // Merge all raw results, deduplicate by URL AND by headline similarity
     const seenUrls = new Set();
+    const seenTitles = new Set();
     for (const results of searches) {
       for (const r of (results||[])) {
+        // Normalize title for dedup — strip dates and punctuation
+        const titleKey = (r.title||"").toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/20[0-9]{2}/g,"").trim().slice(0,60);
+        if (seenTitles.has(titleKey)) continue;
+        seenTitles.add(titleKey);
         if (!r.url || seenUrls.has(r.url)) continue;
         // Skip blocked domains
         const host = r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0];
@@ -542,10 +547,29 @@ async function runAnalysis(company, onStep, keys) {
       key_contacts:[], // populated separately from scraped sources
 
       intent_data:[{contact:"name",signal:"signal",source:"source",date:"date",strength:"High|Medium|Low"}],
-      partnerships:[{partner:"exact company name from live data or known relationship",type:"Banking Partner|Technology|Distribution|Compliance|Co-Marketing|API Integration",relationship:"what they do together",since:"year if known",cp_angle:"how CoinPayments fits or competes here"}],
+      partnerships:[{
+        partner:"exact company name e.g. The Bancorp Bank / Stride Bank / Galileo / Plaid / Early Warning / Visa",
+        type:"Sponsor Bank|Core Banking|Card Processing|Payment Rails|Identity/KYC|Compliance|Distribution|Technology",
+        what_they_provide:"specific services this partner provides to the company e.g. FDIC-insured deposit accounts, debit card issuing, ACH rails",
+        annual_value:"$X estimated if known",
+        since:"year if known",
+        dependency:"Critical|Important|Supplementary",
+        cp_angle:"specific CoinPayments opportunity — does CP complement, compete with, or integrate via this partner"
+      }],
       geography:{markets:["list"],expansions:["recent"],crypto_licensed:["list"],missing_us:true,gaps:"narrative"},
       incumbent:{name:"provider or None",annual_cost:"$X",cp_saving:"$X",weaknesses:"why CP wins"},
-      missed_opportunity:{crypto_share:"XX%",revenue_at_risk:"$XM/yr",narrative:"4-sentence argument",stats:["stat1","stat2","stat3"],urgency:"High|Medium|Low",urgency_reason:"why now"},
+      missed_opportunity:{
+        headline:"one punchy sentence — what opportunity is being lost right now",
+        crypto_addressable_customers:"XX% of their Xm users likely crypto-curious based on demographics",
+        revenue_at_risk:"$XM/yr — what they are leaving on the table",
+        competitor_threat:"which competitor (e.g. Revolut, Cash App, PayPal) is already capturing these users and how",
+        market_stat_1:"specific industry stat e.g. 40m Americans own crypto but cant spend it at checkout",
+        market_stat_2:"specific fintech trend stat relevant to this company e.g. Revolut grew 45% in 2024 on crypto features",
+        market_stat_3:"specific stat about the pain e.g. $X bn in cross-border remittance fees paid annually by this demographic",
+        narrative:"5-sentence analytical argument — name specific competitors stealing these customers, cite real demographic trends, quantify the revenue gap, explain why this company is uniquely exposed, close with why CoinPayments solves it now",
+        urgency:"High|Medium|Low",
+        urgency_reason:"specific trigger — regulatory window, competitor move, product gap, or market timing"
+      },
       crm:{company,segment:"",industry:"",hq:"",website:"",employees:"",revenue:"",stage:"Prospecting",deal_value:"",next_action:"Schedule discovery call",notes:""},
       alert_keywords:["kw1","kw2","kw3","kw4","kw5"],
       recent_news:[],
@@ -1370,13 +1394,32 @@ function AnalysisView({data, onAdd, inPipeline, keys}) {
       </Sec>
 
       {/* Partnerships */}
-      <Sec title="Strategic Partnerships & Co-Marketing" icon="🤝" accent={C.gold}>
+      <Sec title="Strategic Partnerships & Ecosystem" icon="🤝" accent={C.gold}>
         {(data.partnerships||[]).map((p,i,arr)=>(
-          <div key={i} style={{borderBottom:i<arr.length-1?"1px solid "+C.border:"none",paddingBottom:12,marginBottom:12}}>
-            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><span style={{color:C.gold,fontWeight:700,fontSize:13}}>{p.partner}</span><Badge color="gold" sm>{p.type}</Badge></div>
-            <div style={{color:C.muted,fontSize:12,marginBottom:6}}>{p.rationale}</div>
-            {p.incumbent_cost&&<div style={{background:C.goldDim,borderRadius:5,padding:"5px 9px",fontSize:11,color:C.gold,marginBottom:4}}>💰 Incumbent cost: {p.incumbent_cost}</div>}
-            {p.cp_advantage&&<div style={{background:C.greenDim,borderRadius:5,padding:"5px 9px",fontSize:11,color:C.green}}>✅ CP Advantage: {p.cp_advantage}</div>}
+          <div key={i} style={{background:C.surface,borderRadius:9,padding:"14px 16px",marginBottom:10,border:"1px solid "+C.border}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:6}}>
+              <span style={{color:C.text,fontWeight:800,fontSize:13}}>{p.partner}</span>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                <Badge color="gold" sm>{p.type}</Badge>
+                {p.dependency&&<Badge color={p.dependency==="Critical"?"red":p.dependency==="Important"?"gold":"muted"} sm>{p.dependency}</Badge>}
+              </div>
+            </div>
+            {(p.what_they_provide||p.relationship||p.rationale)&&(
+              <div style={{color:C.muted,fontSize:11,lineHeight:1.7,marginBottom:8}}>
+                <span style={{color:C.dim,fontWeight:700,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>What they provide: </span>
+                {p.what_they_provide||p.relationship||p.rationale}
+              </div>
+            )}
+            <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:p.cp_angle||p.cp_advantage?8:0}}>
+              {p.since&&<span style={{color:C.dim,fontSize:10}}>📅 Since {p.since}</span>}
+              {p.annual_value&&<span style={{color:C.dim,fontSize:10}}>💰 Est. {p.annual_value}/yr</span>}
+              {p.incumbent_cost&&<span style={{color:C.gold,fontSize:10}}>💰 Incumbent cost: {p.incumbent_cost}</span>}
+            </div>
+            {(p.cp_angle||p.cp_advantage)&&(
+              <div style={{background:C.accentDim,borderRadius:6,padding:"8px 11px",fontSize:11,color:C.accent,lineHeight:1.6}}>
+                💡 <span style={{fontWeight:700}}>CoinPayments Angle: </span>{p.cp_angle||p.cp_advantage}
+              </div>
+            )}
           </div>
         ))}
       </Sec>
@@ -1473,19 +1516,33 @@ function AnalysisView({data, onAdd, inPipeline, keys}) {
 
       {/* Missed Opportunity */}
       <Sec title="The Missed Opportunity" icon="🚨" accent={C.red}>
+        {mo.headline&&<div style={{background:C.redDim,border:"1px solid "+C.red+"40",borderRadius:8,padding:"10px 14px",marginBottom:14,color:C.red,fontSize:13,fontWeight:700,lineHeight:1.5}}>{mo.headline}</div>}
         <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-          <Chip label="Crypto-Forward Customers" value={mo.crypto_share} color={C.accent}/>
+          <Chip label="Crypto-Addressable Users" value={mo.crypto_addressable_customers||mo.crypto_share} color={C.accent}/>
           <Chip label="Revenue at Risk" value={mo.revenue_at_risk} color={C.red}/>
           {mo.urgency&&<Chip label="Urgency" value={mo.urgency} color={mo.urgency==="High"?C.red:mo.urgency==="Medium"?C.gold:C.muted}/>}
         </div>
-        <p style={{color:C.text,fontSize:12,lineHeight:1.7,marginBottom:12}}>{mo.narrative}</p>
-        {mo.urgency_reason&&<div style={{background:C.redDim,borderRadius:7,padding:"8px 12px",fontSize:11,color:C.red,marginBottom:10}}>⏰ Why now: {mo.urgency_reason}</div>}
-        {(mo.stats||[]).map((s,i)=>(
-          <div key={i} style={{display:"flex",gap:8,marginBottom:5}}>
-            <span style={{color:C.gold}}>▸</span>
-            <span style={{color:C.muted,fontSize:11}}>{s}</span>
+        {mo.competitor_threat&&(
+          <div style={{background:C.goldDim,border:"1px solid "+C.gold+"40",borderRadius:7,padding:"10px 14px",marginBottom:12,fontSize:11,color:C.gold,lineHeight:1.6}}>
+            <span style={{fontWeight:700}}>⚔ Competitor Threat: </span>{mo.competitor_threat}
           </div>
-        ))}
+        )}
+        <p style={{color:C.text,fontSize:12,lineHeight:1.8,marginBottom:12}}>{mo.narrative}</p>
+        {mo.urgency_reason&&<div style={{background:C.redDim,borderRadius:7,padding:"8px 12px",fontSize:11,color:C.red,marginBottom:10}}>⏰ Why now: {mo.urgency_reason}</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {[mo.market_stat_1,mo.market_stat_2,mo.market_stat_3].filter(Boolean).map((s,i)=>(
+            <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+              <span style={{color:C.gold,marginTop:1}}>▸</span>
+              <span style={{color:C.muted,fontSize:11,lineHeight:1.6}}>{s}</span>
+            </div>
+          ))}
+          {(mo.stats||[]).map((s,i)=>(
+            <div key={"s"+i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+              <span style={{color:C.gold,marginTop:1}}>▸</span>
+              <span style={{color:C.muted,fontSize:11,lineHeight:1.6}}>{s}</span>
+            </div>
+          ))}
+        </div>
       </Sec>
 
       {/* GTM Attack Plan */}
