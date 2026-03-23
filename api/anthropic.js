@@ -13,22 +13,33 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
-    // Sanitize the request body to remove invalid Unicode surrogates
-    let bodyStr = JSON.stringify(req.body);
+    // Deep-clean the body: walk every string value and strip bad Unicode
+    function cleanValue(v) {
+      if (typeof v === 'string') {
+        // Replace lone surrogates and control chars char by char
+        let out = '';
+        for (let i = 0; i < v.length; i++) {
+          const code = v.charCodeAt(i);
+          // Skip lone surrogates (D800-DFFF)
+          if (code >= 0xD800 && code <= 0xDFFF) continue;
+          // Skip control chars except tab, newline, carriage return
+          if (code < 0x20 && code !== 0x09 && code !== 0x0A && code !== 0x0D) continue;
+          out += v[i];
+        }
+        return out;
+      }
+      if (Array.isArray(v)) return v.map(cleanValue);
+      if (v && typeof v === 'object') {
+        const result = {};
+        for (const [k, val] of Object.entries(v)) {
+          result[cleanValue(k)] = cleanValue(val);
+        }
+        return result;
+      }
+      return v;
+    }
 
-    // Remove lone Unicode surrogates (the specific cause of Anthropic 400 errors)
-    // These are characters in range \uD800-\uDFFF that appear without a pair
-    bodyStr = bodyStr.replace(/\\uD[89AB][0-9A-Fa-f]{2}/g, '');
-
-    // Also sanitize via a roundtrip through encodeURIComponent to catch bad chars
-    bodyStr = bodyStr.replace(
-      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ''
-    );
-
-    // Remove any remaining lone surrogates using a more aggressive approach
-    bodyStr = bodyStr.replace(/[\uD800-\uDFFF]/g, '');
-
-    const cleanBody = JSON.parse(bodyStr);
+    const cleanBody = cleanValue(req.body);
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
