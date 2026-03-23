@@ -1320,7 +1320,45 @@ function AnalysisView({data, onAdd, inPipeline, keys}) {
           </div>
         )}
         {/* Contact cards */}
-        {(data.key_contacts||[]).map((c,i) => {
+        {/* Contact management toolbar */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>{contacts.length} contacts</div>
+          <button onClick={()=>setShowAddContact(!showAddContact)} style={{padding:"5px 12px",borderRadius:7,background:C.accent,color:"#000",border:"none",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add Contact</button>
+        </div>
+        {/* Add contact form */}
+        {showAddContact&&(
+          <div style={{background:C.surface,borderRadius:9,padding:14,marginBottom:12,border:"1px solid "+C.accent+"40"}}>
+            <div style={{color:C.accent,fontSize:11,fontWeight:700,marginBottom:10}}>Add Contact</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              {[["Name *","name","Full Name"],["Title","title","VP of Product"]].map(([label,field,ph])=>(
+                <div key={field}>
+                  <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>{label}</div>
+                  <input value={newContact[field]} onChange={e=>setNewContact(p=>({...p,[field]:e.target.value}))}
+                    placeholder={ph} style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+                </div>
+              ))}
+            </div>
+            <div style={{marginBottom:8}}>
+              <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>Category</div>
+              <select value={newContact.category} onChange={e=>setNewContact(p=>({...p,category:e.target.value}))}
+                style={{background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",width:"100%"}}>
+                {["Economic Buyer","Champion","Technical Buyer","Influencer","Blocker"].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+            {[["Why Target","why_target","Why this person matters"],["Outreach Angle","outreach_angle","Specific hook for outreach"]].map(([label,field,ph])=>(
+              <div key={field} style={{marginBottom:8}}>
+                <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>{label}</div>
+                <input value={newContact[field]} onChange={e=>setNewContact(p=>({...p,[field]:e.target.value}))}
+                  placeholder={ph} style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
+              </div>
+            ))}
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={addContact} style={{padding:"6px 16px",borderRadius:7,background:C.accent,color:"#000",border:"none",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
+              <button onClick={()=>setShowAddContact(false)} style={{padding:"6px 14px",borderRadius:7,background:"transparent",color:C.muted,border:"1px solid "+C.border,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            </div>
+          </div>
+        )}
+        {contacts.map((c,i) => {
           const cc = catColor(c.category);
           const pcMatch = (data.apollo_contacts||[]).find(a => a.name&&c.name&&a.name.toLowerCase().includes((c.name.split(" ")[0]||"").toLowerCase()));
           return (
@@ -1351,10 +1389,12 @@ function AnalysisView({data, onAdd, inPipeline, keys}) {
                   </div>
                   {/* Contact actions */}
                   <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
+                    <button onClick={()=>removeContact(i)} title="Remove contact" style={{background:"transparent",border:"1px solid "+C.border,borderRadius:5,color:C.muted,cursor:"pointer",fontSize:10,padding:"2px 7px",fontFamily:"inherit",lineHeight:1.4}}>✕ Remove</button>
                     {(pcMatch?.email||c.email)&&<a href={"mailto:"+(pcMatch?.email||c.email)} style={{color:C.green,fontSize:10,textDecoration:"none"}}>✉ {pcMatch?.email||c.email}</a>}
                     <LinkedInBtn contact={c} pcMatch={pcMatch} company={data.company}/>
                     {(pcMatch?.phone||c.phone)&&<span style={{color:C.muted,fontSize:10}}>📞 {pcMatch?.phone||c.phone}</span>}
                     {c.twitter&&c.twitter!=="none"&&<span style={{color:C.cyan,fontSize:10}}>𝕏 {c.twitter}</span>}
+                    {c.verified_source==="manual"&&<span style={{background:C.purpleDim,border:"1px solid "+C.purple+"40",borderRadius:10,padding:"1px 7px",fontSize:8,color:C.purple,fontWeight:700}}>✏ MANUAL</span>}
                   </div>
                 </div>
                 <div style={{background:"linear-gradient(135deg,"+C.purpleDim+","+C.accentDim+")",borderRadius:7,padding:"8px 12px",marginBottom:8,border:"1px solid "+C.purple+"20"}}>
@@ -2040,7 +2080,7 @@ export default function App() {
               )}
 
             </div>
-            {result && <AnalysisView data={result} onAdd={()=>addRecord({...result,crm:{...result.crm,stage:"Prospecting"}})} inPipeline={pipeline.some(r=>norm(r.company)===norm(result.company))} keys={keys}/>}
+            {result && <AnalysisView data={result} onAdd={()=>addRecord({...result,crm:{...result.crm,stage:"Prospecting"}})} inPipeline={pipeline.some(r=>norm(r.company)===norm(result.company))} keys={keys} onUpdateContacts={(updated)=>{setResult(prev=>({...prev,key_contacts:updated}))}}/>}
           </>
         )}
         {page==="pipeline" && (
