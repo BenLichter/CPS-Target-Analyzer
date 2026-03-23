@@ -284,6 +284,16 @@ function njProfileToContact(profile, company, source) {
   };
 }
 
+// Strip invalid Unicode characters (surrogates, null bytes) that break JSON
+function sanitizeForAPI(str) {
+  if (!str) return "";
+  return str
+    .replace(/[\uD800-\uDFFF]/g, "")  // lone surrogates
+    .replace(/\u0000/g, "")             // null bytes
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // control chars
+    .slice(0, 80000);                    // hard cap to avoid token overflow
+}
+
 // ─── Main Analysis ────────────────────────────────────────────────────────────
 async function runAnalysis(company, onStep, keys) {
   const { tavily:tKey, ninjapear:njKey } = keys;
@@ -354,6 +364,7 @@ async function runAnalysis(company, onStep, keys) {
         newsCtx += "   CONTENT: "+(r.content||"").slice(0,400)+"\n\n";
       });
       newsCtx += "=== END NEWS ===\n\n";
+      newsCtx = sanitizeForAPI(newsCtx);
     }
 
     // Build general live context for other fields
@@ -402,7 +413,7 @@ async function runAnalysis(company, onStep, keys) {
     }
 
     if (apolloContacts.length) {
-      liveCtx += "=== NINJAPEAR CONTACTS for " + company + " ===\n";
+      liveCtx += "=== NINJAPEAR CONTACTS for " + company + " ===\n"; liveCtx = sanitizeForAPI(liveCtx);
       apolloContacts.forEach((p,i) => {
         const name = [p.first_name,p.last_name].filter(Boolean).join(" ");
         liveCtx += (i+1)+". "+name+" | "+(p.title||"")+"\n";
@@ -535,7 +546,7 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 1: Core intelligence
   onStep("📊 Building intelligence report (1/4)...");
-  const raw1 = await callAPI(SYS, liveCtx+
+  const raw1 = await callAPI(SYS, sanitizeForAPI(liveCtx)+
     "Analyze \""+company+"\" as a CoinPayments prospect. Today: "+todayStr+". "+
     "Rules: (1) Use live data to override stale training. (2) If live data shows an event completed, say completed. "+
     "Output ONLY JSON:\n"+
