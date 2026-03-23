@@ -287,11 +287,17 @@ function njProfileToContact(profile, company, source) {
 // Strip invalid Unicode characters (surrogates, null bytes) that break JSON
 function sanitizeForAPI(str) {
   if (!str) return "";
-  return str
-    .replace(/[\uD800-\uDFFF]/g, "")  // lone surrogates
-    .replace(/\u0000/g, "")             // null bytes
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // control chars
-    .slice(0, 80000);                    // hard cap to avoid token overflow
+  try {
+    // Most reliable: JSON roundtrip catches all bad chars
+    return JSON.parse(JSON.stringify(str
+      .replace(/[\uD800-\uDFFF]/g, "")
+      .replace(/\u0000/g, "")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+    )).slice(0, 80000);
+  } catch {
+    // Fallback: strip aggressively
+    return str.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\uD7FF\uE000-\uFFFD]/g, "").slice(0, 80000);
+  }
 }
 
 // ─── Main Analysis ────────────────────────────────────────────────────────────
@@ -883,13 +889,13 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 2: Competitive comparison
   onStep("⚔️ Building competitive comparison (3/4)...");
-  const raw2 = await callAPI(SYS,
+  const raw2 = await callAPI(sanitizeForAPI(SYS),
     "For \""+company+"\" vs CoinPayments, output ONLY JSON (start { end }). Max 20 words per value. Make why_it_matters specific to this company:\n"+
     JSON.stringify({competitive_comparison:Object.fromEntries(COMPARE_ROWS.map(([,k])=>[k,{incumbent:"desc",coinpayments:"desc",why_it_matters:"reason specific to this client"}]))}, null, 2), 4000);
 
   // Phase 3a: GTM Attack Plan — positioning, ICP, ABM, Outbound, Intent
   onStep("🎯 Building GTM attack plan (4/4)...");
-  const raw3a = await callAPI(SYS,
+  const raw3a = await callAPI(sanitizeForAPI(SYS),
     "For \""+company+"\", output ONLY JSON (start { end }). Max 25 words per value:\n"+
     JSON.stringify({
       positioning_statement:"one razor-sharp sentence why CoinPayments is right for this company now",
@@ -904,7 +910,7 @@ async function runAnalysis(company, onStep, keys) {
     }, null, 2), 4000);
 
   // Phase 3b: Inbound, Partners, Events, Timeline, Objections
-  const raw3b = await callAPI(SYS,
+  const raw3b = await callAPI(sanitizeForAPI(SYS),
     "For \""+company+"\", output ONLY JSON (start { end }). Max 25 words per value:\n"+
     JSON.stringify({
       inbound:{seo_topics:["topic1","topic2"],thought_leadership:[{format:"Blog|LinkedIn|Podcast",topic:"specific topic",hook:"engagement reason",target_persona:"title"}],lead_magnets:[{asset:"name",value_prop:"insight given",cta:"action toward CP"}]},
