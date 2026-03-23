@@ -407,7 +407,6 @@ async function runAnalysis(company, onStep, keys) {
     // Phase 0b: NinjaPear — company enrichment + role-based contact discovery
   let apolloContacts = [];
   let apolloCo = null;
-  const domain = company.toLowerCase().replace(/[^a-z0-9]/g,"") + ".com";
 
   if (njKey) {
     onStep("🎯 NinjaPear: enriching " + company + "...");
