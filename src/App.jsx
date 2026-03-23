@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react"; 
+import React, { useState, useRef, useCallback } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL = "claude-sonnet-4-20250514";
@@ -53,7 +53,7 @@ function usePipeline() {
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 async function callAPI(system, user, maxTokens) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("/api/anthropic", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify({ model:MODEL, max_tokens:maxTokens||6000, system, messages:[{role:"user",content:user}] }),
   });
