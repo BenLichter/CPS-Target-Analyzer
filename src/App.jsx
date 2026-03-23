@@ -1224,8 +1224,25 @@ function MotionTabs({motions}) {
 }
 
 // ─── Analysis View ────────────────────────────────────────────────────────────
-function AnalysisView({data, onAdd, inPipeline, keys}) {
+function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
   const [chat, setChat] = useState([]);
+  const [contacts, setContacts] = useState(data.key_contacts||[]);
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContact, setNewContact] = useState({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
+  React.useEffect(() => { setContacts(data.key_contacts||[]); }, [data.key_contacts]);
+  const removeContact = (idx) => {
+    const updated = contacts.filter((_,i) => i !== idx);
+    setContacts(updated);
+    if (onUpdateContacts) onUpdateContacts(updated);
+  };
+  const addContact = () => {
+    if (!newContact.name.trim()) return;
+    const updated = [...contacts, {...newContact, priority:contacts.length+1, email:"", linkedin:"", twitter:"none", conferences:[], intent_signals:"", location:"", verified_source:"manual", verification_confidence:"MANUAL"}];
+    setContacts(updated);
+    if (onUpdateContacts) onUpdateContacts(updated);
+    setNewContact({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
+    setShowAddContact(false);
+  };
   const [q, setQ] = useState("");
   const [asking, setAsking] = useState(false);
   const chatRef = useRef(null);
