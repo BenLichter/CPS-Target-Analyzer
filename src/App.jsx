@@ -295,7 +295,7 @@ async function runAnalysis(company, onStep, keys) {
     const today = new Date();
   const yr = today.getFullYear();
   const todayStr = today.toDateString();
-  const SYS = "You are a senior fintech sales intelligence expert for CoinPayments (crypto payment infrastructure: 2000+ coins, white-label, global merchant tools, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown fences. Start with { end with }. Keep string values under 35 words.";
+  const SYS = "You are a senior fintech sales intelligence expert for CoinPayments (crypto payment infrastructure: 2000+ coins, white-label, global merchant tools, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown fences. Start with { end with }. Keep string values under 35 words. For ARR projections: always use bottoms-up math starting from known user counts or GMV, apply 3-8% crypto adoption, apply 0.5-1% take rate. Be conservative — most deals are $50K-$500K ARR. Never inflate numbers.";
 
   // Phase 0a: Tavily live research
   let liveCtx = "";
@@ -543,7 +543,15 @@ async function runAnalysis(company, onStep, keys) {
       company, segment:"Neo-Bank/Challenger Bank|Traditional Bank/FI|Payments Processor|Remittance/FX|Wealth Management/Brokerage|Insurance/Insurtech|Lending/Credit|Payroll/HCM|B2B Fintech Platform|Card Network/Issuer|Other Financial Services",
       analyzedAt:now, hq:"city, country", website:"url", employees:"count", revenue:"estimate",
       executive_summary:"3-sentence CoinPayments opportunity",
-      tam_som_arr:{tam_usd:"$X",som_usd:"$X",likely_arr_usd:"$X-$X",reasoning:"brief"},
+      tam_som_arr:{
+        tam_usd:"total addressable market in $X format — all payments volume this company could ever touch",
+        som_usd:"serviceable obtainable market — realistic crypto/blockchain payments slice CoinPayments can win",
+        methodology:"bottoms-up: start from company user count or GMV, apply realistic crypto adoption rate (3-8% of users), apply CoinPayments take rate (0.5-1% of volume), arrive at ARR. DO NOT extrapolate from TAM. BE CONSERVATIVE.",
+        assumptions:"list 3 key assumptions used e.g. X% crypto adoption, $Y avg transaction, Z% CoinPayments take rate",
+        likely_arr_usd:"CONSERVATIVE annual recurring revenue for CoinPayments — typically $50K-$500K for mid-size fintechs, $500K-$2M for large fintechs, NEVER exceed $5M without explicit justification",
+        upside_arr_usd:"optimistic scenario ARR if crypto adoption accelerates — max 2-3x the conservative figure",
+        reasoning:"2-sentence bottoms-up explanation referencing actual user count or GMV figures"
+      },
       key_contacts:[], // populated separately from scraped sources
 
       intent_data:[{contact:"name",signal:"signal",source:"source",date:"date",strength:"High|Medium|Low"}],
@@ -1277,7 +1285,7 @@ function AnalysisView({data, onAdd, inPipeline, keys}) {
         <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
           <Chip label="Total Addressable Market" value={t.tam_usd} color={C.accent}/>
           <Chip label="Serviceable Market" value={t.som_usd} color={C.gold}/>
-          <Chip label="CoinPayments ARR Potential" value={t.likely_arr_usd} color={C.green}/>
+          <Chip label="Conservative ARR" value={t.likely_arr_usd} color={C.green}/>
         </div>
         <p style={{color:C.muted,fontSize:12,lineHeight:1.7,margin:0}}>{t.reasoning}</p>
       </Sec>
