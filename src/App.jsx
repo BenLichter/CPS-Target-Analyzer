@@ -70,26 +70,25 @@ const serverStore = {
 };
 
 function usePipeline() {
+  // ALL useState calls first, then effects
   const [pipeline, setPipelineRaw] = useState(() => ls.get(STORAGE.pipeline) || []);
   const [syncStatus, setSyncStatus] = useState("syncing");
-  // Load from server on mount — syncs pipeline AND API keys across devices
+  const [alerts, setAlertsRaw] = useState(() => ls.get(STORAGE.alerts) || []);
+  // Effects after all hooks
   React.useEffect(() => {
     serverStore.load().then(data => {
       if (!data) { setSyncStatus("error"); return; }
       setSyncStatus("synced");
-      // Restore pipeline
       if (data.pipeline && data.pipeline.length > 0) {
         setPipelineRaw(data.pipeline);
         ls.set(STORAGE.pipeline, data.pipeline);
       }
-      // Store server keys so App component can apply them
       if (data.keys) {
         if (data.keys.tavily) ls.set("cp_server_tavily", data.keys.tavily);
         if (data.keys.ninjapear) ls.set("cp_server_ninjapear", data.keys.ninjapear);
       }
     });
   }, []);
-  const [alerts, setAlertsRaw] = useState(() => ls.get(STORAGE.alerts) || []);
   const setPipeline = useCallback(v => {
     setPipelineRaw(v);
     ls.set(STORAGE.pipeline, v);
