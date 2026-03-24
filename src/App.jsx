@@ -1826,7 +1826,8 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
     recent_news: Array.isArray(record.recent_news) ? record.recent_news : [],
     activityLog: Array.isArray(record.activityLog) ? record.activityLog : [],
   });
-
+  const sc = STAGE_COLORS[stage]||C.muted;
+  const t = safeRecord.tam_som_arr; const inc = safeRecord.incumbent;
 
   const startEdit = (field, val) => { setEditingField(field); setEditVal(val||""); };
   const saveEdit = (field) => {
@@ -1863,22 +1864,6 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
     setNote(""); setEditing(false);
   }
 
-  const sc = STAGE_COLORS[stage]||C.muted;
-  // Build full safeRecord with defensive defaults (after all useState)
-  const safeRecord = {
-    ...record,
-    crm: safeCrm,
-    key_contacts: Array.isArray(record.key_contacts) ? record.key_contacts : [],
-    partnerships: Array.isArray(record.partnerships) ? record.partnerships : [],
-    recent_news: Array.isArray(record.recent_news) ? record.recent_news : [],
-    activityLog: Array.isArray(record.activityLog) ? record.activityLog : [],
-    tam_som_arr: record.tam_som_arr || {},
-    incumbent: record.incumbent || {},
-    missed_opportunity: record.missed_opportunity || {},
-    geography: record.geography || {},
-    intent_data: Array.isArray(record.intent_data) ? record.intent_data : [],
-  };
-  const t = safeRecord.tam_som_arr; const inc = safeRecord.incumbent;
 
   return (
     <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:10,marginBottom:10,overflow:"hidden"}}>
