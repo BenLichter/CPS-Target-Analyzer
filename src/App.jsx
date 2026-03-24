@@ -1839,7 +1839,8 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
     setEditingField(null);
   };
 
-  const EditableText = ({field, value, label, multiline}) => (
+  // Render helper (not a component) to avoid hooks-in-component rules
+  const renderEditable = (field, value, multiline) => (
     editingField === field
       ? <div>
           {multiline
