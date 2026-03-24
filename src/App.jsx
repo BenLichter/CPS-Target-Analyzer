@@ -137,7 +137,7 @@ function usePipeline() {
   const updateRecord= useCallback((company,updates) => { setPipeline(prev => prev.map(r => norm(r.company)===norm(company)?{...r,...updates}:r)); }, [setPipeline]);
   const removeRecord= useCallback(company => { setPipeline(prev => prev.filter(r => norm(r.company)!==norm(company))); }, [setPipeline]);
   const addAlert    = useCallback(a  => { setAlerts(prev => [a,...prev.slice(0,99)]); }, [setAlerts]);
-  return { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert };
+  return { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert, syncStatus };
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -2239,7 +2239,7 @@ export default function App() {
   const [showKeys, setShowKeys] = useState(false);
   const [tavilyKey,    setTavilyKey]    = useState(()=>localStorage.getItem(STORAGE.tavily)||"");
   const [ninjapearKey, setNinjapearKey] = useState(()=>localStorage.getItem(STORAGE.ninjapear)||"");
-  const { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert } = usePipeline();
+  const { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert, syncStatus } = usePipeline();
 
   const saveKey = (k,v,fn) => {
     fn(v);
