@@ -54,8 +54,15 @@ const serverStore = {
       const res = await fetch("/api/pipeline");
       if (!res.ok) return null;
       const data = await res.json();
-      return data.pipeline || null;
-    } catch { return null; }
+      // Validate it's actually an array of records
+      const pipeline = data.pipeline;
+      if (!Array.isArray(pipeline)) return null;
+      // Filter out any malformed records
+      return pipeline.filter(r => r && typeof r === 'object' && r.company);
+    } catch(e) {
+      console.warn("[Pipeline] Load failed:", e.message);
+      return null;
+    }
   }
 };
 
@@ -1752,6 +1759,7 @@ function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
 
 // ─── CRM Record ───────────────────────────────────────────────────────────────
 function CRMRecord({record, onUpdate, onRemove, keys}) {
+  if (!record || !record.company) return null; // safety guard
   const [showReport, setShowReport] = useState(false);
   const [editing, setEditing] = useState(false);
   const [stage, setStage] = useState(record.crm?.stage||"Prospecting");
@@ -2146,6 +2154,32 @@ function Reports({pipeline}) {
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{background:"#07090F",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:40}}>
+          <div style={{background:"#0D1117",border:"1px solid #ef4444",borderRadius:12,padding:32,maxWidth:500,textAlign:"center"}}>
+            <div style={{color:"#ef4444",fontSize:24,marginBottom:12}}>⚠ Something went wrong</div>
+            <div style={{color:"#64748b",fontSize:12,marginBottom:20,wordBreak:"break-word"}}>{this.state.error?.message}</div>
+            <button onClick={()=>{localStorage.clear();window.location.reload();}}
+              style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",fontWeight:700,marginRight:8}}>
+              Clear Data & Reload
+            </button>
+            <button onClick={()=>window.location.reload()}
+              style={{background:"transparent",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"10px 20px",cursor:"pointer"}}>
+              Try Again
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [page, setPage] = useState("analyze");
   const [company, setCompany] = useState("");
@@ -2279,7 +2313,7 @@ export default function App() {
           <div>
             <div style={{color:C.text,fontSize:20,fontWeight:800,marginBottom:18}}>Pipeline CRM</div>
             {!pipeline.length&&<div style={{textAlign:"center",color:C.dim,padding:60,fontSize:12}}>No accounts yet. Analyze a company and click Add to Pipeline.</div>}
-            {pipeline.map(r=><CRMRecord key={r.company} record={r} onUpdate={updateRecord} onRemove={removeRecord} keys={keys}/>)}
+            {pipeline.filter(r=>r&&r.company).map(r=><CRMRecord key={r.company} record={r} onUpdate={updateRecord} onRemove={removeRecord} keys={keys}/>)}
           </div>
         )}
         {page==="dashboard" && <Dashboard pipeline={pipeline}/>}
