@@ -82,16 +82,10 @@ function usePipeline() {
         setPipelineRaw(data.pipeline);
         ls.set(STORAGE.pipeline, data.pipeline);
       }
-      // Restore API keys if not already set locally
+      // Store server keys so App component can apply them
       if (data.keys) {
-        if (data.keys.tavily && !ls.get(STORAGE.tavily)) {
-          ls.set(STORAGE.tavily, data.keys.tavily);
-          setTavilyKey(data.keys.tavily);
-        }
-        if (data.keys.ninjapear && !ls.get(STORAGE.ninjapear)) {
-          ls.set(STORAGE.ninjapear, data.keys.ninjapear);
-          setNinjapearKey(data.keys.ninjapear);
-        }
+        if (data.keys.tavily) ls.set("cp_server_tavily", data.keys.tavily);
+        if (data.keys.ninjapear) ls.set("cp_server_ninjapear", data.keys.ninjapear);
       }
     });
   }, []);
@@ -1808,13 +1802,27 @@ function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
 
 // ─── CRM Record ───────────────────────────────────────────────────────────────
 function CRMRecord({record, onUpdate, onRemove, keys}) {
-  if (!record || !record.company) return null; // safety guard
+  if (!record || !record.company) return null;
+  // Defensive defaults for all fields
+  const safeRecord = {
+    company: "", segment: "", hq: "", website: "", employees: "", revenue: "",
+    executive_summary: "", key_contacts: [], partnerships: [], recent_news: [],
+    tam_som_arr: {}, incumbent: {}, missed_opportunity: {}, geography: {},
+    intent_data: [], competitive_comparison: {}, activityLog: [],
+    crm: { stage: "Prospecting", deal_value: "", next_action: "", notes: "" },
+    ...record,
+    crm: { stage: "Prospecting", deal_value: "", next_action: "", notes: "", ...(record.crm||{}) },
+    key_contacts: Array.isArray(safeRecord.key_contacts) ? safeRecord.key_contacts : [],
+    partnerships: Array.isArray(safeRecord.partnerships) ? safeRecord.partnerships : [],
+    recent_news: Array.isArray(safeRecord.recent_news) ? safeRecord.recent_news : [],
+    activityLog: Array.isArray(safeRecord.activityLog) ? safeRecord.activityLog : [],
+  };
   const [showReport, setShowReport] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [stage, setStage] = useState(record.crm?.stage||"Prospecting");
+  const [stage, setStage] = useState(safeRecord.crm.stage);
   const [note, setNote] = useState("");
-  const [dealVal, setDealVal] = useState(record.crm?.deal_value||"");
-  const [nextAct, setNextAct] = useState(record.crm?.next_action||"Schedule discovery call");
+  const [dealVal, setDealVal] = useState(safeRecord.crm.deal_value);
+  const [nextAct, setNextAct] = useState(safeRecord.crm.next_action||"Schedule discovery call");
   const [editingField, setEditingField] = useState(null);
   const [editVal, setEditVal] = useState("");
 
@@ -1847,21 +1855,21 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
 
 
   function save() {
-    const log = record.activityLog||[];
+    const log = safeRecord.activityLog||[];
     const newLog = note.trim()?[{date:new Date().toLocaleString(),note:note.trim(),stage},...log]:log;
     onUpdate(record.company, {crm:{...record.crm,stage,deal_value:dealVal,next_action:nextAct},activityLog:newLog});
     setNote(""); setEditing(false);
   }
 
   const sc = STAGE_COLORS[stage]||C.muted;
-  const t = record.tam_som_arr||{}; const inc = record.incumbent||{};
+  const t = safeRecord.tam_som_arr||{}; const inc = safeRecord.incumbent||{};
 
   return (
     <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:10,marginBottom:10,overflow:"hidden"}}>
       <div style={{padding:"12px 16px",borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:C.accent+"06"}}>
         <div>
           <div style={{color:C.text,fontWeight:800,fontSize:15}}>{record.company}</div>
-          <div style={{color:C.accent,fontSize:11,marginTop:2}}>{record.segment}</div>
+          <div style={{color:C.accent,fontSize:11,marginTop:2}}>{safeRecord.segment}</div>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <select value={stage} onChange={e=>setStage(e.target.value)}
@@ -1881,7 +1889,7 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
       </div>
       <div style={{padding:"12px 16px"}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8,marginBottom:12}}>
-          {[["HQ",record.hq||record.crm?.hq],["Industry",record.crm?.industry||record.segment],["Employees",record.employees||record.crm?.employees],["Revenue",record.revenue||record.crm?.revenue],["ARR Potential",t.likely_arr_usd],["Incumbent",inc.name],["Deal Value",record.crm?.deal_value||dealVal],["Website",record.website||record.crm?.website]].filter(([,v])=>v).map(([k,v])=>(
+          {[["HQ",safeRecord.hq||record.crm?.hq],["Industry",record.crm?.industry||safeRecord.segment],["Employees",safeRecord.employees||record.crm?.employees],["Revenue",safeRecord.revenue||record.crm?.revenue],["ARR Potential",t.likely_arr_usd],["Incumbent",inc.name],["Deal Value",record.crm?.deal_value||dealVal],["Website",safeRecord.website||record.crm?.website]].filter(([,v])=>v).map(([k,v])=>(
             <div key={k} style={{background:C.surface,borderRadius:6,padding:"6px 10px"}}>
               <div style={{color:C.dim,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k}</div>
               <div style={{color:C.text,fontSize:11,wordBreak:"break-word"}}>{v}</div>
@@ -1903,12 +1911,12 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
               </div>
             </div>
             <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>EXECUTIVE SUMMARY</div>
-            <textarea value={editingField==="executive_summary"?editVal:(record.executive_summary||"")}
+            <textarea value={editingField==="executive_summary"?editVal:(safeRecord.executive_summary||"")}
               onChange={e=>{setEditingField("executive_summary");setEditVal(e.target.value);}} rows={3}
               placeholder="Edit executive summary..."
               style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",marginBottom:8}}/>
             <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>INCUMBENT NOTES</div>
-            <input value={editingField==="incumbent_notes"?editVal:(record.incumbent?.weaknesses||"")}
+            <input value={editingField==="incumbent_notes"?editVal:(safeRecord.incumbent?.weaknesses||"")}
               onChange={e=>{setEditingField("incumbent_notes");setEditVal(e.target.value);}}
               placeholder="Notes on incumbent / why CP wins..."
               style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",marginBottom:8}}/>
@@ -1918,15 +1926,15 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
             <button onClick={()=>{
               save();
               if(editingField==="executive_summary") onUpdate(record.company,{...record,executive_summary:editVal});
-              if(editingField==="incumbent_notes") onUpdate(record.company,{...record,incumbent:{...record.incumbent,weaknesses:editVal}});
+              if(editingField==="incumbent_notes") onUpdate(record.company,{...record,incumbent:{...safeRecord.incumbent,weaknesses:editVal}});
               setEditingField(null);
             }} style={{marginTop:8,padding:"8px 18px",background:C.green,color:"#000",border:"none",borderRadius:6,fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>SAVE ALL</button>
           </div>
         )}
-        {(record.activityLog||[]).length ? (
+        {(safeRecord.activityLog||[]).length ? (
           <div style={{marginBottom:showReport?16:0}}>
             <div style={{color:C.dim,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Activity Log</div>
-            {record.activityLog.map((entry,i)=>(
+            {safeRecord.activityLog.map((entry,i)=>(
               <div key={i} style={{padding:"7px 10px",background:C.surface,borderRadius:6,marginBottom:5,borderLeft:"2px solid "+C.accent}}>
                 <div style={{color:C.dim,fontSize:10,marginBottom:2}}>{entry.date} · {entry.stage}</div>
                 <div style={{color:C.text,fontSize:11}}>{entry.note}</div>
@@ -2237,8 +2245,22 @@ export default function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [showKeys, setShowKeys] = useState(false);
-  const [tavilyKey,    setTavilyKey]    = useState(()=>localStorage.getItem(STORAGE.tavily)||"");
-  const [ninjapearKey, setNinjapearKey] = useState(()=>localStorage.getItem(STORAGE.ninjapear)||"");
+  const [tavilyKey,    setTavilyKey]    = useState(()=>localStorage.getItem(STORAGE.tavily)||localStorage.getItem("cp_server_tavily")||"");
+  const [ninjapearKey, setNinjapearKey] = useState(()=>localStorage.getItem(STORAGE.ninjapear)||localStorage.getItem("cp_server_ninjapear")||"");
+
+  // Apply server-synced keys on mount (cross-device key sharing)
+  React.useEffect(() => {
+    const serverTavily = localStorage.getItem("cp_server_tavily");
+    const serverNinjapear = localStorage.getItem("cp_server_ninjapear");
+    if (serverTavily && !localStorage.getItem(STORAGE.tavily)) {
+      localStorage.setItem(STORAGE.tavily, serverTavily);
+      setTavilyKey(serverTavily);
+    }
+    if (serverNinjapear && !localStorage.getItem(STORAGE.ninjapear)) {
+      localStorage.setItem(STORAGE.ninjapear, serverNinjapear);
+      setNinjapearKey(serverNinjapear);
+    }
+  }, [syncStatus]); // re-run when sync completes
   const { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert, syncStatus } = usePipeline();
 
   const saveKey = (k,v,fn) => {
@@ -2375,7 +2397,19 @@ export default function App() {
           <div>
             <div style={{color:C.text,fontSize:20,fontWeight:800,marginBottom:18}}>Pipeline CRM</div>
             {!pipeline.length&&<div style={{textAlign:"center",color:C.dim,padding:60,fontSize:12}}>No accounts yet. Analyze a company and click Add to Pipeline.</div>}
-            {pipeline.filter(r=>r&&r.company).map(r=><CRMRecord key={r.company} record={r} onUpdate={updateRecord} onRemove={removeRecord} keys={keys}/>)}
+            {pipeline.filter(r=>r&&r.company).map(r=>{
+              try {
+                return <CRMRecord key={r.company} record={r} onUpdate={updateRecord} onRemove={removeRecord} keys={keys}/>;
+              } catch(e) {
+                return (
+                  <div key={r.company} style={{background:C.card,border:"1px solid "+C.red+"40",borderRadius:10,padding:16,marginBottom:10}}>
+                    <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:4}}>{r.company}</div>
+                    <div style={{color:C.red,fontSize:11,marginBottom:8}}>Failed to render — {e.message}</div>
+                    <button onClick={()=>removeRecord(r.company)} style={{background:"transparent",border:"1px solid "+C.border,color:C.dim,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Remove</button>
+                  </div>
+                );
+              }
+            })}
           </div>
         )}
         {page==="dashboard" && <Dashboard pipeline={pipeline}/>}
