@@ -7,11 +7,11 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   try {
-    const url = process.env.UPSTASH_REDIS_REST_URL;
-    const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+    // Vercel KV (Upstash) — uses KV_REST_API_URL and KV_REST_API_TOKEN
+    const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+    const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
     if (url && token) {
-      // Use Upstash Redis REST API directly — no SDK needed
       if (req.method === 'GET') {
         const r = await fetch(`${url}/get/cp_pipeline`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -23,18 +23,25 @@ export default async function handler(req, res) {
 
       if (req.method === 'POST') {
         const { pipeline } = req.body;
+        const value = JSON.stringify(pipeline);
         await fetch(`${url}/set/cp_pipeline`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value: JSON.stringify(pipeline) })
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify([value])
         });
         return res.status(200).json({ ok: true });
       }
     }
 
-    // Fallback: in-memory (single session only)
+    // Fallback: in-memory
     if (req.method === 'GET') return res.status(200).json({ pipeline: memoryStore || [] });
-    if (req.method === 'POST') { memoryStore = req.body.pipeline; return res.status(200).json({ ok: true }); }
+    if (req.method === 'POST') {
+      memoryStore = req.body.pipeline;
+      return res.status(200).json({ ok: true });
+    }
 
   } catch (error) {
     console.error('[Pipeline]', error.message);
