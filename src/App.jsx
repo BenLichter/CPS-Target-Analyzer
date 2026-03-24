@@ -1970,9 +1970,9 @@ function Dashboard({pipeline}) {
     if (s.endsWith("K")) return parseFloat(s)*1000;
     return parseFloat(s.replace(/[^0-9.]/g,""))||0;
   };
+  const fmtMoney = v => v>=1000000?"$"+(v/1000000).toFixed(1)+"M":v>=1000?"$"+Math.round(v/1000)+"K":v?"$"+Math.round(v):"—";
   const totalPipeline = withVal.reduce((s,r)=>s+parseVal(r.crm?.deal_value),0);
   const avgDealRaw = withVal.length ? totalPipeline/withVal.length : 0;
-  const fmtMoney = v => v>=1000000?"$"+(v/1000000).toFixed(1)+"M":v>=1000?"$"+Math.round(v/1000)+"K":v?"$"+Math.round(v):"—";
   const avgDeal = withVal.length ? fmtMoney(avgDealRaw) : "—";
   const totalPipelineStr = withVal.length ? fmtMoney(totalPipeline) : "—";
   const active = pipeline.filter(r=>!["Closed / Won","Expansion / Retention"].includes(r.crm?.stage)).length;
