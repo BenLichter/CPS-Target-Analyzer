@@ -1803,28 +1803,30 @@ function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
 // ─── CRM Record ───────────────────────────────────────────────────────────────
 function CRMRecord({record, onUpdate, onRemove, keys}) {
   if (!record || !record.company) return null;
-  // Defensive defaults for all fields
-  const safeRecord = {
-    company: "", segment: "", hq: "", website: "", employees: "", revenue: "",
-    executive_summary: "", key_contacts: [], partnerships: [], recent_news: [],
-    tam_som_arr: {}, incumbent: {}, missed_opportunity: {}, geography: {},
-    intent_data: [], competitive_comparison: {}, activityLog: [],
-    crm: { stage: "Prospecting", deal_value: "", next_action: "", notes: "" },
-    ...record,
-    crm: { stage: "Prospecting", deal_value: "", next_action: "", notes: "", ...(record.crm||{}) },
-    key_contacts: Array.isArray(safeRecord.key_contacts) ? safeRecord.key_contacts : [],
-    partnerships: Array.isArray(safeRecord.partnerships) ? safeRecord.partnerships : [],
-    recent_news: Array.isArray(safeRecord.recent_news) ? safeRecord.recent_news : [],
-    activityLog: Array.isArray(safeRecord.activityLog) ? safeRecord.activityLog : [],
-  };
+  // Build safe crm defaults BEFORE useState (no self-references)
+  const _crm = Object.assign({stage:"Prospecting",deal_value:"",next_action:"",notes:""}, record.crm||{});
   const [showReport, setShowReport] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [stage, setStage] = useState(safeRecord.crm.stage);
+  const [stage, setStage] = useState(_crm.stage);
   const [note, setNote] = useState("");
-  const [dealVal, setDealVal] = useState(safeRecord.crm.deal_value);
-  const [nextAct, setNextAct] = useState(safeRecord.crm.next_action||"Schedule discovery call");
+  const [dealVal, setDealVal] = useState(_crm.deal_value||"");
+  const [nextAct, setNextAct] = useState(_crm.next_action||"Schedule discovery call");
   const [editingField, setEditingField] = useState(null);
   const [editVal, setEditVal] = useState("");
+  // Build safeRecord AFTER useState (safe to reference record here)
+  const safeRecord = Object.assign({
+    company:"",segment:"",hq:"",website:"",employees:"",revenue:"",
+    executive_summary:"",tam_som_arr:{},incumbent:{},missed_opportunity:{},
+    geography:{},intent_data:[],competitive_comparison:{},positioning_statement:"",
+    icp_profile:{},sequenced_timeline:[],alert_keywords:[],
+  }, record, {
+    crm: _crm,
+    key_contacts: Array.isArray(record.key_contacts) ? record.key_contacts : [],
+    partnerships: Array.isArray(record.partnerships) ? record.partnerships : [],
+    recent_news: Array.isArray(record.recent_news) ? record.recent_news : [],
+    activityLog: Array.isArray(record.activityLog) ? record.activityLog : [],
+  });
+
 
   const startEdit = (field, val) => { setEditingField(field); setEditVal(val||""); };
   const saveEdit = (field) => {
@@ -1862,7 +1864,21 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
   }
 
   const sc = STAGE_COLORS[stage]||C.muted;
-  const t = safeRecord.tam_som_arr||{}; const inc = safeRecord.incumbent||{};
+  // Build full safeRecord with defensive defaults (after all useState)
+  const safeRecord = {
+    ...record,
+    crm: safeCrm,
+    key_contacts: Array.isArray(record.key_contacts) ? record.key_contacts : [],
+    partnerships: Array.isArray(record.partnerships) ? record.partnerships : [],
+    recent_news: Array.isArray(record.recent_news) ? record.recent_news : [],
+    activityLog: Array.isArray(record.activityLog) ? record.activityLog : [],
+    tam_som_arr: record.tam_som_arr || {},
+    incumbent: record.incumbent || {},
+    missed_opportunity: record.missed_opportunity || {},
+    geography: record.geography || {},
+    intent_data: Array.isArray(record.intent_data) ? record.intent_data : [],
+  };
+  const t = safeRecord.tam_som_arr; const inc = safeRecord.incumbent;
 
   return (
     <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:10,marginBottom:10,overflow:"hidden"}}>
