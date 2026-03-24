@@ -1324,11 +1324,17 @@ function MotionTabs({motions}) {
 
 // ─── Analysis View ────────────────────────────────────────────────────────────
 function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
+  // ALL hooks first — no effects or logic between them
   const [chat, setChat] = useState([]);
   const [contacts, setContacts] = useState(data.key_contacts||[]);
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
+  const [q, setQ] = useState("");
+  const [asking, setAsking] = useState(false);
+  const chatRef = useRef(null);
+  // Effects after all hooks
   React.useEffect(() => { setContacts(data.key_contacts||[]); }, [data.key_contacts]);
+
   const removeContact = (idx) => {
     const updated = contacts.filter((_,i) => i !== idx);
     setContacts(updated);
@@ -1342,9 +1348,6 @@ function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
     setNewContact({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
     setShowAddContact(false);
   };
-  const [q, setQ] = useState("");
-  const [asking, setAsking] = useState(false);
-  const chatRef = useRef(null);
 
   const t = data.tam_som_arr||{};
   const mo = data.missed_opportunity||{};
