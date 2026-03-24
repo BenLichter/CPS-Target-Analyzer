@@ -39,26 +39,29 @@ const COMPARE_ROWS = [
 const norm = s => (s||"").trim().toLowerCase();
 const ls = { get: k => { try { return JSON.parse(localStorage.getItem(k)||"null"); } catch { return null; } }, set: (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} } };
 
-// Server-side pipeline persistence — saves to Vercel KV via /api/pipeline
+// Server-side persistence — saves pipeline AND keys to Vercel KV
 const serverStore = {
-  async save(pipeline) {
-    try {
-      await fetch("/api/pipeline", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ pipeline })
-      });
-    } catch(e) { console.warn("Server save failed:", e.message); }
+  async save(pipeline, keys) {
+    const body = {};
+    if (pipeline !== undefined) body.pipeline = pipeline;
+    if (keys !== undefined) body.keys = keys;
+    const res = await fetch("/api/pipeline", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error("Save failed: " + res.status);
   },
   async load() {
     try {
       const res = await fetch("/api/pipeline");
       if (!res.ok) return null;
       const data = await res.json();
-      // Validate it's actually an array of records
-      const pipeline = data.pipeline;
-      if (!Array.isArray(pipeline)) return null;
-      // Filter out any malformed records
-      return pipeline.filter(r => r && typeof r === 'object' && r.company);
+      return {
+        pipeline: Array.isArray(data.pipeline)
+          ? data.pipeline.filter(r => r && typeof r === 'object' && r.company)
+          : [],
+        keys: data.keys || null
+      };
     } catch(e) {
       console.warn("[Pipeline] Load failed:", e.message);
       return null;
@@ -68,12 +71,27 @@ const serverStore = {
 
 function usePipeline() {
   const [pipeline, setPipelineRaw] = useState(() => ls.get(STORAGE.pipeline) || []);
-  // Load from server on mount (overrides localStorage if server has data)
+  const [syncStatus, setSyncStatus] = useState("syncing");
+  // Load from server on mount — syncs pipeline AND API keys across devices
   React.useEffect(() => {
-    serverStore.load().then(serverPipeline => {
-      if (serverPipeline && serverPipeline.length > 0) {
-        setPipelineRaw(serverPipeline);
-        ls.set(STORAGE.pipeline, serverPipeline);
+    serverStore.load().then(data => {
+      if (!data) { setSyncStatus("error"); return; }
+      setSyncStatus("synced");
+      // Restore pipeline
+      if (data.pipeline && data.pipeline.length > 0) {
+        setPipelineRaw(data.pipeline);
+        ls.set(STORAGE.pipeline, data.pipeline);
+      }
+      // Restore API keys if not already set locally
+      if (data.keys) {
+        if (data.keys.tavily && !ls.get(STORAGE.tavily)) {
+          ls.set(STORAGE.tavily, data.keys.tavily);
+          setTavilyKey(data.keys.tavily);
+        }
+        if (data.keys.ninjapear && !ls.get(STORAGE.ninjapear)) {
+          ls.set(STORAGE.ninjapear, data.keys.ninjapear);
+          setNinjapearKey(data.keys.ninjapear);
+        }
       }
     });
   }, []);
@@ -81,10 +99,41 @@ function usePipeline() {
   const setPipeline = useCallback(v => {
     setPipelineRaw(v);
     ls.set(STORAGE.pipeline, v);
-    serverStore.save(v); // persist to server for cross-device access
+    setSyncStatus("syncing");
+    serverStore.save(v, undefined).then(()=>setSyncStatus("synced")).catch(()=>setSyncStatus("error"));
   }, []);
   const setAlerts   = useCallback(v => { setAlertsRaw(v);   ls.set(STORAGE.alerts,   v); }, []);
-  const addRecord   = useCallback(r  => { setPipeline(prev => [r, ...prev.filter(x => norm(x.company) !== norm(r.company))]); }, [setPipeline]);
+  const addRecord = useCallback(r => {
+    // Slim the record for storage — keep all analysis fields but trim verbose GTM motions
+    const slim = {
+      company: r.company,
+      segment: r.segment,
+      hq: r.hq,
+      website: r.website,
+      employees: r.employees,
+      revenue: r.revenue,
+      analyzedAt: r.analyzedAt,
+      executive_summary: r.executive_summary,
+      tam_som_arr: r.tam_som_arr,
+      key_contacts: r.key_contacts,
+      partnerships: r.partnerships,
+      geography: r.geography,
+      incumbent: r.incumbent,
+      missed_opportunity: r.missed_opportunity,
+      recent_news: (r.recent_news||[]).slice(0,5), // keep top 5 news items
+      intent_data: r.intent_data,
+      competitive_comparison: r.competitive_comparison,
+      crm: r.crm || { stage: "Prospecting" },
+      activityLog: r.activityLog || [],
+      // Keep positioning but trim verbose motions to save space
+      positioning_statement: r.positioning_statement,
+      icp_profile: r.icp_profile,
+      sequenced_timeline: r.sequenced_timeline,
+      objection_handling: r.objection_handling,
+      alert_keywords: r.alert_keywords,
+    };
+    setPipeline(prev => [slim, ...prev.filter(x => norm(x.company) !== norm(slim.company))]);
+  }, [setPipeline]);
   const updateRecord= useCallback((company,updates) => { setPipeline(prev => prev.map(r => norm(r.company)===norm(company)?{...r,...updates}:r)); }, [setPipeline]);
   const removeRecord= useCallback(company => { setPipeline(prev => prev.filter(r => norm(r.company)!==norm(company))); }, [setPipeline]);
   const addAlert    = useCallback(a  => { setAlerts(prev => [a,...prev.slice(0,99)]); }, [setAlerts]);
@@ -2192,7 +2241,17 @@ export default function App() {
   const [ninjapearKey, setNinjapearKey] = useState(()=>localStorage.getItem(STORAGE.ninjapear)||"");
   const { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert } = usePipeline();
 
-  const saveKey = (k,v,fn) => { fn(v); localStorage.setItem(k,v); };
+  const saveKey = (k,v,fn) => {
+    fn(v);
+    localStorage.setItem(k,v);
+    // Sync keys to server so other devices pick them up
+    const currentKeys = {
+      tavily: localStorage.getItem(STORAGE.tavily)||"",
+      ninjapear: localStorage.getItem(STORAGE.ninjapear)||"",
+      [k]: v
+    };
+    serverStore.save(undefined, currentKeys);
+  };
   const keys = { tavily:tavilyKey, ninjapear:ninjapearKey };
   const hasContacts = !!ninjapearKey;
   const keyStatus = tavilyKey&&ninjapearKey?"🟢 Full Intel":tavilyKey||ninjapearKey?"🟡 Partial":"🔑 Add Keys";
@@ -2238,6 +2297,9 @@ export default function App() {
             style={{padding:"4px 10px",borderRadius:7,fontFamily:"inherit",background:"transparent",color:tavilyKey&&ninjapearKey?C.green:tavilyKey||ninjapearKey?C.gold:C.red,border:"1px solid "+(tavilyKey&&ninjapearKey?C.green+"50":tavilyKey||ninjapearKey?C.gold+"50":C.red+"50"),fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>
             {keyStatus}
           </button>
+          <span style={{fontSize:9,color:syncStatus==="synced"?C.green:syncStatus==="error"?C.red:C.dim,fontWeight:700}} title={syncStatus==="synced"?"Pipeline synced to cloud":syncStatus==="error"?"Cloud sync failed — using local only":"Syncing..."}>
+            {syncStatus==="synced"?"☁✓":syncStatus==="error"?"☁✗":"☁…"}
+          </span>
         </div>
       </div>
 
