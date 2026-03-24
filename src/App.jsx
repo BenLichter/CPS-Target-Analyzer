@@ -39,10 +39,43 @@ const COMPARE_ROWS = [
 const norm = s => (s||"").trim().toLowerCase();
 const ls = { get: k => { try { return JSON.parse(localStorage.getItem(k)||"null"); } catch { return null; } }, set: (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} } };
 
+// Server-side pipeline persistence — saves to Vercel KV via /api/pipeline
+const serverStore = {
+  async save(pipeline) {
+    try {
+      await fetch("/api/pipeline", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ pipeline })
+      });
+    } catch(e) { console.warn("Server save failed:", e.message); }
+  },
+  async load() {
+    try {
+      const res = await fetch("/api/pipeline");
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.pipeline || null;
+    } catch { return null; }
+  }
+};
+
 function usePipeline() {
   const [pipeline, setPipelineRaw] = useState(() => ls.get(STORAGE.pipeline) || []);
+  // Load from server on mount (overrides localStorage if server has data)
+  React.useEffect(() => {
+    serverStore.load().then(serverPipeline => {
+      if (serverPipeline && serverPipeline.length > 0) {
+        setPipelineRaw(serverPipeline);
+        ls.set(STORAGE.pipeline, serverPipeline);
+      }
+    });
+  }, []);
   const [alerts, setAlertsRaw] = useState(() => ls.get(STORAGE.alerts) || []);
-  const setPipeline = useCallback(v => { setPipelineRaw(v); ls.set(STORAGE.pipeline, v); }, []);
+  const setPipeline = useCallback(v => {
+    setPipelineRaw(v);
+    ls.set(STORAGE.pipeline, v);
+    serverStore.save(v); // persist to server for cross-device access
+  }, []);
   const setAlerts   = useCallback(v => { setAlertsRaw(v);   ls.set(STORAGE.alerts,   v); }, []);
   const addRecord   = useCallback(r  => { setPipeline(prev => [r, ...prev.filter(x => norm(x.company) !== norm(r.company))]); }, [setPipeline]);
   const updateRecord= useCallback((company,updates) => { setPipeline(prev => prev.map(r => norm(r.company)===norm(company)?{...r,...updates}:r)); }, [setPipeline]);
@@ -1725,6 +1758,36 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
   const [note, setNote] = useState("");
   const [dealVal, setDealVal] = useState(record.crm?.deal_value||"");
   const [nextAct, setNextAct] = useState(record.crm?.next_action||"Schedule discovery call");
+  const [editingField, setEditingField] = useState(null);
+  const [editVal, setEditVal] = useState("");
+
+  const startEdit = (field, val) => { setEditingField(field); setEditVal(val||""); };
+  const saveEdit = (field) => {
+    if (["executive_summary","incumbent_notes"].includes(field)) {
+      onUpdate(record.company, {...record, [field]: editVal});
+    } else {
+      onUpdate(record.company, {...record, crm:{...record.crm, [field]: editVal}});
+    }
+    setEditingField(null);
+  };
+
+  const EditableText = ({field, value, label, multiline}) => (
+    editingField === field
+      ? <div>
+          {multiline
+            ? <textarea value={editVal} onChange={e=>setEditVal(e.target.value)} rows={4} style={{width:"100%",background:C.card,border:"1px solid "+C.accent,borderRadius:6,padding:"8px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
+            : <input value={editVal} onChange={e=>setEditVal(e.target.value)} style={{width:"100%",background:C.card,border:"1px solid "+C.accent,borderRadius:6,padding:"6px 8px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>}
+          <div style={{display:"flex",gap:6,marginTop:6}}>
+            <button onClick={()=>saveEdit(field)} style={{padding:"4px 12px",borderRadius:5,background:C.accent,color:"#000",border:"none",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+            <button onClick={()=>setEditingField(null)} style={{padding:"4px 10px",borderRadius:5,background:"transparent",color:C.muted,border:"1px solid "+C.border,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          </div>
+        </div>
+      : <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+          <div style={{color:C.muted,fontSize:11,lineHeight:1.7,flex:1}}>{value||<span style={{color:C.dim,fontStyle:"italic"}}>Click ✏ to add</span>}</div>
+          <button onClick={()=>startEdit(field,value)} style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:10,padding:"0 2px",flexShrink:0}}>✏</button>
+        </div>
+  );
+
 
   function save() {
     const log = record.activityLog||[];
@@ -1771,6 +1834,7 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
         {record.crm?.next_action&&!editing&&<div style={{background:C.goldDim,borderRadius:6,padding:"6px 10px",fontSize:11,color:C.gold,marginBottom:10}}>▶ Next: {record.crm.next_action}</div>}
         {editing&&(
           <div style={{background:C.surface,borderRadius:8,padding:12,marginBottom:12,border:"1px solid "+C.border}}>
+            <div style={{color:C.accent,fontSize:11,fontWeight:700,marginBottom:10}}>✏ Edit Pipeline Record</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
               <div>
                 <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>DEAL VALUE</div>
@@ -1781,10 +1845,25 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
                 <input value={nextAct} onChange={e=>setNextAct(e.target.value)} placeholder="e.g. Send proposal" style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
               </div>
             </div>
+            <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>EXECUTIVE SUMMARY</div>
+            <textarea value={editingField==="executive_summary"?editVal:(record.executive_summary||"")}
+              onChange={e=>{setEditingField("executive_summary");setEditVal(e.target.value);}} rows={3}
+              placeholder="Edit executive summary..."
+              style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",marginBottom:8}}/>
+            <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>INCUMBENT NOTES</div>
+            <input value={editingField==="incumbent_notes"?editVal:(record.incumbent?.weaknesses||"")}
+              onChange={e=>{setEditingField("incumbent_notes");setEditVal(e.target.value);}}
+              placeholder="Notes on incumbent / why CP wins..."
+              style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",marginBottom:8}}/>
             <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>ACTIVITY NOTE / CALL REPORT</div>
             <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Log a call, meeting, email or update..." rows={3}
               style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
-            <button onClick={save} style={{marginTop:8,padding:"8px 18px",background:C.green,color:"#000",border:"none",borderRadius:6,fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>SAVE</button>
+            <button onClick={()=>{
+              save();
+              if(editingField==="executive_summary") onUpdate(record.company,{...record,executive_summary:editVal});
+              if(editingField==="incumbent_notes") onUpdate(record.company,{...record,incumbent:{...record.incumbent,weaknesses:editVal}});
+              setEditingField(null);
+            }} style={{marginTop:8,padding:"8px 18px",background:C.green,color:"#000",border:"none",borderRadius:6,fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>SAVE ALL</button>
           </div>
         )}
         {(record.activityLog||[]).length ? (
@@ -1815,7 +1894,18 @@ function Dashboard({pipeline}) {
   const won = pipeline.filter(r=>r.crm?.stage==="Closed / Won").length;
   const winRate = total ? Math.round(won/total*100) : 0;
   const withVal = pipeline.filter(r=>r.crm?.deal_value);
-  const avgDeal = withVal.length ? "$"+Math.round(withVal.reduce((s,r)=>s+(parseFloat((r.crm?.deal_value||"").replace(/[^0-9.]/g,""))||0),0)/withVal.length/1000)+"K" : "—";
+  const parseVal = v => {
+    if (!v) return 0;
+    const s = String(v).replace(/[$,\s]/g,"").toUpperCase();
+    if (s.endsWith("M")) return parseFloat(s)*1000000;
+    if (s.endsWith("K")) return parseFloat(s)*1000;
+    return parseFloat(s.replace(/[^0-9.]/g,""))||0;
+  };
+  const totalPipeline = withVal.reduce((s,r)=>s+parseVal(r.crm?.deal_value),0);
+  const avgDealRaw = withVal.length ? totalPipeline/withVal.length : 0;
+  const fmtMoney = v => v>=1000000?"$"+(v/1000000).toFixed(1)+"M":v>=1000?"$"+Math.round(v/1000)+"K":v?"$"+Math.round(v):"—";
+  const avgDeal = withVal.length ? fmtMoney(avgDealRaw) : "—";
+  const totalPipelineStr = withVal.length ? fmtMoney(totalPipeline) : "—";
   const active = pipeline.filter(r=>!["Closed / Won","Expansion / Retention"].includes(r.crm?.stage)).length;
   const bySeg = {};
   pipeline.forEach(r=>{ const s=r.segment||"Unknown"; if(!bySeg[s]) bySeg[s]={total:0,won:0}; bySeg[s].total++; if(r.crm?.stage==="Closed / Won") bySeg[s].won++; });
@@ -1825,7 +1915,7 @@ function Dashboard({pipeline}) {
     <div>
       <div style={{color:C.text,fontSize:20,fontWeight:800,marginBottom:18}}>Dashboard</div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
-        {[["Total Accounts",String(total),C.accent],["Win Rate",winRate+"%",C.green],["Avg Deal",avgDeal,C.gold],["Active",String(active),C.purple]].map(([l,v,c])=>(
+        {[["Total Accounts",String(total),C.accent],["Win Rate",winRate+"%",C.green],["Total Pipeline",totalPipelineStr,C.green],["Avg Deal",avgDeal,C.gold],["Active",String(active),C.purple]].map(([l,v,c])=>(
           <Chip key={l} label={l} value={v} color={c}/>
         ))}
       </div>
@@ -1853,7 +1943,7 @@ function Dashboard({pipeline}) {
               {Object.entries(bySeg).map(([seg,d])=>{
                 const wr=d.total?Math.round(d.won/d.total*100)+"%":"—";
                 const sd=pipeline.filter(r=>r.segment===seg&&r.crm?.deal_value);
-                const ad=sd.length?"$"+Math.round(sd.reduce((s,r)=>s+(parseFloat((r.crm?.deal_value||"").replace(/[^0-9.]/g,""))||0),0)/sd.length/1000)+"K":"—";
+                const ad=sd.length?fmtMoney(sd.reduce((s,r)=>s+parseVal(r.crm?.deal_value),0)/sd.length):"—";
                 const sql=pipeline.filter(r=>r.segment===seg&&r.crm?.stage!=="Prospecting").length;
                 const conv=d.total?Math.round(sql/d.total*100)+"%":"—";
                 return <tr key={seg} style={{borderBottom:"1px solid "+C.border}}>
@@ -1935,6 +2025,70 @@ function Reports({pipeline}) {
   const segs = ["All",...new Set(pipeline.map(r=>r.segment).filter(Boolean))];
   const filtered = filter==="All"?pipeline:pipeline.filter(r=>r.segment===filter);
 
+  function exportFullCSV() {
+    // Full analysis export with all fields for each account
+    const rows = [];
+    filtered.forEach(r => {
+      const c = r.crm||{}, t = r.tam_som_arr||{}, inc = r.incumbent||{}, mo = r.missed_opportunity||{};
+      // Header row per account
+      rows.push(["=== "+r.company+" ===","","","","","","","","","","",""]);
+      rows.push(["Company","Segment","HQ","Employees","Revenue","Website","Analyzed","","","","",""]);
+      rows.push([r.company,r.segment,r.hq,r.employees,r.revenue,r.website,r.analyzedAt?new Date(r.analyzedAt).toLocaleDateString():"","","","","",""]);
+      rows.push(["Executive Summary","","","","","","","","","","",""]);
+      rows.push([r.executive_summary||"","","","","","","","","","","",""]);
+      rows.push(["Stage","Deal Value","Next Action","ARR Potential","Incumbent","Notes","","","","","",""]);
+      rows.push([c.stage,c.deal_value,c.next_action,t.likely_arr_usd,inc.name,c.notes||"","","","","","",""]);
+      rows.push(["Missed Opportunity","","","","","","","","","","",""]);
+      rows.push([mo.headline||mo.narrative||"","","","","","","","","","","",""]);
+      rows.push(["Key Contacts","","","","","","","","","","",""]);
+      (r.key_contacts||[]).forEach(contact => {
+        rows.push([contact.name,contact.title,contact.category,contact.why_target,contact.outreach_angle,contact.email||"",contact.linkedin||"","","","","",""]);
+      });
+      rows.push(["Partnerships","","","","","","","","","","",""]);
+      (r.partnerships||[]).forEach(p => {
+        rows.push([p.partner,p.type,p.what_they_provide||p.relationship||"",p.cp_angle||p.cp_advantage||"","","","","","","","",""]);
+      });
+      rows.push(["","","","","","","","","","","",""]);
+    });
+    const csv = rows.map(r=>r.map(v=>"\""+((v||"").toString().replace(/"/g,'\"\""'))+"\""  ).join(",")).join("\n");
+    const blob = new Blob([csv],{type:"text/csv"});
+    Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:"coinpayments_full_analysis.csv"}).click();
+  }
+
+  function exportPDF() {
+    const win = window.open("","_blank");
+    const css = `body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:20px;} h1{color:#0ea5e9;font-size:18px;} h2{color:#0ea5e9;font-size:14px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-top:20px;} h3{font-size:12px;color:#475569;margin:12px 0 4px;} .chip{display:inline-block;background:#f1f5f9;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;margin:2px;} .contact{background:#f8fafc;border-radius:6px;padding:8px;margin:6px 0;} .section{margin-bottom:16px;} table{width:100%;border-collapse:collapse;font-size:11px;} th{background:#f1f5f9;padding:6px 8px;text-align:left;} td{padding:5px 8px;border-bottom:1px solid #e2e8f0;} .page-break{page-break-after:always;} @media print{.page-break{page-break-after:always;}}`;
+    let html = `<html><head><title>CoinPayments Pipeline Report</title><style>${css}</style></head><body>`;
+    html += `<h1>CoinPayments Agent 2.0 — Pipeline Report</h1>`;
+    html += `<p style="color:#64748b">Generated ${new Date().toLocaleDateString()} · ${filtered.length} accounts</p>`;
+
+    filtered.forEach((r,idx) => {
+      const c=r.crm||{},t=r.tam_som_arr||{},inc=r.incumbent||{},mo=r.missed_opportunity||{},geo=r.geography||{};
+      if(idx>0) html+=`<div class="page-break"></div>`;
+      html+=`<h1>${r.company}</h1>`;
+      html+=`<span class="chip">${r.segment||""}</span><span class="chip">${r.hq||""}</span><span class="chip">Stage: ${c.stage||"Prospecting"}</span><span class="chip">Deal: ${c.deal_value||"TBD"}</span>`;
+      html+=`<div class="section"><h2>Executive Summary</h2><p>${r.executive_summary||""}</p></div>`;
+      html+=`<div class="section"><h2>Market Opportunity</h2><table><tr><th>TAM</th><th>SOM</th><th>Conservative ARR</th><th>Upside ARR</th></tr><tr><td>${t.tam_usd||"—"}</td><td>${t.som_usd||"—"}</td><td>${t.likely_arr_usd||"—"}</td><td>${t.upside_arr_usd||"—"}</td></tr></table>${t.reasoning?`<p style="color:#64748b;font-size:11px">${t.reasoning}</p>`:""}</div>`;
+      html+=`<div class="section"><h2>Missed Opportunity</h2>${mo.headline?`<p><strong>${mo.headline}</strong></p>`:""}<p>${mo.narrative||""}</p>${mo.competitor_threat?`<p><em>Competitor Threat: ${mo.competitor_threat}</em></p>`:""}<p>${[mo.market_stat_1,mo.market_stat_2,mo.market_stat_3].filter(Boolean).map(s=>`• ${s}`).join("<br>")}</p></div>`;
+      if((r.key_contacts||[]).length) {
+        html+=`<div class="section"><h2>Key Contacts</h2>`;
+        r.key_contacts.forEach(contact=>{html+=`<div class="contact"><strong>${contact.name}</strong> — ${contact.title||""} <span class="chip">${contact.category||""}</span><br><em>Why target: ${contact.why_target||""}</em><br>Outreach: ${contact.outreach_angle||""}${contact.email?`<br>✉ ${contact.email}`:""}${contact.linkedin?`<br>LinkedIn: ${contact.linkedin}`:""}</div>`;});
+        html+=`</div>`;
+      }
+      if((r.partnerships||[]).length) {
+        html+=`<div class="section"><h2>Strategic Partnerships</h2><table><tr><th>Partner</th><th>Type</th><th>What They Provide</th><th>CP Angle</th></tr>`;
+        r.partnerships.forEach(p=>{html+=`<tr><td><strong>${p.partner}</strong></td><td>${p.type||""}</td><td>${p.what_they_provide||p.relationship||""}</td><td>${p.cp_angle||p.cp_advantage||""}</td></tr>`;});
+        html+=`</table></div>`;
+      }
+      html+=`<div class="section"><h2>Incumbent</h2><p><strong>${inc.name||"None identified"}</strong>${inc.annual_cost?` · Annual cost: ${inc.annual_cost}`:""}${inc.cp_saving?` · CP saves: ${inc.cp_saving}`:""}</p>${inc.weaknesses?`<p>${inc.weaknesses}</p>`:""}</div>`;
+      if(c.notes||c.next_action) html+=`<div class="section"><h2>CRM Notes</h2>${c.next_action?`<p><strong>Next Action:</strong> ${c.next_action}</p>`:""}${c.notes?`<p>${c.notes}</p>`:""}</div>`;
+    });
+    html+=`</body></html>`;
+    win.document.write(html);
+    win.document.close();
+    setTimeout(()=>win.print(),500);
+  }
+
   function exportCSV() {
     const h = ["Company","Segment","HQ","Employees","Revenue","ARR Potential","Incumbent","Stage","Deal Value","Next Action","Website","Analyzed"];
     const rows = filtered.map(r=>{const c=r.crm||{},t=r.tam_som_arr||{},inc=r.incumbent||{};
@@ -1952,7 +2106,11 @@ function Reports({pipeline}) {
           <div style={{color:C.text,fontSize:20,fontWeight:800}}>Pipeline Report</div>
           <div style={{color:C.muted,fontSize:11}}>{filtered.length} accounts{filter!=="All"?" in "+filter:""}</div>
         </div>
-        <button onClick={exportCSV} style={{background:C.goldDim,border:"1px solid "+C.gold+"40",color:C.gold,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export CSV</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={exportCSV} style={{background:C.goldDim,border:"1px solid "+C.gold+"40",color:C.gold,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export CSV</button>
+          <button onClick={exportFullCSV} style={{background:C.accentDim,border:"1px solid "+C.accent+"40",color:C.accent,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Full Analysis Excel</button>
+          <button onClick={exportPDF} style={{background:C.redDim,border:"1px solid "+C.red+"40",color:C.red,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF Report</button>
+        </div>
       </div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
         {segs.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:"4px 12px",borderRadius:20,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:filter===s?C.accent:C.surface,color:filter===s?"#000":C.muted,border:"1px solid "+(filter===s?C.accent:C.border)}}>{s}</button>)}
