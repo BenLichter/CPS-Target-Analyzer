@@ -1,2429 +1,720 @@
-// VERSION: FIX-HOOKS-TDZ-2026-03-25
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MODEL = "claude-sonnet-4-20250514";
-const STORAGE = {
-  pipeline: "cp_pipeline_v5",
-  alerts:   "cp_alerts_v5",
-  tavily:   "cp_tavily_key",
-  ninjapear:"cp_ninjapear_key",
-  verified: "cp_verified_li_v2",
-  vcache:   "cp_verify_cache_v2",
-};
+const MODEL    = "claude-sonnet-4-20250514";
+const TKEY_LS  = "cp_tavily_key";
+const NJKEY_LS = "cp_ninjapear_key";
 
 const C = {
   bg:"#07090F", surface:"#0D1117", card:"#111827", border:"#1F2937",
   accent:"#00C2FF", accentDim:"#00C2FF12", gold:"#F59E0B", goldDim:"#F59E0B12",
   green:"#10B981", greenDim:"#10B98112", red:"#EF4444", redDim:"#EF444412",
-  purple:"#8B5CF6", purpleDim:"#8B5CF612", cyan:"#06B6D4",
-  text:"#F1F5F9", muted:"#94A3B8", dim:"#334155",
+  purple:"#8B5CF6", cyan:"#06B6D4", text:"#F1F5F9", muted:"#94A3B8", dim:"#334155",
 };
 
-const STAGES = ["Prospecting","Lead / SQL","Discovery","Solution Design & Demo","Proposal & Negotiation","Closed / Won","Expansion / Retention"];
-const STAGE_COLORS = {"Prospecting":C.muted,"Lead / SQL":C.cyan,"Discovery":C.accent,"Solution Design & Demo":C.purple,"Proposal & Negotiation":C.gold,"Closed / Won":C.green,"Expansion / Retention":C.green};
+const BLOCKED = ["bloomberg.com","wsj.com","ft.com","economist.com","nytimes.com","washingtonpost.com","barrons.com","hbr.org"];
 
 const COMPARE_ROWS = [
   ["Merchant Acceptance","merchant_acceptance"],["Fiat On-Ramp","fiat_on_ramp"],
-  ["Fiat Off-Ramp","fiat_off_ramp"],["Rails Supported","rails_supported"],
-  ["Costs & Fees","costs_fees"],["Crypto Breadth","crypto_breadth"],
-  ["White Label","white_label"],["Compliance / Licensing","compliance_licensing"],
-  ["Fraud & Chargeback","fraud_chargeback"],["Insurance & Safeguarding","insurance_safeguarding"],
-  ["Reporting","reporting"],["Geographies","geographies"],
-  ["Co-Marketing","co_marketing"],["Education & Advocacy","education_advocacy"],
-  ["API Architecture","api_architecture"],["Scalability","scalability"],
-  ["Interoperability","interoperability"],["Pricing Transparency","pricing_transparency"],
-  ["Revenue Sharing","revenue_sharing"],["SLA & Support","sla_support"],
+  ["Fiat Off-Ramp","fiat_off_ramp"],["Crypto Breadth","crypto_breadth"],
+  ["White Label","white_label"],["Compliance","compliance_licensing"],
+  ["Costs & Fees","costs_fees"],["API Architecture","api_architecture"],
+  ["Scalability","scalability"],["SLA & Support","sla_support"],
 ];
 
-// ─── Storage helpers ──────────────────────────────────────────────────────────
-const norm = s => (s||"").trim().toLowerCase();
-const ls = { get: k => { try { return JSON.parse(localStorage.getItem(k)||"null"); } catch { return null; } }, set: (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} } };
-
-// Server-side persistence — saves pipeline AND keys to Vercel KV
-const serverStore = {
-  async save(pipeline, keys) {
-    const body = {};
-    if (pipeline !== undefined) body.pipeline = pipeline;
-    if (keys !== undefined) body.keys = keys;
-    const res = await fetch("/api/pipeline", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify(body)
-    });
-    if (!res.ok) throw new Error("Save failed: " + res.status);
-  },
-  async load() {
-    try {
-      const res = await fetch("/api/pipeline");
-      if (!res.ok) return null;
-      const data = await res.json();
-      return {
-        pipeline: Array.isArray(data.pipeline)
-          ? data.pipeline.filter(r => r && typeof r === 'object' && r.company)
-          : [],
-        keys: data.keys || null
-      };
-    } catch(e) {
-      console.warn("[Pipeline] Load failed:", e.message);
-      return null;
-    }
+// ─── Pure helpers (no hooks, no React) ───────────────────────────────────────
+function sanitize(str) {
+  if (typeof str !== "string") return str;
+  let out = "";
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    if (c >= 0xD800 && c <= 0xDFFF) continue;
+    if (c < 0x20 && c !== 9 && c !== 10 && c !== 13) continue;
+    out += str[i];
   }
-};
-
-function usePipeline() {
-  // ALL useState calls first, then effects
-  const [pipeline, setPipelineRaw] = useState(() => ls.get(STORAGE.pipeline) || []);
-  const [syncStatus, setSyncStatus] = useState("syncing");
-  const [alerts, setAlertsRaw] = useState(() => ls.get(STORAGE.alerts) || []);
-  // Effects after all hooks
-  React.useEffect(() => {
-    serverStore.load().then(data => {
-      if (!data) { setSyncStatus("error"); return; }
-      setSyncStatus("synced");
-      if (data.pipeline && data.pipeline.length > 0) {
-        setPipelineRaw(data.pipeline);
-        ls.set(STORAGE.pipeline, data.pipeline);
-      }
-      if (data.keys) {
-        if (data.keys.tavily) ls.set("cp_server_tavily", data.keys.tavily);
-        if (data.keys.ninjapear) ls.set("cp_server_ninjapear", data.keys.ninjapear);
-      }
-    });
-  }, []);
-  const setPipeline = useCallback(v => {
-    setPipelineRaw(v);
-    ls.set(STORAGE.pipeline, v);
-    setSyncStatus("syncing");
-    serverStore.save(v, undefined).then(()=>setSyncStatus("synced")).catch(()=>setSyncStatus("error"));
-  }, []);
-  const setAlerts   = useCallback(v => { setAlertsRaw(v);   ls.set(STORAGE.alerts,   v); }, []);
-  const addRecord = useCallback(r => {
-    // Slim the record for storage — keep all analysis fields but trim verbose GTM motions
-    const slim = {
-      company: r.company,
-      segment: r.segment,
-      hq: r.hq,
-      website: r.website,
-      employees: r.employees,
-      revenue: r.revenue,
-      analyzedAt: r.analyzedAt,
-      executive_summary: r.executive_summary,
-      tam_som_arr: r.tam_som_arr,
-      key_contacts: r.key_contacts,
-      partnerships: r.partnerships,
-      geography: r.geography,
-      incumbent: r.incumbent,
-      missed_opportunity: r.missed_opportunity,
-      recent_news: (r.recent_news||[]).slice(0,5), // keep top 5 news items
-      intent_data: r.intent_data,
-      competitive_comparison: r.competitive_comparison,
-      crm: r.crm || { stage: "Prospecting" },
-      activityLog: r.activityLog || [],
-      // Keep positioning but trim verbose motions to save space
-      positioning_statement: r.positioning_statement,
-      icp_profile: r.icp_profile,
-      sequenced_timeline: r.sequenced_timeline,
-      objection_handling: r.objection_handling,
-      alert_keywords: r.alert_keywords,
-    };
-    setPipeline(prev => [slim, ...prev.filter(x => norm(x.company) !== norm(slim.company))]);
-  }, [setPipeline]);
-  const updateRecord= useCallback((company,updates) => { setPipeline(prev => prev.map(r => norm(r.company)===norm(company)?{...r,...updates}:r)); }, [setPipeline]);
-  const removeRecord= useCallback(company => { setPipeline(prev => prev.filter(r => norm(r.company)!==norm(company))); }, [setPipeline]);
-  const addAlert    = useCallback(a  => { setAlerts(prev => [a,...prev.slice(0,99)]); }, [setAlerts]);
-  return { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert, syncStatus };
+  return out;
 }
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
 async function callAPI(system, user, maxTokens) {
   const res = await fetch("/api/anthropic", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({ model:MODEL, max_tokens:maxTokens||6000, system, messages:[{role:"user",content:user}] }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: MODEL, max_tokens: maxTokens || 6000, system, messages: [{ role: "user", content: user }] }),
   });
-  if (!res.ok) {
-    const txt = await res.text().catch(()=>"");
-    throw new Error("API HTTP "+res.status+(txt?" — "+txt.slice(0,200):""));
-  }
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message+" (type: "+json.error.type+")");
-  const blocks = (json.content||[]).filter(b=>b.type==="text");
-  if (!blocks.length) throw new Error("No text in response. stop_reason="+json.stop_reason+" usage="+JSON.stringify(json.usage||{}));
-  return blocks.map(b=>b.text).join("\n");
+  if (!res.ok) { const t = await res.text().catch(() => ""); throw new Error("API " + res.status + (t ? " - " + t.slice(0, 120) : "")); }
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message);
+  const blocks = (j.content || []).filter(b => b.type === "text");
+  if (!blocks.length) throw new Error("Empty response from Claude");
+  return blocks.map(b => b.text).join("\n");
 }
 
 function parseJSON(raw) {
-  let s = raw.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
+  let s = raw.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
   try { return JSON.parse(s); } catch {}
   const a = s.indexOf("{"), b = s.lastIndexOf("}");
-  if (a!==-1 && b>a) { try { return JSON.parse(s.slice(a,b+1)); } catch(e) { throw new Error("JSON: "+e.message+" | "+s.slice(a,a+200)); } }
-  throw new Error("No JSON found: "+s.slice(0,300));
+  if (a !== -1 && b > a) { try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { throw new Error("JSON parse: " + e.message); } }
+  throw new Error("No JSON found");
 }
 
-// Paywalled / unreliable domains to exclude from news
-const BLOCKED_DOMAINS = [
-  "bloomberg.com","wsj.com","ft.com","economist.com","nytimes.com",
-  "washingtonpost.com","thetimes.co.uk","barrons.com","theatlantic.com",
-  "hbr.org","foreignpolicy.com","newyorker.com","wired.com"
-];
-
-async function tavilySearch(query, key, n, maxAgeDays) {
-  if (!key) return null;
-  try {
-    const body = {
-      api_key: key,
-      query,
-      search_depth: "advanced",
-      max_results: (n||6) + 4,
-      include_answer: true,
-      include_raw_content: false,
-      exclude_domains: BLOCKED_DOMAINS,
-    };
-    if (maxAgeDays) body.days = maxAgeDays;
-    const res = await fetch("https://api.tavily.com/search", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(()=>({}));
-      const errMsg = errBody.detail || errBody.message || errBody.error || ("HTTP "+res.status);
-      const isCredits = res.status === 429 || (typeof errMsg === "string" && (errMsg.toLowerCase().includes("credit") || errMsg.toLowerCase().includes("limit") || errMsg.toLowerCase().includes("quota")));
-      const isAuth = res.status === 401 || res.status === 403;
-      apiStatus.tavily.ok = false;
-      apiStatus.tavily.error = isCredits ? "OUT_OF_CREDITS" : isAuth ? "INVALID_KEY" : errMsg;
-      apiStatus.tavily.credits = isCredits ? "exhausted" : null;
-      console.warn("[Tavily]", res.status, errMsg);
-      return null;
-    }
-    apiStatus.tavily.ok = true;
-    apiStatus.tavily.searches += 1;
-    const data = await res.json();
-    const cutoff = maxAgeDays ? new Date(Date.now() - maxAgeDays*86400000) : null;
-    const answer = data.answer||"";
-    const snippets = (data.results||[])
-      .filter(r => {
-        // Block paywalled domains (belt-and-suspenders)
-        const host = r.url ? r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0] : "";
-        if (BLOCKED_DOMAINS.some(d => host.includes(d))) return false;
-        // Date filter
-        if (!cutoff || !r.published_date) return true;
-        return new Date(r.published_date) >= cutoff;
-      })
-      .slice(0, n||6)
-      .map(r => {
-        const host = r.url ? r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0] : "";
-        return "TITLE: "+r.title+
-          "\nURL: "+(r.url||"")+
-          "\nDATE: "+(r.published_date||"")+
-          "\nSOURCE: "+host+
-          "\nCONTENT: "+(r.content||"").slice(0,320);
-      }).join("\n---\n");
-    apiStatus.tavily.results += (data.results||[]).length;
-    return answer ? answer+"\n\n"+snippets : snippets;
-  } catch(e) { console.warn("[Tavily exception]", e.message); return null; }
-}
-
-// Check if a URL is from a known-accessible (non-paywalled) domain
-function checkUrl(url) {
-  if (!url) return "none";
-  try {
-    const host = url.replace("https://","").replace("http://","").replace("www.","").split("/")[0];
-    if (BLOCKED_DOMAINS.some(d => host.includes(d))) return "paywalled";
-    // Known open/free domains
-    const openDomains = ["techcrunch.com","reuters.com","cnbc.com","coindesk.com","cointelegraph.com",
-      "theverge.com","axios.com","businessinsider.com","forbes.com","fortune.com","inc.com",
-      "venturebeat.com","theblock.co","decrypt.co","cryptoslate.com","finextra.com","pymnts.com",
-      "fintechfutures.com","crowdfundinsider.com","fintech.global","prnewswire.com","businesswire.com",
-      "globenewswire.com","sec.gov","gov.uk","europa.eu","crunchbase.com","pitchbook.com"];
-    if (openDomains.some(d => host.includes(d))) return "verified";
-    return "unverified";
-  } catch { return "unverified"; }
-}
-
-// Returns raw result objects (not text) for direct URL/date extraction
-async function tavilySearchRaw(query, key, n, maxAgeDays) {
+async function tavilyRaw(query, key, n, days) {
   if (!key) return [];
   try {
-    const body = {
-      api_key: key, query,
-      search_depth: "advanced",
-      max_results: (n||6)+3,
-      include_answer: false,
-      include_raw_content: false,
-      exclude_domains: BLOCKED_DOMAINS,
-    };
-    if (maxAgeDays) body.days = maxAgeDays;
-    const res = await fetch("https://api.tavily.com/search", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(()=>({}));
-      const errMsg = errBody.detail || errBody.message || errBody.error || ("HTTP "+res.status);
-      const isCredits = res.status === 429 || (typeof errMsg === "string" && (errMsg.toLowerCase().includes("credit") || errMsg.toLowerCase().includes("limit") || errMsg.toLowerCase().includes("quota")));
-      const isAuth = res.status === 401 || res.status === 403;
-      apiStatus.tavily.ok = false;
-      apiStatus.tavily.error = isCredits ? "OUT_OF_CREDITS" : isAuth ? "INVALID_KEY" : errMsg;
-      apiStatus.tavily.credits = isCredits ? "exhausted" : null;
-      console.warn("[TavilyRaw]", res.status, errMsg);
-      return [];
-    }
-    apiStatus.tavily.ok = apiStatus.tavily.ok !== false ? true : false;
-    apiStatus.tavily.searches += 1;
-    const data = await res.json();
-    const cutoff = maxAgeDays ? new Date(Date.now()-maxAgeDays*86400000) : null;
-    return (data.results||[]).filter(r => {
-      if (!r.url) return false;
-      const host = r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0];
-      if (BLOCKED_DOMAINS.some(d => host.includes(d))) return false;
-      if (!cutoff || !r.published_date) return true;
-      return new Date(r.published_date) >= cutoff;
-    });
+    const body = { api_key: key, query, max_results: n || 8, include_answer: false, include_raw_content: false, search_depth: "basic" };
+    if (days) body.days = days;
+    const res = await fetch("https://api.tavily.com/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) return [];
+    const d = await res.json();
+    return d.results || [];
   } catch { return []; }
 }
 
-// Global API status tracker — populated during runAnalysis, read by UI
-const apiStatus = {
-  proxycurl: { ok:null, peopleFound:0, error:null },
-  tavily: { ok: null, error: null, credits: null, searches: 0, results: 0 },
-};
-
-// ── Proxycurl — LinkedIn-licensed contact & company search ───────────────────
-
-// Employee search: find all employees at a company by domain
-// ── NinjaPear — B2B Company & Employee Intelligence ─────────────────────────
-async function njVerifyPerson(firstName, lastName, employerDomain, key, role) {
+async function njRole(role, domain, key) {
   if (!key) return null;
   try {
-    const params = { first_name: firstName, employer_website: "https://" + employerDomain };
-    if (lastName) params.last_name = lastName;
-    if (role) params.role = role;
-    const res = await fetch("/api/ninjapear", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "v1/employee/profile", key, params })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.full_name) return null;
-    console.log("[NinjaPear] Verified:", data.full_name);
-    return data;
-  } catch(e) { console.warn("[NinjaPear]", e.message); return null; }
-}
-
-async function njLookupByRole(role, employerDomain, key) {
-  if (!key) return null;
-  try {
-    const res = await fetch("/api/ninjapear", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "v1/employee/profile", key,
-        params: { employer_website: "https://" + employerDomain, role } })
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data.full_name) return null;
-    console.log("[NinjaPear] Role:", role, "->", data.full_name);
-    return data;
-  } catch(e) { return null; }
-}
-
-async function njEnrichCompany(domain, key) {
-  if (!key) return null;
-  try {
-    const res = await fetch("/api/ninjapear", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ endpoint: "v1/company/details", key,
-        params: { website: "https://" + domain, include_employee_count: "true" } })
-    });
+    const res = await fetch("/api/ninjapear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: "v1/employee/profile", params: { employer_website: "https://" + domain, role }, key }) });
     if (!res.ok) return null;
     const d = await res.json();
-    const hq = (d.addresses||[]).find(a=>a.is_primary)||(d.addresses||[])[0]||{};
-    return {
-      employees:   d.employee_count ? String(d.employee_count) : "",
-      revenue:     d.public_listing?.revenue_usd ? "$"+(d.public_listing.revenue_usd/1e9).toFixed(1)+"B" : "",
-      industry:    (d.specialties||[]).slice(0,3).join(", "),
-      hq:          [hq.city, hq.state].filter(Boolean).join(", "),
-      founded:     d.founded_year ? String(d.founded_year) : "",
-      funding:     "", tech_stack: [], linkedin: "",
-      description: d.description || "",
-      executives:  (d.executives||[]).map(e=>({ name:e.name, title:e.title, role:e.role })),
-      tagline:     d.tagline || "",
-      company_type: d.company_type || "",
-    };
-  } catch(e) { return null; }
+    return (d.first_name || d.full_name) ? d : null;
+  } catch { return null; }
 }
 
-function njProfileToContact(profile, company, source) {
-  if (!profile || !profile.full_name) return null;
-  const currentJob = (profile.work_experience||[]).find(e => !e.end_date);
-  return {
-    first_name: profile.first_name || "",
-    last_name:  profile.last_name  || "",
-    title:      currentJob?.role || "",
-    email: "", linkedin_url: "",
-    twitter:    profile.x_profile_url || "",
-    city: profile.city || "", country: profile.country || "",
-    departments: [currentJob?.role || ""],
-    source: source || "ninjapear",
-    organization: { name: company },
-  };
-}
-
-// Strip invalid Unicode characters (surrogates, null bytes) that break JSON
-function sanitizeForAPI(str) {
-  if (!str) return "";
+async function njCompany(domain, key) {
+  if (!key) return null;
   try {
-    // Most reliable: JSON roundtrip catches all bad chars
-    return JSON.parse(JSON.stringify(str
-      .replace(/[\uD800-\uDFFF]/g, "")
-      .replace(/\u0000/g, "")
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
-    )).slice(0, 80000);
-  } catch {
-    // Fallback: strip aggressively
-    return str.replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\uD7FF\uE000-\uFFFD]/g, "").slice(0, 80000);
-  }
+    const res = await fetch("/api/ninjapear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: "v1/company/details", params: { website: "https://" + domain }, key }) });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const hq = (d.addresses || []).find(a => a.is_primary) || (d.addresses || [])[0] || {};
+    return { employees: d.employee_count ? String(d.employee_count) : "", hq: [hq.city, hq.country].filter(Boolean).join(", "), executives: d.executives || [] };
+  } catch { return null; }
 }
 
-// ─── Main Analysis ────────────────────────────────────────────────────────────
+function profileToContact(p, source) {
+  if (!p) return null;
+  const name = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(" ");
+  if (!name) return null;
+  const job = (p.work_experience || []).find(e => !e.end_date);
+  return { name, title: job?.role || p.role || "", category: "Influencer", verified_source: "ninjapear", verification_confidence: "HIGH", why_target: "Key executive", outreach_angle: "Direct executive outreach", source };
+}
+
 async function runAnalysis(company, onStep, keys) {
-  const { tavily:tKey, ninjapear:njKey } = keys;
-  const domain = company.toLowerCase().replace(/[^a-z0-9]/g,"") + ".com";
-  const now = new Date().toISOString();
-  // Reset API status for this run
-  apiStatus.tavily = { ok:null, error:null, credits:null, searches:0, results:0 };
-  apiStatus.proxycurl = { ok:null, peopleFound:0, error:null };
-    const today = new Date();
-  const yr = today.getFullYear();
-  const todayStr = today.toDateString();
-  const SYS = "You are a senior fintech sales intelligence expert for CoinPayments (crypto payment infrastructure: 2000+ coins, white-label, global merchant tools, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown fences. Start with { end with }. Keep string values under 35 words. For ARR projections: always use bottoms-up math starting from known user counts or GMV, apply 3-8% crypto adoption, apply 0.5-1% take rate. Be conservative — most deals are $50K-$500K ARR. Never inflate numbers.";
+  const { tavily: tKey, ninjapear: njKey } = keys;
+  const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
+  const todayStr = new Date().toDateString();
+  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (2000+ cryptos, white-label, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: use bottoms-up math, be conservative ($50K-$500K typical range).";
 
-  // Phase 0a: Tavily live research
-  let liveCtx = "";
-  let newsCtx = "";
-  let rawNewsArticles = []; // store raw Tavily result objects for URL extraction
+  // Phase 0a — News
+  let ctx = "";
+  let rawNews = [];
   if (tKey) {
-    onStep("🌐 Live web research: "+company+"...");
-    const NEWS_DAYS = 180;
-
-    // Run 7 targeted searches — Tavily days param does the date filtering
-    onStep("📡 Searching news for "+company+"...");
-    const searches = await Promise.all([
-      // 6 targeted searches — specific angles most likely to reveal actionable intelligence
-      tavilySearchRaw(company+" partnership deal integration announcement 2025 2026",         tKey, 8, NEWS_DAYS),
-      tavilySearchRaw(company+" stablecoin blockchain crypto remittance payments 2025 2026",  tKey, 8, NEWS_DAYS),
-      tavilySearchRaw(company+" banking sponsor Bancorp Stride Evolve program 2025 2026",     tKey, 6, NEWS_DAYS),
-      tavilySearchRaw(company+" product launch expansion regulation compliance 2025 2026",    tKey, 6, NEWS_DAYS),
-      tavilySearchRaw(company+" funding valuation revenue growth metrics 2025 2026",          tKey, 6, NEWS_DAYS),
-      tavilySearchRaw(company+" executive hire strategy international 2025 2026",             tKey, 6, NEWS_DAYS),
+    onStep("🌐 Searching live news...");
+    const results = await Promise.all([
+      tavilyRaw(company + " partnership deal integration 2025 2026", tKey, 8, 180),
+      tavilyRaw(company + " crypto blockchain stablecoin payments 2025 2026", tKey, 8, 180),
+      tavilyRaw(company + " funding expansion product launch 2025 2026", tKey, 6, 180),
+      tavilyRaw(company + " executive strategy international 2025 2026", tKey, 6, 180),
     ]);
-
-    // Merge all raw results, deduplicate by URL AND by headline similarity
-    const seenUrls = new Set();
-    const seenTitles = new Set();
-    for (const results of searches) {
-      for (const r of (results||[])) {
-        // Normalize title for dedup — strip dates and punctuation
-        const titleKey = (r.title||"").toLowerCase().replace(/[^a-z0-9 ]/g,"").replace(/20[0-9]{2}/g,"").trim().slice(0,60);
-        if (seenTitles.has(titleKey)) continue;
-        seenTitles.add(titleKey);
-        if (!r.url || seenUrls.has(r.url)) continue;
-        // Skip blocked domains
-        const host = r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0];
-        if (BLOCKED_DOMAINS.some(d => host.includes(d))) continue;
-        seenUrls.add(r.url);
-        rawNewsArticles.push(r);
+    const seenU = new Set(), seenT = new Set();
+    for (const arr of results) {
+      for (const r of arr) {
+        const tk = (r.title || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50);
+        if (seenT.has(tk) || !r.url || seenU.has(r.url)) continue;
+        const host = r.url.replace(/https?:\/\/(www\.)?/, "").split("/")[0];
+        if (BLOCKED.some(d => host.includes(d))) continue;
+        seenT.add(tk); seenU.add(r.url); rawNews.push(r);
       }
     }
-
-    // Sort by published_date descending
-    rawNewsArticles.sort((a,b) => {
-      const da = a.published_date ? new Date(a.published_date) : new Date(0);
-      const db = b.published_date ? new Date(b.published_date) : new Date(0);
-      return db - da;
-    });
-
-    // Build context string from top articles
-    if (rawNewsArticles.length) {
-      newsCtx = "=== LIVE NEWS RESULTS for "+company+" ("+rawNewsArticles.length+" articles found, scraped "+todayStr+") ===\n";
-      newsCtx += "Today is "+todayStr+". All articles below were returned by web search with a 6-month date filter.\n\n";
-      rawNewsArticles.slice(0,20).forEach((r, i) => {
-        newsCtx += (i+1)+". TITLE: "+r.title+"\n";
-        newsCtx += "   URL: "+r.url+"\n";
-        newsCtx += "   DATE: "+(r.published_date||"date unknown")+"\n";
-        newsCtx += "   SOURCE: "+r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0]+"\n";
-        newsCtx += "   CONTENT: "+(r.content||"").slice(0,400)+"\n\n";
-      });
-      newsCtx += "=== END NEWS ===\n\n";
-      newsCtx = sanitizeForAPI(newsCtx);
-    }
-
-    // Build general live context for other fields
-    // Use news results for exec/financials context too — avoid duplicate calls
-    if (newsCtx) {
-      liveCtx = "=== LIVE DATA — "+todayStr+" — override training knowledge ===\n\n";
-      liveCtx += newsCtx;
-      liveCtx += "=== END LIVE DATA ===\n\n";
+    rawNews.sort((a, b) => new Date(b.published_date || 0) - new Date(a.published_date || 0));
+    if (rawNews.length) {
+      ctx = "=== LIVE NEWS for " + company + " (" + todayStr + ") ===\n";
+      rawNews.slice(0, 12).forEach((r, i) => { ctx += (i + 1) + ". " + r.title + "\n   " + r.url + "\n   " + (r.published_date || "") + "\n   " + (r.content || "").slice(0, 250) + "\n\n"; });
+      ctx += "=== END NEWS ===\n\n";
+      ctx = sanitize(ctx);
     }
   }
 
-    // Phase 0b: NinjaPear — company enrichment + role-based contact discovery
-  let apolloContacts = [];
-  let apolloCo = null;
-
+  // Phase 0b — NinjaPear
+  onStep("🎯 Finding executives via NinjaPear...");
+  var contacts = [];
+  var coInfo = null;
   if (njKey) {
-    onStep("🎯 NinjaPear: enriching " + company + "...");
-    const KEY_ROLES = [
-      "CMO","CPO","CTO","CEO","COO","CFO",
-      "VP Product","VP Payments","VP Partnerships",
-      "VP Growth","VP Engineering","Head of Business Development",
-    ];
-    const [coData, ...rolePeople] = await Promise.all([
-      njEnrichCompany(domain, njKey),
-      ...KEY_ROLES.map(role => njLookupByRole(role, domain, njKey))
-    ]);
-    apolloCo = coData;
-
-    const execsFromDetails = (coData?.executives||[]).map(e => ({
-      first_name: (e.name||"").split(" ")[0],
-      last_name:  (e.name||"").split(" ").slice(1).join(" "),
-      title: e.title || e.role || "",
-      email: "", linkedin_url: "", twitter: "",
-      city: "", country: "", departments: [e.role||""],
-      source: "ninjapear_exec", organization: { name: company },
-    }));
-
-    const roleContacts = rolePeople
-      .map((p,i) => p ? njProfileToContact(p, company, "ninjapear_" + KEY_ROLES[i]) : null)
-      .filter(Boolean);
-
+    const ROLES = ["CEO", "CMO", "CPO", "CTO", "COO", "CFO", "VP Product", "VP Payments", "VP Partnerships", "VP Growth", "VP Engineering", "Head of Business Development"];
+    const [co, ...people] = await Promise.all([njCompany(domain, njKey), ...ROLES.map(r => njRole(r, domain, njKey))]);
+    coInfo = co;
     const seen = new Set();
-    for (const p of [...execsFromDetails, ...roleContacts]) {
-      const k = (p.first_name||"").toLowerCase();
-      if (k && !seen.has(k)) { seen.add(k); apolloContacts.push(p); }
+    for (const p of people) {
+      const c = profileToContact(p, "ninjapear");
+      if (c && !seen.has(c.name.toLowerCase())) { seen.add(c.name.toLowerCase()); contacts.push(c); }
     }
-
-    if (apolloContacts.length) {
-      liveCtx += "=== NINJAPEAR CONTACTS for " + company + " ===\n"; liveCtx = sanitizeForAPI(liveCtx);
-      apolloContacts.forEach((p,i) => {
-        const name = [p.first_name,p.last_name].filter(Boolean).join(" ");
-        liveCtx += (i+1)+". "+name+" | "+(p.title||"")+"\n";
-      });
-      liveCtx += "=== END NINJAPEAR ===\n\n";
-    }
-    if (apolloCo) {
-      liveCtx += "=== COMPANY DATA ===\nEmployees:"+apolloCo.employees+
-        " Industry:"+apolloCo.industry+" HQ:"+apolloCo.hq+
-        " Founded:"+apolloCo.founded+"\n"+apolloCo.description+"\n=== END ===\n\n";
+    if (contacts.length || coInfo) {
+      if (coInfo) ctx += "COMPANY DATA: employees=" + (coInfo.employees || "?") + " hq=" + (coInfo.hq || "?") + "\n";
+      if (contacts.length) { ctx += "NINJAPEAR CONTACTS:\n"; contacts.forEach((c, i) => { ctx += (i + 1) + ". " + c.name + " | " + c.title + "\n"; }); ctx += "\n"; }
     }
   }
 
-// Phase 0c: Deep people scraping — designed to surface VPs, Directors, mid-level leaders
-  let conferenceContacts = [];
-  let conferenceCtx = "";
+  // Phase 0c — Scraping
   if (tKey) {
-    onStep("🔍 Scraping people intelligence for " + company + "...");
-
-    // Strategy: cast a wide net with many specific query types.
-    // We want to find people like: CMO, CPO, CTO, VPs of Product/Payments/Growth/Partnerships,
-    // Directors, and mid-level leaders who appear in press, blogs, podcasts, LinkedIn, job postings.
-
-    // Also run a dedicated partnership search to supplement NinjaPear company data
-    const partnerSearch = tKey ? tavilySearchRaw(
-      company + " partner integrated with powered by built on works with API 2024 2025", tKey, 8, 730
-    ) : Promise.resolve([]);
-
-    const [rPartners, rPeople1, rPeople2, rPeople3, rPeople4, rPeople5] = await Promise.all([
-      partnerSearch,
-      // 1. Press quotes + LinkedIn profiles — highest yield for named individuals
-      tavilySearchRaw(company + " VP Director Head Chief executive said linkedin.com/in 2024 2025", tKey, 10, 730),
-      // 2. Conference speakers + podcast guests — confirms real people publicly
-      tavilySearchRaw(company + " speaker panelist keynote podcast guest interview conference 2024 2025", tKey, 8, 730),
-      // 3. Forbes/TechCrunch/Crunchbase exec listings — surfaces leadership team
-      tavilySearchRaw(company + " executive leadership team crunchbase profile Forbes 2024 2025", tKey, 8, 730),
-      // 4. Blog authors + press release bylines — finds mid-level leaders
-      tavilySearchRaw(company + " author written by blog newsroom product payments team 2024 2025", tKey, 6, 730),
-      // 5. Job postings mentioning managers — surfaces Directors and below
-      tavilySearchRaw(company + " hiring reports to director head of job description 2025", tKey, 6, 365),
+    onStep("🔍 Scraping executive mentions...");
+    const [r1, r2, r3] = await Promise.all([
+      tavilyRaw(company + " VP Director executive said linkedin.com 2024 2025", tKey, 10, 730),
+      tavilyRaw(company + " speaker podcast interview conference keynote 2024 2025", tKey, 8, 730),
+      tavilyRaw(company + " Bancorp Stride Evolve Visa stablecoin partner integration", tKey, 6, 365),
     ]);
-
-    // Merge and deduplicate by URL
-    // Extract partnership signals before merging into people pool
-    const partnerCtx = (rPartners||[]).slice(0,6).map(r =>
-      r.title + " | " + (r.content||"").slice(0,300)
-    ).join("\n");
-    if (partnerCtx) liveCtx += "=== PARTNERSHIP SIGNALS ===\n" + partnerCtx + "\n=== END ===\n\n";
-
-    const seenU = new Set();
-    const allRaw = [rPeople1, rPeople2, rPeople3, rPeople4, rPeople5].flat()
-      .filter(r => r && r.url && !seenU.has(r.url) && seenU.add(r.url));
-
+    const allRaw = [...r1, ...r2].filter(Boolean);
     if (allRaw.length) {
-      onStep("📋 Extracting names from " + allRaw.length + " sources for " + company + "...");
-
-      // Send ALL content to Claude for extraction — include full snippets
-      const extractText = allRaw.slice(0, 20).map((r, i) =>
-        (i+1) + ". URL: " + r.url + "\n" +
-        "   TITLE: " + r.title + "\n" +
-        "   DATE: " + (r.published_date || "") + "\n" +
-        "   TEXT: " + (r.content || "").slice(0, 500)
-      ).join("\n\n");
-
-      const extractPrompt = [
-        "Extract every real named person who works or worked at " + company + " from the sources below.",
-        "",
-        "WHAT TO LOOK FOR:",
-        "- Press quotes: 'said [Name], [Title] at " + company + "'",
-        "- Blog bylines: 'By [Name]' or 'Written by [Name]'",
-        "- Podcast guests: '[Name] from " + company + "'",
-        "- LinkedIn profiles: any linkedin.com/in/ URL with " + company + " in content",
-        "- Conference bios: '[Name], VP of X at " + company + "'",
-        "- News mentions: '[Name], who leads X at " + company + "'",
-        "- Job postings: 'hiring manager', 'reports to [Name]'",
-        "- Executive listings on crunchbase, tracxn, company websites",
-        "",
-        "FOR EACH PERSON FOUND:",
-        "- name: their full name",
-        "- title: exact title as written in the source",
-        "- source_type: how you found them (press_quote / blog_author / podcast_guest / linkedin / conference / news_mention / exec_listing / job_posting)",
-        "- source_url: the URL it came from",
-        "- context: one sentence — what they said or did",
-        "- appearances: count how many of the 20 sources mention this same person",
-        "",
-        "DO NOT include people from other companies.",
-        "DO NOT invent people not explicitly named in the text below.",
-        "If you find fewer than 3 people, that is fine — only include real finds.",
-        "",
-        "SOURCES:",
-        extractText,
-        "",
-        'Output ONLY a JSON array: [{"name":"Full Name","title":"role","source_type":"type","source_url":"url","context":"what they did","appearances":1}]'
-      ].join("\n");
-
-      const rawExt = await callAPI(
-        "Extract named employees from source text. Output ONLY a JSON array starting with [. Never invent names.",
-        extractPrompt, 3000
-      );
-
+      const txt = allRaw.slice(0, 15).map((r, i) => (i + 1) + ". " + r.title + "\n" + (r.content || "").slice(0, 300)).join("\n\n");
+      onStep("📋 Extracting names from scraped data...");
       try {
-        let extracted = [];
-        const s = rawExt.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-        if (s.startsWith("[")) extracted = JSON.parse(s);
-        else { try { const p = parseJSON(s); extracted = Array.isArray(p) ? p : []; } catch {} }
-
-        // Deduplicate by normalized name, keep highest appearances
-        const nameMap = new Map();
-        for (const p of extracted) {
-          if (!p.name || p.name.length < 4) continue;
-          const k = p.name.toLowerCase().trim();
-          const ex = nameMap.get(k);
-          if (!ex || (p.appearances || 1) > (ex.appearances || 1)) nameMap.set(k, p);
+        const extRaw = await callAPI("Extract named employees. Output ONLY a JSON array. Never invent names.", "Find every real named person working at " + company + " from these sources. Output ONLY [{\"name\":\"Full Name\",\"title\":\"role\"}]. DO NOT include people from other companies.\n\n" + txt, 1500);
+        let es = extRaw.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+        if (es.startsWith("[")) {
+          const extracted = JSON.parse(es);
+          const existing = new Set(contacts.map(c => c.name.toLowerCase()));
+          for (const e of extracted) {
+            if (e.name && e.name.length > 3 && !existing.has(e.name.toLowerCase())) {
+              contacts.push({ name: e.name, title: e.title || "", category: "Influencer", verified_source: "scraped", verification_confidence: "MEDIUM", why_target: "Mentioned in public sources", outreach_angle: "Referenced in press/events" });
+              existing.add(e.name.toLowerCase());
+            }
+          }
         }
-        conferenceContacts = Array.from(nameMap.values());
-      } catch { conferenceContacts = []; }
-
-      if (conferenceContacts.length) {
-        conferenceCtx = "=== SCRAPED PEOPLE at " + company + " (" + conferenceContacts.length + " found) ===\n\n";
-        conferenceContacts.forEach((p, i) => {
-          conferenceCtx += (i+1) + ". " + p.name + " | " + (p.title || "unknown") +
-            " | " + (p.source_type || "web") +
-            (p.context ? " | " + p.context : "") + "\n";
-        });
-        conferenceCtx += "\n=== END SCRAPED PEOPLE ===\n\n";
-        liveCtx += conferenceCtx;
-      }
+      } catch {}
     }
+    if (r3.length) { ctx += "PARTNER SIGNALS:\n" + r3.slice(0, 4).map(r => r.title + ": " + (r.content || "").slice(0, 150)).join("\n") + "\n\n"; }
   }
 
-  // Phase 1: Core intelligence
-  onStep("📊 Building intelligence report (1/4)...");
-  const raw1 = await callAPI(SYS, sanitizeForAPI(liveCtx)+
-    "Analyze \""+company+"\" as a CoinPayments prospect. Today: "+todayStr+". "+
-    "Rules: (1) Use live data to override stale training. (2) If live data shows an event completed, say completed. "+
-    "Output ONLY JSON:\n"+
-    JSON.stringify({
-      company, segment:"Neo-Bank/Challenger Bank|Traditional Bank/FI|Payments Processor|Remittance/FX|Wealth Management/Brokerage|Insurance/Insurtech|Lending/Credit|Payroll/HCM|B2B Fintech Platform|Card Network/Issuer|Other Financial Services",
-      analyzedAt:now, hq:"city, country", website:"url", employees:"count", revenue:"estimate",
-      executive_summary:"3-sentence CoinPayments opportunity",
-      tam_som_arr:{
-        tam_usd:"total addressable market in $X format — all payments volume this company could ever touch",
-        som_usd:"serviceable obtainable market — realistic crypto/blockchain payments slice CoinPayments can win",
-        methodology:"bottoms-up: start from company user count or GMV, apply realistic crypto adoption rate (3-8% of users), apply CoinPayments take rate (0.5-1% of volume), arrive at ARR. DO NOT extrapolate from TAM. BE CONSERVATIVE.",
-        assumptions:"list 3 key assumptions used e.g. X% crypto adoption, $Y avg transaction, Z% CoinPayments take rate",
-        likely_arr_usd:"CONSERVATIVE annual recurring revenue for CoinPayments — typically $50K-$500K for mid-size fintechs, $500K-$2M for large fintechs, NEVER exceed $5M without explicit justification",
-        upside_arr_usd:"optimistic scenario ARR if crypto adoption accelerates — max 2-3x the conservative figure",
-        reasoning:"2-sentence bottoms-up explanation referencing actual user count or GMV figures"
-      },
-      key_contacts:[], // populated separately from scraped sources
+  // Phase 1 — Core intelligence
+  onStep("🧠 Claude core analysis...");
+  const p1raw = await callAPI(SYS, sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": { \"tam_usd\": \"$X\", \"som_usd\": \"$X\", \"likely_arr_usd\": \"$X conservative\", \"upside_arr_usd\": \"$X optimistic\", \"methodology\": \"1 sentence\", \"assumptions\": [\"assumption 1\", \"assumption 2\"], \"reasoning\": \"2 sentences\" },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}", 7000);
+  const p1 = parseJSON(p1raw);
 
-      intent_data:[{contact:"name",signal:"signal",source:"source",date:"date",strength:"High|Medium|Low"}],
-      partnerships:[{
-        partner:"exact company name e.g. The Bancorp Bank / Stride Bank / Galileo / Plaid / Early Warning / Visa",
-        type:"Sponsor Bank|Core Banking|Card Processing|Payment Rails|Identity/KYC|Compliance|Distribution|Technology",
-        what_they_provide:"specific services this partner provides to the company e.g. FDIC-insured deposit accounts, debit card issuing, ACH rails",
-        annual_value:"$X estimated if known",
-        since:"year if known",
-        dependency:"Critical|Important|Supplementary",
-        cp_angle:"specific CoinPayments opportunity — does CP complement, compete with, or integrate via this partner"
-      }],
-      geography:{markets:["list"],expansions:["recent"],crypto_licensed:["list"],missing_us:true,gaps:"narrative"},
-      incumbent:{name:"provider or None",annual_cost:"$X",cp_saving:"$X",weaknesses:"why CP wins"},
-      missed_opportunity:{
-        headline:"one punchy sentence — what opportunity is being lost right now",
-        crypto_addressable_customers:"XX% of their Xm users likely crypto-curious based on demographics",
-        revenue_at_risk:"$XM/yr — what they are leaving on the table",
-        competitor_threat:"which competitor (e.g. Revolut, Cash App, PayPal) is already capturing these users and how",
-        market_stat_1:"specific industry stat e.g. 40m Americans own crypto but cant spend it at checkout",
-        market_stat_2:"specific fintech trend stat relevant to this company e.g. Revolut grew 45% in 2024 on crypto features",
-        market_stat_3:"specific stat about the pain e.g. $X bn in cross-border remittance fees paid annually by this demographic",
-        narrative:"5-sentence analytical argument — name specific competitors stealing these customers, cite real demographic trends, quantify the revenue gap, explain why this company is uniquely exposed, close with why CoinPayments solves it now",
-        urgency:"High|Medium|Low",
-        urgency_reason:"specific trigger — regulatory window, competitor move, product gap, or market timing"
-      },
-      crm:{company,segment:"",industry:"",hq:"",website:"",employees:"",revenue:"",stage:"Prospecting",deal_value:"",next_action:"Schedule discovery call",notes:""},
-      alert_keywords:["kw1","kw2","kw3","kw4","kw5"],
-      recent_news:[],
-    }, null, 2), 7000);
+  // Merge contacts
+  p1.key_contacts = contacts.length > 0 ? contacts : (p1.key_contacts || []);
 
-  // Parse p1 immediately so Phase 1c can use it
-  const p1 = parseJSON(raw1);
-
-  // Phase 1b: Build news directly from raw Tavily articles (no Claude extraction needed)
-  onStep("📰 Processing news articles (2/4)...");
-
-  let parsedNews = { recent_news: [] };
-
-  if (rawNewsArticles.length) {
-    // Map Tavily results directly to news items — no Claude needed for this step
-    // Ask Claude only to add category + relevance, using exact Tavily data for everything else
-    const articleList = rawNewsArticles.slice(0,15).map((r,i) =>
-      (i+1)+". "+r.title+" | "+r.url+" | "+(r.published_date||"") +" | "+ (r.content||"").slice(0,200)
-    ).join("\n");
-
-    const categorizationPrompt =
-      "For each article below about "+company+", output ONLY a JSON array of objects with these fields.\n"+
-      "Use the EXACT title, URL and date from the article — do not change them.\n"+
-      "Only add category and relevance fields yourself.\n"+
-      "Include ALL articles — do not filter any out.\n"+
-      "Output ONLY a JSON array starting with [ ending with ].\n\n"+
-      "Articles:\n"+articleList+"\n\n"+
-      "JSON schema per item: {\"idx\":1,\"headline\":\"exact title\",\"url\":\"exact url\",\"date\":\"exact date\",\"source\":\"domain\",\"category\":\"IPO|Funding|Crypto|Payments|Blockchain|Stablecoin|Licensing|Regulatory|Merchant|Cross-Border|Executive|Partnership|Product Launch|Acquisition\",\"summary\":\"1 sentence from content\",\"relevance\":\"why relevant to CoinPayments pitch\"}";
-
-    const rawCat = await callAPI(
-      "You categorize news articles. Output ONLY a valid JSON array starting with [ ending with ]. No markdown.",
-      categorizationPrompt, 2000
-    );
-
-    let items = [];
+  // Phase 1b — News categories
+  if (rawNews.length > 0) {
+    onStep("📰 Categorizing news...");
     try {
-      let s = rawCat.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
-      if (s.startsWith("[")) items = JSON.parse(s);
-      else { const p = parseJSON(s); items = Array.isArray(p) ? p : (p.recent_news||[]); }
-    } catch { items = []; }
-
-    // Map back to our news format, using rawNewsArticles as source of truth for URLs/dates
-    const cutoff = new Date(Date.now()-180*86400000);
-    parsedNews.recent_news = rawNewsArticles.slice(0,15).map((r, i) => {
-      const cat = items.find(c => c.idx===i+1 || (c.url&&c.url===r.url) || (c.headline&&r.title&&c.headline.slice(0,30)===r.title.slice(0,30)));
-      return {
-        headline: r.title,
-        url: r.url,
-        date: r.published_date || (cat&&cat.date) || "Recent",
-        source: r.url.replace("https://","").replace("http://","").replace("www.","").split("/")[0],
-        category: (cat&&cat.category) || "General",
-        summary: (cat&&cat.summary) || (r.content||"").slice(0,150),
-        relevance: (cat&&cat.relevance) || "Relevant to CoinPayments pitch",
-        url_status: checkUrl(r.url),
-      };
-    }).filter(n => {
-      if (!n.date || n.date==="Recent") return true;
-      const d = new Date(n.date);
-      return isNaN(d.getTime()) || d >= cutoff;
-    });
-  }
-
-  // Phase 1c: Build contact list FROM SCRAPED DATA ONLY — then enrich with Claude
-  onStep("🔍 Building verified contact list...");
-
-  // ── Step A: Assemble candidate pool from real sources only ─────────────────
-  const candidatePool = []; // {name, title, email, linkedin, source, conference, context, verified_source, verification_confidence}
-
-  // Add conference-verified people (highest confidence)
-  for (const p of conferenceContacts) {
-    candidatePool.push({
-      name: p.name,
-      title: p.title || "",
-      email: "",
-      linkedin: "",
-      source_url: p.source_url || "",
-      conference: p.conference || "",
-      year: p.year || "",
-      context: p.context || "",
-      verified_source: "conference",
-      verification_confidence: "HIGH",
-    });
-  }
-
-  // Add Apollo contacts (high confidence — real DB records)
-  for (const a of apolloContacts) {
-    const fullName = [a.first_name, a.last_name].filter(Boolean).join(" ");
-    if (!fullName) continue;
-    // Check if already in pool from conference
-    const existing = candidatePool.find(c =>
-      c.name.toLowerCase() === fullName.toLowerCase()
-    );
-    if (existing) {
-      // Upgrade: this person is in BOTH conference + PDL
-      existing.verified_source = "conference+proxycurl";
-      existing.verification_confidence = "VERY HIGH";
-      if (a.email) existing.email = a.email;
-      if (a.linkedin_url) existing.linkedin = a.linkedin_url;
-    } else {
-      candidatePool.push({
-        name: fullName,
-        title: a.title || "",
-        email: a.email || "",
-        linkedin: a.linkedin_url || "",
-        source_url: "",
-        conference: "",
-        year: "",
-        context: "",
-        department: (a.departments||[])[0] || "",
-        location: [a.city, a.state, a.country].filter(Boolean).join(", "),
-        seniority: a.seniority || "",
-        verified_source: "proxycurl",
-        verification_confidence: "HIGH",
+      const articleList = rawNews.slice(0, 10).map((r, i) => (i + 1) + ". " + r.title + " (" + (r.published_date || "") + ")\n   " + (r.content || "").slice(0, 180)).join("\n\n");
+      const catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000);
+      let cs = catRaw.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
+      const cats = cs.startsWith("[") ? JSON.parse(cs) : [];
+      p1.recent_news = rawNews.slice(0, 10).map((r, i) => {
+        const cat = cats.find(c => c.idx === i + 1);
+        return { title: r.title, url: r.url, date: r.published_date || "", source: r.url.replace(/https?:\/\/(www\.)?/, "").split("/")[0], category: cat?.category || "Other", summary: cat?.summary || "", cp_relevance: cat?.cp_relevance || "" };
       });
-    }
+    } catch { p1.recent_news = rawNews.slice(0, 6).map(r => ({ title: r.title, url: r.url, date: r.published_date || "", source: r.url.split("/")[2] || "" })); }
   }
 
-  // ── Step B: NinjaPear verification of scraped candidates ──────────────────
-  if (njKey && candidatePool.length) {
-    onStep("🎯 NinjaPear: verifying " + Math.min(candidatePool.length,8) + " scraped contacts...");
-    const njChecks = await Promise.all(
-      candidatePool.slice(0,8).map(c => {
-        const parts = (c.name||"").trim().split(" ");
-        return parts[0] ? njVerifyPerson(parts[0], parts.slice(1).join(" "), domain, njKey) : Promise.resolve(null);
-      })
-    );
-    candidatePool.slice(0,8).forEach((c,i) => {
-      const nj = njChecks[i];
-      if (nj) {
-        c.web_confirmed = true;
-        c.verification_confidence = "HIGH";
-        c.verified_source = c.verified_source === "conference" ? "conference+ninjapear" : "ninjapear";
-        const currentJob = (nj.work_experience||[]).find(e => !e.end_date);
-        if (currentJob?.role && !c.title) c.title = currentJob.role;
-        if (nj.x_profile_url) c.twitter = nj.x_profile_url;
-      } else if (c.verified_source === "conference") {
-        c.web_confirmed = true;
-        c.verification_confidence = "MEDIUM";
-      }
-    });
-  } else if (tKey && candidatePool.length) {
-    onStep("🔎 Web-verifying contacts...");
-    const webChecks = await Promise.all(
-      candidatePool.slice(0,8).map(c => tavilySearchRaw('"'+ c.name +'" '+ company, tKey, 3, 730))
-    );
-    candidatePool.slice(0,8).forEach((c,i) => {
-      const results = webChecks[i]||[];
-      if (!results.length) return;
-      const allText = results.map(r=>(r.title||"")+" "+(r.content||"")).join(" ").toLowerCase();
-      const nameFirst=(c.name.split(" ")[0]||"").toLowerCase();
-      const nameLast=(c.name.split(" ").slice(-1)[0]||"").toLowerCase();
-      if (allText.includes(nameFirst)&&allText.includes(nameLast)&&allText.includes(company.toLowerCase())) {
-        c.web_confirmed = true; c.verification_confidence = "MEDIUM";
-      }
-    });
-  }
-  // ── Step C: Enrich confirmed contacts with CoinPayments sales intelligence ─
-  const verifiedForEnrichment = candidatePool
-    .filter(c => c.web_confirmed || c.verified_source === "conference+proxycurl" ||
-                 c.verified_source === "conference" || c.verified_source === "proxycurl")
-    .slice(0, 12);
+  // Phase 2 — Competitive + GTM (parallel)
+  onStep("⚔️ Competitive analysis & GTM plan...");
+  const [p2raw, p3raw] = await Promise.all([
+    callAPI(SYS, "Build competitive comparison for CoinPayments vs " + company + "'s likely incumbent.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"rating + 1 sentence\"").join(",") + "},\"incumbent\":{\"name\":\"provider name\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"rating + 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence CP positioning\"}", 3000),
+    callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
+  ]);
 
-  let enrichedContacts = [];
-  if (verifiedForEnrichment.length) {
-    const enrichPrompt = [
-      "Company: " + company + ". Today: " + todayStr + ".",
-      "These " + verifiedForEnrichment.length + " people are VERIFIED employees at " + company + ".",
-      "For each, add ONLY: category, cp_relevance, why_target, outreach_angle.",
-      "DO NOT change names, titles, emails, linkedin URLs, or any other field.",
-      "Rank them 1-" + verifiedForEnrichment.length + " by value to a CoinPayments crypto payments pitch.",
-      "",
-      "People to enrich:",
-      verifiedForEnrichment.map((c,i) =>
-        (i+1)+". "+c.name+" | "+c.title+(c.conference?" | Seen at: "+c.conference:"")+(c.context?" | Context: "+c.context:"")
-      ).join("\n"),
-      "",
-      "Output ONLY a JSON array:",
-      '[{"name":"exact name as given","category":"Economic Buyer|Champion|Influencer|Technical Buyer|Blocker","cp_relevance":"1 sentence why CP should target","why_target":"decision power + pain point","outreach_angle":"specific hook","priority":1}]'
-    ].join("\n");
-    const rawEnrich = await callAPI(
-      "You add sales context to verified contacts. Output ONLY a valid JSON array [ ]. Never change names or add new people.",
-      enrichPrompt, 2000
-    );
+  try { const p2 = parseJSON(p2raw); p1.competitive_comparison = p2.competitive_comparison; p1.positioning_statement = p2.positioning_statement; } catch {}
+  try { const p3 = parseJSON(p3raw); p1.attack_plan = p3.attack_plan; } catch {}
 
-    let enrichArr = [];
-    try {
-      const s = rawEnrich.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
-      if (s.startsWith("[")) enrichArr = JSON.parse(s);
-      else { try { const p = parseJSON(s); enrichArr = Array.isArray(p)?p:[]; } catch {} }
-    } catch { enrichArr = []; }
-
-    // Merge enrichment back onto verified pool
-    enrichedContacts = verifiedForEnrichment.map((c, i) => {
-      const enr = enrichArr.find(e => e.name && c.name &&
-        e.name.toLowerCase().split(" ")[0] === c.name.toLowerCase().split(" ")[0]
-      ) || enrichArr[i] || {};
-      return {
-        priority: enr.priority || (i + 1),
-        name: c.name,
-        title: c.title,
-        category: enr.category || "Influencer",
-        cp_relevance: enr.cp_relevance || "",
-        location: c.location || "",
-        email: c.email || "",
-        linkedin: c.linkedin || "",
-        twitter: "none",
-        conferences: c.conference ? [c.conference + (c.year ? " " + c.year : "")] : [],
-        why_target: enr.why_target || "",
-        outreach_angle: enr.outreach_angle || "",
-        intent_signals: c.context || "",
-        verified_source: c.verified_source,
-        verification_confidence: c.verification_confidence,
-        web_confirmed: c.web_confirmed || false,
-      };
-    });
-
-    // Sort by priority
-    enrichedContacts.sort((a, b) => (a.priority||9) - (b.priority||9));
-    enrichedContacts.forEach((c, i) => { c.priority = i + 1; });
-  }
-
-  // Add any unverified-but-not-disproven Apollo contacts as lower-priority entries
-  const lowConfidence = candidatePool
-    .filter(c => !verifiedForEnrichment.includes(c) && (c.verified_source === "proxycurl" || c.verified_source === "conference"))
-    .slice(0, 4)
-    .map((c, i) => ({
-      priority: enrichedContacts.length + i + 1,
-      name: c.name,
-      title: c.title,
-      category: "Influencer",
-      cp_relevance: "Proxycurl — web verification inconclusive",
-      location: c.location || "",
-      email: c.email || "",
-      linkedin: c.linkedin || "",
-      twitter: "none",
-      conferences: [],
-      why_target: "Identified via Proxycurl — research role before outreach",
-      outreach_angle: "Research their current priorities before reaching out",
-      intent_signals: "Proxycurl record — not yet web-verified",
-      verified_source: "proxycurl_unverified",
-      verification_confidence: "LOW",
-      web_confirmed: false,
-    }));
-
-  // ── Fallback: if scraping found nothing, ask Claude with strict sourcing rules ──
-  if (enrichedContacts.length === 0 && lowConfidence.length === 0) {
-    onStep("🤖 Generating contacts from training knowledge (no scraped data found)...");
-    const fallbackPrompt = [
-      "List the 7-8 most valuable real people currently working at " + company + " for a CoinPayments crypto payments sales pitch.",
-      "RULES:",
-      "- Only name people you have HIGH confidence actually work there",
-      "- Use real names and real titles — never invent or guess",
-      "- Prioritize: C-suite, VPs of Product/Payments/Partnerships/Growth/Technology/Marketing",
-      "- If you are not confident about a name, describe the role generically instead",
-      "- Mark confidence: HIGH (you are certain), MEDIUM (likely but unverified), LOW (uncertain)",
-      "",
-      "Output ONLY a JSON array:",
-      '[{"name":"Full Name or UNKNOWN","title":"exact title","category":"Economic Buyer|Champion|Influencer|Technical Buyer|Blocker","cp_relevance":"why relevant","why_target":"decision power","outreach_angle":"specific hook","intent_signals":"any public signals","verification_confidence":"HIGH|MEDIUM|LOW","verified_source":"training_knowledge"}]'
-    ].join("\n");
-
-    const rawFallback = await callAPI(
-      "You list known executives at companies from training knowledge. Output ONLY a valid JSON array [ ].",
-      fallbackPrompt, 2000
-    );
-    try {
-      let arr = [];
-      const s = rawFallback.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
-      if (s.startsWith("[")) arr = JSON.parse(s);
-      else { try { const p = parseJSON(s); arr = Array.isArray(p)?p:[]; } catch {} }
-      enrichedContacts = arr.filter(c => c.name && c.name !== "UNKNOWN").map((c,i) => ({
-        priority: i+1,
-        name: c.name,
-        title: c.title || "",
-        category: c.category || "Influencer",
-        cp_relevance: c.cp_relevance || "",
-        location: "",
-        email: "",
-        linkedin: "",
-        twitter: "none",
-        conferences: [],
-        why_target: c.why_target || "",
-        outreach_angle: c.outreach_angle || "",
-        intent_signals: c.intent_signals || "",
-        verified_source: "training_knowledge",
-        verification_confidence: c.verification_confidence || "MEDIUM",
-        web_confirmed: false,
-      }));
-    } catch { enrichedContacts = []; }
-  }
-
-  p1.key_contacts = [...enrichedContacts, ...lowConfidence];
-
-  // Phase 2: Competitive comparison
-  onStep("⚔️ Building competitive comparison (3/4)...");
-  const raw2 = await callAPI(sanitizeForAPI(SYS),
-    "For \""+company+"\" vs CoinPayments, output ONLY JSON (start { end }). Max 20 words per value. Make why_it_matters specific to this company:\n"+
-    JSON.stringify({competitive_comparison:Object.fromEntries(COMPARE_ROWS.map(([,k])=>[k,{incumbent:"desc",coinpayments:"desc",why_it_matters:"reason specific to this client"}]))}, null, 2), 4000);
-
-  // Phase 3a: GTM Attack Plan — positioning, ICP, ABM, Outbound, Intent
-  onStep("🎯 Building GTM attack plan (4/4)...");
-  const raw3a = await callAPI(sanitizeForAPI(SYS),
-    "For \""+company+"\", output ONLY JSON (start { end }). Max 25 words per value:\n"+
-    JSON.stringify({
-      positioning_statement:"one razor-sharp sentence why CoinPayments is right for this company now",
-      icp_profile:{primary_buyer:"title",champion:"title",blocker:"title",buying_committee:["t1","t2"],trigger_event:"specific signal"},
-      abm:{
-        personalized_ads:[{platform:"LinkedIn|Display",audience:"titles",message:"personalized copy",format:"Sponsored Post|InMail"}],
-        content_assets:[{asset:"name",type:"One-Pager|ROI Calc|Case Study|Battlecard",personalization:"specific angle",delivery:"method"}],
-        direct_mail:{item:"gift idea",rationale:"why it fits",send_to:"contact and timing"}
-      },
-      outbound:{sequences:[{contact:"name or title",channel_order:["Day 1: LinkedIn view+connect","Day 3: LinkedIn message","Day 5: Email 1","Day 8: Email 2+asset","Day 12: Call+VM","Day 15: LinkedIn video","Day 20: Breakup"],day1_message:"exact opening",email_subject:"specific subject line",call_script_opener:"first sentence",personalization_hook:"1 bespoke insight"}]},
-      intent:{intent_signals_to_monitor:[{signal:"signal",source:"G2|Bombora|LinkedIn|Jobs|Press",what_it_means:"buying intent reason",response_playbook:"24hr action"}],job_postings_to_watch:["title 1","title 2"],trigger_based_plays:[{trigger:"event",immediate_action:"24hr action",message_angle:"framing"}]}
-    }, null, 2), 4000);
-
-  // Phase 3b: Inbound, Partners, Events, Timeline, Objections
-  const raw3b = await callAPI(sanitizeForAPI(SYS),
-    "For \""+company+"\", output ONLY JSON (start { end }). Max 25 words per value:\n"+
-    JSON.stringify({
-      inbound:{seo_topics:["topic1","topic2"],thought_leadership:[{format:"Blog|LinkedIn|Podcast",topic:"specific topic",hook:"engagement reason",target_persona:"title"}],lead_magnets:[{asset:"name",value_prop:"insight given",cta:"action toward CP"}]},
-      partner:{referral_partners:[{partner:"company",relationship_type:"Shared Customer|Tech Integration|Channel|Investor",why_they_refer:"reason",activation_play:"how CP activates"}],co_sell_opportunities:[{partner:"company",joint_value_prop:"combined pitch",go_to_market:"joint approach"}]},
-      events:{must_attend:[{event:"name",date:"date/quarter",location:"city",tier:"Must Attend|High Priority|Monitor",contacts_there:["name or title"],cp_activation:"what CP does",pre_event_play:"2wk before outreach",post_event_play:"48hr follow-up"}],speaking_opportunities:[{event:"event",topic:"talk title",why_relevant:"positioning reason"}],hosted_event:{concept:"dinner/roundtable/webinar",invite_list:["title1","title2"],hook:"why attend",outcome:"CP desired outcome"}},
-      sequenced_timeline:[
-        {week:"Week 1-2",phase:"Signal and Surround",priority_motion:"ABM + Intent",actions:["action1","action2","action3"],kpi:"metric"},
-        {week:"Week 3-4",phase:"First Touch",priority_motion:"Outbound",actions:["action1","action2","action3"],kpi:"metric"},
-        {week:"Month 2",phase:"Nurture and Engage",priority_motion:"Content + Events",actions:["action1","action2","action3"],kpi:"metric"},
-        {week:"Month 3",phase:"Convert",priority_motion:"Partner + Direct",actions:["action1","action2","action3"],kpi:"metric"}
-      ],
-      objection_responses:[{objection:"specific objection",response:"precise CP counter",proof_point:"stat or case study"}]
-    }, null, 2), 4000);
-
-  onStep("✅ Finalizing...");
-  const p2 = parseJSON(raw2);
-  const p3a = parseJSON(raw3a);
-  const p3b = parseJSON(raw3b);
-
-  const fmtContact = p => ({
-    name:[p.first_name,p.last_name].filter(Boolean).join(" ")||"Unknown",
-    title:p.title||"", email:p.email||"", linkedin:p.linkedin_url||"",
-    twitter:p.twitter_url||"", location:[p.city,p.state,p.country].filter(Boolean).join(", "),
-    seniority:p.seniority||"", department:(p.departments||[])[0]||"", phone:p.sanitized_phone||"",
-  });
-
-  return {
-    ...p1,
-    company: company.trim(),
-    analyzedAt: p1.analyzedAt||now,
-    recent_news: parsedNews.recent_news||[], // Only Tavily-sourced — no training data fallback
-    competitive_comparison: p2.competitive_comparison||{},
-    attack_plan: {
-      positioning_statement: p3a.positioning_statement||"",
-      icp_profile: p3a.icp_profile||{},
-      motions: {
-        abm:     { ...p3a.abm,    label:"Account-Based Marketing" },
-        outbound:{ ...p3a.outbound,label:"Outbound Multichannel Orchestration" },
-        intent:  { ...p3a.intent, label:"Intent-Driven Buyer Targeting" },
-        inbound: { ...p3b.inbound,label:"Inbound / Content-Led" },
-        partner: { ...p3b.partner,label:"Partner Ecosystem Referrals" },
-        events:  { ...p3b.events, label:"Event & Thought Leadership" },
-      },
-      sequenced_timeline: p3b.sequenced_timeline||[],
-      objection_responses: p3b.objection_responses||[],
-    },
-    apollo_contacts: apolloContacts.map(fmtContact),
-    apollo_company: apolloCo,
-    activityLog: [],
-  };
+  p1.analyzedAt = new Date().toISOString();
+  return p1;
 }
 
-// ─── Verified LinkedIn storage ────────────────────────────────────────────────
-const getVerifiedLI = () => ls.get(STORAGE.verified)||{};
-const setVerifiedLI = v => ls.set(STORAGE.verified, v);
-const getVCache = () => ls.get(STORAGE.vcache)||{};
-const setVCache = v => ls.set(STORAGE.vcache, v);
-
-// ─── Contact verification ─────────────────────────────────────────────────────
 // ─── UI Primitives ────────────────────────────────────────────────────────────
-const Badge = ({color="muted",children,sm}) => {
-  const m = {accent:[C.accentDim,C.accent],gold:[C.goldDim,C.gold],green:[C.greenDim,C.green],purple:[C.purpleDim,C.purple],red:[C.redDim,C.red],muted:[C.dim+"44",C.muted],cyan:["#06B6D412",C.cyan]};
-  const [bg,fg] = m[color]||m.muted;
-  return <span style={{display:"inline-flex",alignItems:"center",padding:sm?"1px 7px":"2px 10px",borderRadius:20,fontSize:sm?9:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",background:bg,color:fg,border:"1px solid "+fg+"28"}}>{children}</span>;
-};
-const Chip = ({label,value,color}) => (
-  <div style={{background:C.surface,border:"1px solid "+C.border,borderRadius:8,padding:"10px 14px",flex:1,minWidth:120}}>
-    <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>{label}</div>
-    <div style={{color:color||C.accent,fontSize:17,fontWeight:800,lineHeight:1.2}}>{value||"—"}</div>
-  </div>
-);
-function Sec({title,icon,accent,children,open:initOpen=true}) {
-  const [open,setOpen] = useState(initOpen);
-  const a = accent||C.accent;
+function Badge({ color, children, sm }) {
+  const colors = { accent: [C.accentDim, C.accent], gold: [C.goldDim, C.gold], green: [C.greenDim, C.green], purple: ["#8B5CF612", C.purple], red: [C.redDim, C.red], muted: [C.dim + "33", C.muted], cyan: ["#06B6D412", C.cyan] };
+  const [bg, fg] = colors[color || "muted"] || colors.muted;
+  return <span style={{ background: bg, color: fg, borderRadius: 10, padding: sm ? "1px 7px" : "2px 10px", fontSize: sm ? 9 : 10, fontWeight: 700, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{children}</span>;
+}
+
+function Sec({ title, icon, accent, children, open: initOpen }) {
+  // useState is the ONLY hook — called first, unconditionally
+  var defaultOpen = initOpen === undefined ? true : initOpen;
+  var stateArr = useState(defaultOpen);
+  var open = stateArr[0];
+  var setOpen = stateArr[1];
+  var a = accent || C.accent;
   return (
-    <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,marginBottom:12,overflow:"hidden"}}>
-      <div onClick={()=>setOpen(!open)} style={{padding:"11px 16px",borderBottom:open?"1px solid "+C.border:"none",display:"flex",alignItems:"center",gap:8,background:a+"08",cursor:"pointer",userSelect:"none"}}>
-        <span style={{fontSize:13}}>{icon}</span>
-        <span style={{color:a,fontWeight:700,fontSize:11,letterSpacing:"0.07em",textTransform:"uppercase",flex:1}}>{title}</span>
-        <span style={{color:C.dim,fontSize:11}}>{open?"▲":"▼"}</span>
-      </div>
-      {open && <div style={{padding:"14px 16px"}}>{children}</div>}
+    React.createElement("div", { style: { background: C.card, border: "1px solid " + C.border, borderRadius: 12, marginBottom: 12, overflow: "hidden" } },
+      React.createElement("div", { onClick: function() { setOpen(!open); }, style: { padding: "11px 16px", borderBottom: open ? "1px solid " + C.border : "none", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" } },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+          icon ? React.createElement("span", { style: { fontSize: 14 } }, icon) : null,
+          React.createElement("span", { style: { color: C.text, fontWeight: 700, fontSize: 12 } }, title)
+        ),
+        React.createElement("span", { style: { color: a, fontSize: 11 } }, open ? "▲" : "▼")
+      ),
+      open ? React.createElement("div", { style: { padding: "14px 16px" } }, children) : null
+    )
+  );
+}
+
+function Chip({ label, value, color }) {
+  return (
+    <div style={{ background: C.surface, borderRadius: 8, padding: "8px 14px", border: "1px solid " + C.border }}>
+      <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>{label}</div>
+      <div style={{ color: color || C.text, fontWeight: 700, fontSize: 14 }}>{value}</div>
     </div>
   );
 }
 
-// ─── LinkedIn button ──────────────────────────────────────────────────────────
-const LI_SVG = <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>;
+// ─── Contact Card (pure, no hooks) ───────────────────────────────────────────
+function ContactCard({ contact, company }) {
+  // All hooks at top
+  var s1 = useState(false); var showPaste = s1[0]; var setShowPaste = s1[1];
+  var s2 = useState(""); var paste = s2[0]; var setPaste = s2[1];
 
-function LinkedInBtn({contact, pcMatch, company}) {
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [paste, setPaste] = useState("");
-  const [saved, setSaved] = useState(false);
-  const key = (contact.name||"").toLowerCase().replace(/\s+/g,"_");
-  const store = getVerifiedLI();
-  const manual = store[key];
-  const liUrl = manual || contact._proxycurl_url || pcMatch?.linkedin || (contact.linkedin&&contact.linkedin.startsWith("http")?contact.linkedin:null);
-  const searchQ = [contact.name,company,contact.title].filter(Boolean).join(" ");
-  const liSearch = "https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(searchQ);
-  const isVerified = !!manual;
-  const isPc = !manual && !!pcMatch?.linkedin;
-
-  function save() {
-    const url = paste.trim();
-    if (!url.includes("linkedin.com")) return;
-    const s = getVerifiedLI(); s[key]=url; setVerifiedLI(s);
-    setSaved(true); setShowConfirm(false); setPaste("");
-    setTimeout(()=>setSaved(false),3000);
-  }
-
+  var cc = { "Economic Buyer": "gold", "Champion": "green", "Technical Buyer": "cyan", "Influencer": "accent", "Blocker": "red" }[contact.category] || "muted";
+  var liUrl = paste.trim() || contact.linkedin || "";
+  var sq = [contact.name, company, contact.title].filter(Boolean).join(" ");
+  var liSearch = "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(sq);
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
-      <div style={{display:"flex",gap:4,alignItems:"center"}}>
-        {/* Status badge */}
-        {isVerified && <span style={{background:C.greenDim,border:"1px solid "+C.green+"40",borderRadius:10,padding:"1px 7px",fontSize:8,color:C.green,fontWeight:700}}>✓ CONFIRMED</span>}
-        {!isVerified && isPc && <span style={{background:C.goldDim,border:"1px solid "+C.gold+"40",borderRadius:10,padding:"1px 7px",fontSize:8,color:C.gold,fontWeight:700}}>⚠ PC</span>}
-        {!isVerified && !isPc && <span style={{background:C.redDim,border:"1px solid "+C.red+"40",borderRadius:10,padding:"1px 7px",fontSize:8,color:C.red,fontWeight:700}}>UNVERIFIED</span>}
-        {/* LinkedIn button */}
-        <a href={liUrl||liSearch} target="_blank" rel="noreferrer"
-          style={{display:"inline-flex",alignItems:"center",gap:4,padding:"4px 10px",borderRadius:6,background:"#0A66C218",border:"1px solid #0A66C250",color:"#0A66C2",fontSize:10,fontWeight:700,textDecoration:"none",cursor:"pointer"}}>
-          {LI_SVG} {liUrl?(manual?"View (Confirmed)":"View Profile"):"Search LinkedIn"}
-        </a>
-        {/* Confirm button */}
-        <button onClick={()=>setShowConfirm(!showConfirm)}
-          style={{padding:"4px 8px",borderRadius:6,background:saved?C.greenDim:"transparent",border:"1px solid "+(saved?C.green+"50":C.dim),color:saved?C.green:C.muted,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>
-          {saved?"✓ Saved":"✓ Confirm"}
-        </button>
+    <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{contact.name}</span>
+            <Badge color={cc} sm>{contact.category}</Badge>
+            <Badge color={contact.verification_confidence === "HIGH" ? "green" : "gold"} sm>
+              {contact.verified_source === "ninjapear" ? "🎯 NinjaPear" : contact.verified_source === "scraped" ? "🌐 Web" : "⚠ Verify"}
+            </Badge>
+          </div>
+          {contact.title && <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{contact.title}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {liUrl
+            ? <a href={liUrl} target="_blank" rel="noreferrer" style={{ background: C.accentDim, color: C.accent, border: "1px solid " + C.accent + "40", borderRadius: 6, padding: "4px 10px", fontSize: 10, textDecoration: "none", fontWeight: 700 }}>LinkedIn →</a>
+            : <a href={liSearch} target="_blank" rel="noreferrer" style={{ background: "transparent", color: C.dim, border: "1px solid " + C.border, borderRadius: 6, padding: "4px 10px", fontSize: 10, textDecoration: "none" }}>Search</a>
+          }
+          <button onClick={function() { setShowPaste(!showPaste); }} style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✏</button>
+        </div>
       </div>
-      {showConfirm && (
-        <div style={{display:"flex",gap:4,alignItems:"center",marginTop:2}}>
-          <input value={paste} onChange={e=>setPaste(e.target.value)} placeholder="Paste linkedin.com/in/... URL"
-            style={{width:220,background:C.surface,border:"1px solid #0A66C250",borderRadius:5,padding:"5px 8px",color:C.text,fontSize:10,outline:"none",fontFamily:"inherit"}}/>
-          <button onClick={save} disabled={!paste.includes("linkedin.com")}
-            style={{padding:"5px 10px",background:paste.includes("linkedin.com")?"#0A66C2":C.dim,color:paste.includes("linkedin.com")?"#fff":C.muted,border:"none",borderRadius:5,fontSize:10,fontWeight:700,cursor:paste.includes("linkedin.com")?"pointer":"default",fontFamily:"inherit"}}>Save</button>
-          <button onClick={()=>setShowConfirm(false)} style={{padding:"5px 8px",background:"transparent",border:"1px solid "+C.dim,color:C.muted,borderRadius:5,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Contact Verifier Panel ───────────────────────────────────────────────────
-// ─── Motion Tabs ──────────────────────────────────────────────────────────────
-const MOTION_META = [
-  {key:"abm",     label:"ABM",      icon:"🎯",color:C.accent, desc:"Account-Based Marketing"},
-  {key:"outbound",label:"Outbound", icon:"📡",color:C.purple, desc:"Multichannel Orchestration"},
-  {key:"intent",  label:"Intent",   icon:"⚡",color:C.gold,   desc:"Buyer Intent Targeting"},
-  {key:"inbound", label:"Inbound",  icon:"🧲",color:C.cyan,   desc:"Content-Led"},
-  {key:"partner", label:"Partners", icon:"🤝",color:C.green,  desc:"Ecosystem Referrals"},
-  {key:"events",  label:"Events",   icon:"📅",color:C.red,    desc:"Event & Thought Leadership"},
-];
-
-function MotionTabs({motions}) {
-  const [active, setActive] = useState("abm");
-  const m = (motions||{})[active]||{};
-  const cur = MOTION_META.find(x=>x.key===active)||MOTION_META[0];
-
-  const row = (icon,text,color) => (
-    <div style={{display:"flex",gap:8,marginBottom:5}}>
-      <span style={{color:color||C.accent,flexShrink:0}}>{icon}</span>
-      <span style={{color:C.muted,fontSize:11,lineHeight:1.5}}>{text}</span>
-    </div>
-  );
-
-  return (
-    <div style={{marginBottom:20}}>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:12}}>
-        {MOTION_META.map(({key,label,icon,color})=>(
-          <button key={key} onClick={()=>setActive(key)}
-            style={{padding:"6px 12px",borderRadius:7,fontFamily:"inherit",background:active===key?color+"22":"transparent",color:active===key?color:C.muted,border:"1px solid "+(active===key?color+"60":C.border),fontWeight:active===key?700:400,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
-            {icon} {label}
-          </button>
-        ))}
-      </div>
-      <div style={{color:cur.color,fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>{cur.icon} {cur.desc}</div>
-
-      {active==="abm" && (
-        <div>
-          {(m.personalized_ads||[]).map((ad,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,marginBottom:4,flexWrap:"wrap"}}><Badge color="accent" sm>{ad.platform}</Badge><Badge color="muted" sm>{ad.format}</Badge></div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:4}}>🎯 Audience: {ad.audience}</div>
-              <div style={{background:C.accentDim,borderRadius:5,padding:"5px 9px",fontSize:11,color:C.accent,fontStyle:"italic"}}>"{ad.message}"</div>
-            </div>
-          ))}
-          {(m.content_assets||[]).map((a,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4}}><span style={{color:C.text,fontWeight:700,fontSize:12}}>{a.asset}</span><Badge color="gold" sm>{a.type}</Badge></div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:3}}>{a.personalization}</div>
-              {a.delivery&&<div style={{color:C.dim,fontSize:10}}>📬 {a.delivery}</div>}
-            </div>
-          ))}
-          {m.direct_mail&&(
-            <div style={{background:C.goldDim,borderRadius:8,padding:"10px 14px",border:"1px solid "+C.gold+"30"}}>
-              <div style={{color:C.gold,fontSize:10,fontWeight:700,marginBottom:4}}>📦 DIRECT MAIL / GIFTING</div>
-              <div style={{color:C.text,fontSize:12,fontWeight:600,marginBottom:3}}>{m.direct_mail.item}</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:3}}>{m.direct_mail.rationale}</div>
-              {m.direct_mail.send_to&&<div style={{color:C.dim,fontSize:10}}>→ {m.direct_mail.send_to}</div>}
-            </div>
-          )}
-        </div>
-      )}
-
-      {active==="outbound" && (
-        <div>
-          {(m.sequences||[]).map((seq,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"12px 14px",marginBottom:10,border:"1px solid "+C.border}}>
-              <div style={{color:C.purple,fontWeight:700,fontSize:13,marginBottom:8}}>🎯 {seq.contact}</div>
-              {seq.personalization_hook&&<div style={{background:C.purpleDim,borderRadius:5,padding:"6px 10px",fontSize:11,color:C.purple,marginBottom:10,fontStyle:"italic"}}>💡 "{seq.personalization_hook}"</div>}
-              <div style={{marginBottom:10}}>
-                <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:6}}>CHANNEL SEQUENCE</div>
-                {(seq.channel_order||[]).map((s,j)=>row("→",s,C.purple))}
-              </div>
-              {seq.day1_message&&<div style={{background:C.accentDim,borderRadius:5,padding:"6px 10px",fontSize:11,color:C.accent,marginBottom:6}}>📝 Day 1: "{seq.day1_message}"</div>}
-              {seq.email_subject&&<div style={{background:C.goldDim,borderRadius:5,padding:"6px 10px",fontSize:11,color:C.gold,marginBottom:6}}>✉ Subject: "{seq.email_subject}"</div>}
-              {seq.call_script_opener&&<div style={{background:C.greenDim,borderRadius:5,padding:"6px 10px",fontSize:11,color:C.green}}>📞 Call: "{seq.call_script_opener}"</div>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {active==="intent" && (
-        <div>
-          {(m.intent_signals_to_monitor||[]).map((sig,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><span style={{color:C.gold,fontWeight:700,fontSize:12}}>⚡ {sig.signal}</span><Badge color="gold" sm>{sig.source}</Badge></div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:6}}>{sig.what_it_means}</div>
-              {sig.response_playbook&&<div style={{background:C.goldDim,borderRadius:5,padding:"5px 9px",fontSize:10,color:C.gold}}>▶ {sig.response_playbook}</div>}
-            </div>
-          ))}
-          {(m.trigger_based_plays||[]).map((t,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{color:C.text,fontWeight:700,fontSize:12,marginBottom:4}}>🔔 {t.trigger}</div>
-              {row("⚡",t.immediate_action,C.gold)}
-              {t.message_angle&&<div style={{background:C.accentDim,borderRadius:5,padding:"5px 9px",fontSize:10,color:C.accent}}>💬 {t.message_angle}</div>}
-            </div>
-          ))}
-          {(m.job_postings_to_watch||[]).length ? (
-            <div style={{background:C.surface,borderRadius:8,padding:"10px 14px",border:"1px solid "+C.border}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:6}}>JOB POSTINGS TO MONITOR</div>
-              {m.job_postings_to_watch.map((j,i)=>row("👀",j,C.gold))}
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {active==="inbound" && (
-        <div>
-          {(m.thought_leadership||[]).map((tl,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><span style={{color:C.cyan,fontWeight:700,fontSize:12}}>{tl.topic}</span><Badge color="cyan" sm>{tl.format}</Badge></div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:3}}>{tl.hook}</div>
-              {tl.target_persona&&<div style={{color:C.dim,fontSize:10}}>→ For: {tl.target_persona}</div>}
-            </div>
-          ))}
-          {(m.lead_magnets||[]).map((lm,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{color:C.text,fontWeight:700,fontSize:12,marginBottom:4}}>🧲 {lm.asset}</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:4}}>{lm.value_prop}</div>
-              {lm.cta&&<div style={{background:C.accentDim,borderRadius:5,padding:"4px 9px",fontSize:10,color:C.accent}}>CTA: {lm.cta}</div>}
-            </div>
-          ))}
-          {(m.seo_topics||[]).length ? (
-            <div style={{background:C.surface,borderRadius:8,padding:"10px 14px",border:"1px solid "+C.border}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,marginBottom:6}}>SEO TOPICS TO OWN</div>
-              {m.seo_topics.map((t,i)=>row("🔍",t,C.cyan))}
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {active==="partner" && (
-        <div>
-          {(m.referral_partners||[]).map((p,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}><span style={{color:C.green,fontWeight:700,fontSize:13}}>{p.partner}</span><Badge color="green" sm>{p.relationship_type}</Badge></div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:6}}>{p.why_they_refer}</div>
-              {p.activation_play&&<div style={{background:C.greenDim,borderRadius:5,padding:"5px 9px",fontSize:10,color:C.green}}>▶ {p.activation_play}</div>}
-            </div>
-          ))}
-          {(m.co_sell_opportunities||[]).map((cs,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{color:C.text,fontWeight:700,fontSize:12,marginBottom:4}}>🤝 Co-Sell: {cs.partner}</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:4}}>{cs.joint_value_prop}</div>
-              {cs.go_to_market&&<div style={{color:C.dim,fontSize:10}}>→ GTM: {cs.go_to_market}</div>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {active==="events" && (
-        <div>
-          {(m.must_attend||[]).map((ev,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:10,padding:"10px 14px",marginBottom:10,border:"1px solid "+C.border}}>
-              <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                <span style={{color:C.text,fontWeight:700,fontSize:13}}>📅 {ev.event}</span>
-                <Badge color={ev.tier==="Must Attend"?"red":ev.tier==="High Priority"?"gold":"muted"} sm>{ev.tier}</Badge>
-              </div>
-              <div style={{color:C.dim,fontSize:10,marginBottom:6}}>{ev.date} · {ev.location}</div>
-              {(ev.contacts_there||[]).length ? <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{ev.contacts_there.map((c,j)=><Badge key={j} color="purple" sm>{c}</Badge>)}</div> : null}
-              {ev.cp_activation&&<div style={{background:C.accentDim,borderRadius:5,padding:"5px 9px",fontSize:10,color:C.accent,marginBottom:4}}>🎪 {ev.cp_activation}</div>}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:6}}>
-                {ev.pre_event_play&&<div style={{background:C.goldDim,borderRadius:5,padding:"5px 8px",fontSize:10,color:C.gold}}>📨 Pre: {ev.pre_event_play}</div>}
-                {ev.post_event_play&&<div style={{background:C.greenDim,borderRadius:5,padding:"5px 8px",fontSize:10,color:C.green}}>✅ Post: {ev.post_event_play}</div>}
-              </div>
-            </div>
-          ))}
-          {m.hosted_event&&(
-            <div style={{background:C.redDim,borderRadius:8,padding:"10px 14px",border:"1px solid "+C.red+"30",marginBottom:10}}>
-              <div style={{color:C.red,fontSize:10,fontWeight:700,marginBottom:4}}>🔥 HOSTED EVENT IDEA</div>
-              <div style={{color:C.text,fontSize:12,fontWeight:700,marginBottom:4}}>{m.hosted_event.concept}</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:6}}>{m.hosted_event.hook}</div>
-              {(m.hosted_event.invite_list||[]).length ? <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:6}}>{m.hosted_event.invite_list.map((t,i)=><Badge key={i} color="red" sm>{t}</Badge>)}</div> : null}
-              {m.hosted_event.outcome&&<div style={{color:C.dim,fontSize:10}}>🎯 {m.hosted_event.outcome}</div>}
-            </div>
-          )}
-          {(m.speaking_opportunities||[]).map((sp,i)=>(
-            <div key={i} style={{background:C.surface,borderRadius:8,padding:"10px 14px",marginBottom:8,border:"1px solid "+C.border}}>
-              <div style={{color:C.text,fontWeight:700,fontSize:12,marginBottom:3}}>🎤 {sp.topic}</div>
-              <div style={{color:C.muted,fontSize:11,marginBottom:3}}>At: {sp.event}</div>
-              {sp.why_relevant&&<div style={{color:C.dim,fontSize:10}}>→ {sp.why_relevant}</div>}
-            </div>
-          ))}
-        </div>
-      )}
+      {showPaste && <input value={paste} onChange={function(e) { setPaste(e.target.value); }} placeholder="Paste LinkedIn URL..." style={{ width: "100%", background: C.card, border: "1px solid " + C.accent, borderRadius: 6, padding: "6px 8px", color: C.text, fontSize: 11, outline: "none", fontFamily: "inherit", boxSizing: "border-box", marginTop: 6 }} />}
+      {contact.outreach_angle && <div style={{ color: C.accent, fontSize: 11, marginTop: 6 }}>💬 {contact.outreach_angle}</div>}
     </div>
   );
 }
 
 // ─── Analysis View ────────────────────────────────────────────────────────────
-function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
-  // ALL hooks first — no effects or logic between them
-  const [chat, setChat] = useState([]);
-  const [contacts, setContacts] = useState(data.key_contacts||[]);
-  const [showAddContact, setShowAddContact] = useState(false);
-  const [newContact, setNewContact] = useState({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
-  const [q, setQ] = useState("");
-  const [asking, setAsking] = useState(false);
-  const chatRef = useRef(null);
-  // Effects after all hooks
-  React.useEffect(() => { setContacts(data.key_contacts||[]); }, [data.key_contacts]);
+function AnalysisView({ data }) {
+  // ALL hooks declared unconditionally at the very top — NEVER move these
+  var s1 = useState([]); var contacts = s1[0]; var setContacts = s1[1];
+  var s2 = useState([]); var chat = s2[0]; var setChat = s2[1];
+  var s3 = useState(""); var q = s3[0]; var setQ = s3[1];
+  var s4 = useState(false); var asking = s4[0]; var setAsking = s4[1];
+  var chatRef = useRef(null);
 
-  const removeContact = (idx) => {
-    const updated = contacts.filter((_,i) => i !== idx);
-    setContacts(updated);
-    if (onUpdateContacts) onUpdateContacts(updated);
-  };
-  const addContact = () => {
-    if (!newContact.name.trim()) return;
-    const updated = [...contacts, {...newContact, priority:contacts.length+1, email:"", linkedin:"", twitter:"none", conferences:[], intent_signals:"", location:"", verified_source:"manual", verification_confidence:"MANUAL"}];
-    setContacts(updated);
-    if (onUpdateContacts) onUpdateContacts(updated);
-    setNewContact({name:"",title:"",category:"Influencer",why_target:"",outreach_angle:""});
-    setShowAddContact(false);
-  };
+  // Effects after ALL hooks
+  useEffect(function() {
+    setContacts(Array.isArray(data.key_contacts) ? data.key_contacts : []);
+  }, [data.key_contacts]);
 
-  const t = data.tam_som_arr||{};
-  const mo = data.missed_opportunity||{};
-  const geo = data.geography||{};
-  const inc = data.incumbent||{};
-  const ap = data.attack_plan||{};
+  useEffect(function() {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [chat]);
+
+  // Derived values — computed after hooks, never before
+  var mo  = data.missed_opportunity || {};
+  var t   = data.tam_som_arr || {};
+  var inc = data.incumbent || {};
+  var geo = data.geography || {};
+  var ap  = data.attack_plan || {};
+  var cc  = data.competitive_comparison || {};
 
   async function ask() {
-    if (!q.trim()||asking) return;
-    const question = q.trim(); setQ(""); setAsking(true);
-    const hist = [...chat,{role:"user",content:question}];
+    var question = q.trim();
+    if (!question || asking) return;
+    setQ(""); setAsking(true);
+    var hist = chat.concat([{ role: "user", content: question }]);
     setChat(hist);
     try {
-      const ctx = JSON.stringify({company:data.company,segment:data.segment,summary:data.executive_summary,tam:t,geo,contacts:data.key_contacts,news:data.recent_news,missed:mo,incumbent:inc}).slice(0,4000);
-      const ans = await callAPI("You are a CoinPayments sales expert. Answer concisely.","Context: "+ctx+"\n\nQuestion: "+question,1500);
-      setChat([...hist,{role:"assistant",content:ans}]);
-    } catch(e) { setChat([...hist,{role:"assistant",content:"Error: "+e.message}]); }
+      var ctx = "Company: " + data.company + ", Segment: " + data.segment + ", Summary: " + data.executive_summary + ", ARR: " + t.likely_arr_usd + ", Incumbent: " + inc.name;
+      var ans = await callAPI("You are a CoinPayments sales expert. Answer concisely.", "Account: " + ctx + "\n\nQuestion: " + question, 600);
+      setChat(hist.concat([{ role: "assistant", content: ans }]));
+    } catch (e) {
+      setChat(hist.concat([{ role: "assistant", content: "Error: " + e.message }]));
+    }
     setAsking(false);
-    setTimeout(()=>chatRef.current?.scrollTo({top:9999,behavior:"smooth"}),100);
   }
-
-  const catColor = cat => ({
-    "Economic Buyer":C.gold,"Champion":C.green,"Influencer":C.accent,"Technical Buyer":C.cyan,"Blocker":C.red
-  }[cat]||C.purple);
 
   return (
     <div>
-      {/* Header */}
-      {onAdd && (
-        <div style={{background:"linear-gradient(135deg,"+C.accentDim+","+C.goldDim+")",border:"1px solid "+C.accent+"28",borderRadius:14,padding:"18px 22px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-          <div style={{flex:1,minWidth:220}}>
-            <div style={{color:C.muted,fontSize:9,fontWeight:700,letterSpacing:"0.14em",textTransform:"uppercase",marginBottom:4}}>COINPAYMENTS INTELLIGENCE REPORT</div>
-            <div style={{color:C.text,fontSize:24,fontWeight:800,marginBottom:6}}>{data.company}</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-              <Badge color="accent">{data.segment}</Badge>
-              {geo.missing_us && <Badge color="red">Missing US</Badge>}
-              <Badge color="muted">{new Date(data.analyzedAt).toLocaleDateString()}</Badge>
-            </div>
-            <div style={{color:C.muted,fontSize:11,lineHeight:1.7,maxWidth:540}}>{data.executive_summary}</div>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
-            {[["🌐",data.website],["📍",data.hq],["👥",data.employees],["💵",data.revenue]].filter(([,v])=>v).map(([ic,v])=>(
-              <div key={v} style={{color:C.muted,fontSize:11}}>{ic} {v}</div>
-            ))}
-            <button onClick={onAdd} disabled={inPipeline} style={{marginTop:8,padding:"10px 20px",borderRadius:8,background:inPipeline?"transparent":C.green,color:inPipeline?C.muted:"#000",border:"2px solid "+(inPipeline?C.border:C.green),fontWeight:800,fontSize:11,cursor:inPipeline?"default":"pointer",letterSpacing:"0.07em",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              {inPipeline?"✓ IN PIPELINE":"+ ADD TO PIPELINE"}
-            </button>
-          </div>
+      {/* Header card */}
+      <div style={{ background: C.surface, borderRadius: 12, padding: "16px 20px", marginBottom: 16, border: "1px solid " + C.border }}>
+        <div style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{data.company}</div>
+        <div style={{ color: C.accent, fontSize: 13, marginBottom: 10 }}>{data.segment}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: data.executive_summary ? 12 : 0 }}>
+          {data.hq && <Badge color="muted">📍 {data.hq}</Badge>}
+          {data.employees && <Badge color="muted">👥 {data.employees}</Badge>}
+          {data.website && <Badge color="cyan">🌐 {data.website}</Badge>}
+          {inc.name && <Badge color="gold">⚔ vs {inc.name}</Badge>}
         </div>
-      )}
-
-      {/* TAM */}
-      <Sec title="Market Opportunity — TAM / SOM / ARR" icon="📊" accent={C.accent}>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
-          <Chip label="Total Addressable Market" value={t.tam_usd} color={C.accent}/>
-          <Chip label="Serviceable Market" value={t.som_usd} color={C.gold}/>
-          <Chip label="Conservative ARR" value={t.likely_arr_usd} color={C.green}/>
-        </div>
-        <p style={{color:C.muted,fontSize:12,lineHeight:1.7,margin:0}}>{t.reasoning}</p>
-      </Sec>
-
-      {/* Key Contacts */}
-      <Sec title="Key Contacts — Priority Ranked" icon="👥" accent={C.purple}>
-        {/* Legend */}
-        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:14}}>
-          {[["Economic Buyer",C.gold],["Champion",C.green],["Influencer",C.accent],["Technical Buyer",C.cyan],["Blocker",C.red]].map(([l,c])=>(
-            <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:c}}/>
-              <span style={{color:C.muted,fontSize:10}}>{l}</span>
-            </div>
-          ))}
-        </div>
-        {/* Proxycurl firmographic */}
-        {data.apollo_company && (
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,padding:"8px 12px",background:C.surface,borderRadius:8,border:"1px solid "+C.green+"30"}}>
-            <span style={{color:C.green,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",alignSelf:"center"}}>Apollo ✓</span>
-            {[["Employees",data.apollo_company.employees],["Revenue",data.apollo_company.revenue],["Founded",data.apollo_company.founded],["Funding",data.apollo_company.funding],["Industry",data.apollo_company.industry]].filter(([,v])=>v).map(([k,v])=>(
-              <div key={k} style={{background:C.card,borderRadius:5,padding:"3px 8px",border:"1px solid "+C.border}}>
-                <span style={{color:C.dim,fontSize:9,fontWeight:700}}>{k}: </span>
-                <span style={{color:C.text,fontSize:10}}>{v}</span>
-              </div>
-            ))}
-            {(data.apollo_company.tech_stack||[]).length ? (
-              <div style={{background:C.card,borderRadius:5,padding:"3px 8px",border:"1px solid "+C.border}}>
-                <span style={{color:C.dim,fontSize:9,fontWeight:700}}>Tech: </span>
-                <span style={{color:C.cyan,fontSize:10}}>{data.apollo_company.tech_stack.join(", ")}</span>
-              </div>
-            ) : null}
-          </div>
-        )}
-        {/* Contact cards */}
-        {/* Contact management toolbar */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:C.muted,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>{contacts.length} contacts</div>
-          <button onClick={()=>setShowAddContact(!showAddContact)} style={{padding:"5px 12px",borderRadius:7,background:C.accent,color:"#000",border:"none",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add Contact</button>
-        </div>
-        {/* Add contact form */}
-        {showAddContact&&(
-          <div style={{background:C.surface,borderRadius:9,padding:14,marginBottom:12,border:"1px solid "+C.accent+"40"}}>
-            <div style={{color:C.accent,fontSize:11,fontWeight:700,marginBottom:10}}>Add Contact</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-              {[["Name *","name","Full Name"],["Title","title","VP of Product"]].map(([label,field,ph])=>(
-                <div key={field}>
-                  <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>{label}</div>
-                  <input value={newContact[field]} onChange={e=>setNewContact(p=>({...p,[field]:e.target.value}))}
-                    placeholder={ph} style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
-                </div>
-              ))}
-            </div>
-            <div style={{marginBottom:8}}>
-              <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>Category</div>
-              <select value={newContact.category} onChange={e=>setNewContact(p=>({...p,category:e.target.value}))}
-                style={{background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",width:"100%"}}>
-                {["Economic Buyer","Champion","Technical Buyer","Influencer","Blocker"].map(c=><option key={c}>{c}</option>)}
-              </select>
-            </div>
-            {[["Why Target","why_target","Why this person matters"],["Outreach Angle","outreach_angle","Specific hook for outreach"]].map(([label,field,ph])=>(
-              <div key={field} style={{marginBottom:8}}>
-                <div style={{color:C.dim,fontSize:9,fontWeight:700,marginBottom:3}}>{label}</div>
-                <input value={newContact[field]} onChange={e=>setNewContact(p=>({...p,[field]:e.target.value}))}
-                  placeholder={ph} style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"6px 10px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none"}}/>
-              </div>
-            ))}
-            <div style={{display:"flex",gap:8,marginTop:10}}>
-              <button onClick={addContact} style={{padding:"6px 16px",borderRadius:7,background:C.accent,color:"#000",border:"none",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
-              <button onClick={()=>setShowAddContact(false)} style={{padding:"6px 14px",borderRadius:7,background:"transparent",color:C.muted,border:"1px solid "+C.border,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-            </div>
-          </div>
-        )}
-        {contacts.map((c,i) => {
-          const cc = catColor(c.category);
-          const pcMatch = (data.apollo_contacts||[]).find(a => a.name&&c.name&&a.name.toLowerCase().includes((c.name.split(" ")[0]||"").toLowerCase()));
-          return (
-            <div key={i} style={{background:C.surface,border:"1px solid "+(i===0?C.gold+"50":C.border),borderRadius:10,padding:14,marginBottom:10,position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",top:0,left:0,width:4,height:"100%",background:i===0?C.gold:i===1?C.accent:i===2?C.green:C.border,borderRadius:"10px 0 0 10px"}}/>
-              <div style={{paddingLeft:10}}>
-                <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:10}}>
-                  <div style={{flexShrink:0,width:28,height:28,borderRadius:"50%",background:i===0?"linear-gradient(135deg,"+C.gold+","+C.gold+"88)":i<3?"linear-gradient(135deg,"+C.accent+","+C.purple+")":C.card,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,color:i===0?"#000":"#fff",border:"1px solid "+(i===0?C.gold:C.border)}}>
-                    {c.priority||i+1}
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:3}}>
-                      <span style={{color:C.text,fontWeight:800,fontSize:14}}>{c.name}</span>
-                      {c.verification_confidence==="VERY HIGH" && <span style={{background:C.greenDim,border:"1px solid "+C.green+"50",borderRadius:10,padding:"1px 8px",fontSize:8,color:C.green,fontWeight:700}}>🏆 CONF+PDL</span>}
-                      {c.verification_confidence==="HIGH" && c.verified_source==="conference" && <span style={{background:C.greenDim,border:"1px solid "+C.green+"50",borderRadius:10,padding:"1px 8px",fontSize:8,color:C.green,fontWeight:700}}>🎤 CONF VERIFIED</span>}
-                      {c.verification_confidence==="HIGH" && c.verified_source==="proxycurl" && <span style={{background:C.accentDim,border:"1px solid "+C.accent+"50",borderRadius:10,padding:"1px 8px",fontSize:8,color:C.accent,fontWeight:700}}>👥 APOLLO</span>}
-                      {c.verification_confidence==="MEDIUM" && <span style={{background:C.goldDim,border:"1px solid "+C.gold+"50",borderRadius:10,padding:"1px 8px",fontSize:8,color:C.gold,fontWeight:700}}>🌐 WEB</span>}
-                      {(c.verification_confidence==="LOW"||c.verification_confidence==="UNVERIFIED") && <span style={{background:C.redDim,border:"1px solid "+C.red+"50",borderRadius:10,padding:"1px 8px",fontSize:8,color:C.red,fontWeight:700}}>⚠ VERIFY</span>}
-                    </div>
-                    <div style={{color:C.accent,fontSize:11,fontWeight:600,marginBottom:3}}>{c.title}</div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-                      <Badge color="muted" sm>{c.cp_relevance}</Badge>
-                      <span style={{display:"inline-flex",alignItems:"center",gap:4,padding:"1px 7px",borderRadius:20,fontSize:9,fontWeight:700,textTransform:"uppercase",background:cc+"18",color:cc,border:"1px solid "+cc+"30"}}>
-                        <span style={{width:6,height:6,borderRadius:"50%",background:cc,flexShrink:0}}/>{c.category}
-                      </span>
-                      {c.location&&<span style={{color:C.muted,fontSize:10}}>📍 {c.location}</span>}
-                    </div>
-                  </div>
-                  {/* Contact actions */}
-                  <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
-                    <button onClick={()=>removeContact(i)} title="Remove contact" style={{background:"transparent",border:"1px solid "+C.border,borderRadius:5,color:C.muted,cursor:"pointer",fontSize:10,padding:"2px 7px",fontFamily:"inherit",lineHeight:1.4}}>✕ Remove</button>
-                    {(pcMatch?.email||c.email)&&<a href={"mailto:"+(pcMatch?.email||c.email)} style={{color:C.green,fontSize:10,textDecoration:"none"}}>✉ {pcMatch?.email||c.email}</a>}
-                    <LinkedInBtn contact={c} pcMatch={pcMatch} company={data.company}/>
-                    {(pcMatch?.phone||c.phone)&&<span style={{color:C.muted,fontSize:10}}>📞 {pcMatch?.phone||c.phone}</span>}
-                    {c.twitter&&c.twitter!=="none"&&<span style={{color:C.cyan,fontSize:10}}>𝕏 {c.twitter}</span>}
-                    {c.verified_source==="manual"&&<span style={{background:C.purpleDim,border:"1px solid "+C.purple+"40",borderRadius:10,padding:"1px 7px",fontSize:8,color:C.purple,fontWeight:700}}>✏ MANUAL</span>}
-                  </div>
-                </div>
-                <div style={{background:"linear-gradient(135deg,"+C.purpleDim+","+C.accentDim+")",borderRadius:7,padding:"8px 12px",marginBottom:8,border:"1px solid "+C.purple+"20"}}>
-                  <div style={{color:C.purple,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Why Target</div>
-                  <div style={{color:C.text,fontSize:11,lineHeight:1.6}}>{c.why_target}</div>
-                </div>
-                <div style={{background:C.goldDim,borderRadius:7,padding:"8px 12px",marginBottom:8,border:"1px solid "+C.gold+"20"}}>
-                  <div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Outreach Angle</div>
-                  <div style={{color:C.text,fontSize:11,lineHeight:1.6,fontStyle:"italic"}}>"{c.outreach_angle}"</div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  {(c.conferences||[]).length ? (
-                    <div>
-                      <div style={{color:C.dim,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Conferences</div>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:3}}>{c.conferences.map((cf,j)=><Badge key={j} color="gold" sm>{cf}</Badge>)}</div>
-                    </div>
-                  ) : null}
-                  {c.intent_signals&&c.intent_signals!=="none"&&(
-                    <div>
-                      <div style={{color:C.dim,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:4}}>Intent Signals</div>
-                      <div style={{color:C.accent,fontSize:10,lineHeight:1.5}}>⚡ {c.intent_signals}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {/* Verifier */}
-        {/* Intent data */}
-        {(data.intent_data||[]).length ? (
-          <div style={{marginTop:12}}>
-            <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:8}}>Additional Intent Signals</div>
-            {data.intent_data.map((d,i)=>(
-              <div key={i} style={{display:"flex",gap:10,padding:"8px 10px",background:C.surface,borderRadius:7,marginBottom:6,alignItems:"flex-start"}}>
-                <Badge color={d.strength==="High"?"red":d.strength==="Medium"?"gold":"muted"} sm>{d.strength}</Badge>
-                <div style={{flex:1}}>
-                  <div style={{color:C.text,fontSize:11,fontWeight:600}}>{d.contact} — {d.signal}</div>
-                  <div style={{color:C.dim,fontSize:10}}>{d.source} · {d.date}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </Sec>
-
-      {/* Partnerships */}
-      <Sec title="Strategic Partnerships & Ecosystem" icon="🤝" accent={C.gold}>
-        {(data.partnerships||[]).map((p,i,arr)=>(
-          <div key={i} style={{background:C.surface,borderRadius:9,padding:"14px 16px",marginBottom:10,border:"1px solid "+C.border}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:6}}>
-              <span style={{color:C.text,fontWeight:800,fontSize:13}}>{p.partner}</span>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                <Badge color="gold" sm>{p.type}</Badge>
-                {p.dependency&&<Badge color={p.dependency==="Critical"?"red":p.dependency==="Important"?"gold":"muted"} sm>{p.dependency}</Badge>}
-              </div>
-            </div>
-            {(p.what_they_provide||p.relationship||p.rationale)&&(
-              <div style={{color:C.muted,fontSize:11,lineHeight:1.7,marginBottom:8}}>
-                <span style={{color:C.dim,fontWeight:700,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>What they provide: </span>
-                {p.what_they_provide||p.relationship||p.rationale}
-              </div>
-            )}
-            <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:p.cp_angle||p.cp_advantage?8:0}}>
-              {p.since&&<span style={{color:C.dim,fontSize:10}}>📅 Since {p.since}</span>}
-              {p.annual_value&&<span style={{color:C.dim,fontSize:10}}>💰 Est. {p.annual_value}/yr</span>}
-              {p.incumbent_cost&&<span style={{color:C.gold,fontSize:10}}>💰 Incumbent cost: {p.incumbent_cost}</span>}
-            </div>
-            {(p.cp_angle||p.cp_advantage)&&(
-              <div style={{background:C.accentDim,borderRadius:6,padding:"8px 11px",fontSize:11,color:C.accent,lineHeight:1.6}}>
-                💡 <span style={{fontWeight:700}}>CoinPayments Angle: </span>{p.cp_angle||p.cp_advantage}
-              </div>
-            )}
-          </div>
-        ))}
-      </Sec>
-
-      {/* News */}
-      <Sec title="Recent News & Signals" icon="📰" accent={C.cyan}>
-        {!(data.recent_news||[]).length && (
-          <div style={{textAlign:"center",padding:"20px 0"}}>
-            <div style={{color:C.dim,fontSize:11,marginBottom:6}}>No verified news found.</div>
-            <div style={{color:C.dim,fontSize:10}}>Add a Tavily API key for live news. Without it, no news is shown to prevent hallucinated articles.</div>
-          </div>
-        )}
-        {(data.recent_news||[]).map((n,i,arr)=>(
-          <div key={i} style={{padding:"12px 0",borderBottom:i<arr.length-1?"1px solid "+C.border:"none"}}>
-            {/* Header row */}
-            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-              <Badge color="cyan" sm>{n.category}</Badge>
-              <span style={{color:C.dim,fontSize:10,fontWeight:600}}>{n.date}</span>
-              {n.source && <span style={{color:C.muted,fontSize:10}}>· {n.source}</span>}
-              {(n.url_status==="verified"||n.url_status==="tavily_verified") && <span style={{background:C.greenDim,border:"1px solid "+C.green+"40",borderRadius:10,padding:"1px 6px",fontSize:8,color:C.green,fontWeight:700}}>✓ VERIFIED</span>}
-              {n.url_status==="unverified" && <span style={{background:C.goldDim,border:"1px solid "+C.gold+"40",borderRadius:10,padding:"1px 6px",fontSize:8,color:C.gold,fontWeight:700}}>⚠ LINK UNVERIFIED</span>}
-              {!n.url && <span style={{background:C.redDim,border:"1px solid "+C.red+"40",borderRadius:10,padding:"1px 6px",fontSize:8,color:C.red,fontWeight:700}}>NO LINK</span>}
-            </div>
-            {/* Headline — clickable if URL available and verified */}
-            {n.url ? (
-              <a href={n.url} target="_blank" rel="noreferrer"
-                style={{color:C.text,fontSize:12,fontWeight:700,marginBottom:6,lineHeight:1.5,display:"block",textDecoration:"none"}}
-                onMouseEnter={e=>{e.currentTarget.style.color=C.accent;e.currentTarget.style.textDecoration="underline";}}
-                onMouseLeave={e=>{e.currentTarget.style.color=C.text;e.currentTarget.style.textDecoration="none";}}>
-                {n.headline} ↗
-              </a>
-            ) : (
-              <div style={{color:C.text,fontSize:12,fontWeight:700,marginBottom:6,lineHeight:1.5}}>{n.headline}</div>
-            )}
-            {n.summary && <div style={{color:C.muted,fontSize:11,marginBottom:6,lineHeight:1.6}}>{n.summary}</div>}
-            <div style={{background:C.accentDim,borderRadius:6,padding:"6px 10px",fontSize:10,color:C.cyan,display:"flex",gap:6,alignItems:"flex-start"}}>
-              <span style={{color:C.cyan,fontWeight:700,flexShrink:0}}>CP Signal →</span>
-              <span style={{lineHeight:1.5}}>{n.relevance}</span>
-            </div>
-          </div>
-        ))}
-      </Sec>
-
-      {/* Geography */}
-      <Sec title="Geography & Market Reach" icon="🌍" accent={C.green}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))",gap:12,marginBottom:12}}>
-          {[["CURRENT MARKETS",geo.markets,"muted"],["RECENT EXPANSIONS",geo.expansions,"green"],["CRYPTO-LICENSED",geo.crypto_licensed,"accent"]].map(([label,items,color])=>(
-            <div key={label}>
-              <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:6}}>{label}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{(items||[]).map(m=><Badge key={m} color={color}>{m}</Badge>)}</div>
-            </div>
-          ))}
-        </div>
-        {geo.gaps&&<div style={{background:C.accentDim,borderRadius:7,padding:10,fontSize:11,color:C.accent,lineHeight:1.6}}>🎯 {geo.gaps}</div>}
-      </Sec>
-
-      {/* Incumbent */}
-      <Sec title="Incumbent Provider Analysis" icon="⚔️" accent={C.red}>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
-          <Chip label="Incumbent" value={inc.name} color={C.red}/>
-          <Chip label="Est. Annual Cost" value={inc.annual_cost} color={C.muted}/>
-          <Chip label="CP Saving" value={inc.cp_saving} color={C.green}/>
-        </div>
-        {inc.weaknesses&&<div style={{background:C.greenDim,border:"1px solid "+C.green+"28",borderRadius:7,padding:10,fontSize:11,color:C.green,lineHeight:1.6}}>✅ Why CoinPayments wins: {inc.weaknesses}</div>}
-      </Sec>
-
-      {/* Compare */}
-      <Sec title="Feature Comparison vs Incumbent" icon="📋" accent={C.gold}>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-            <thead>
-              <tr style={{background:C.surface}}>
-                {[["DIMENSION",C.muted,"20%"],["INCUMBENT",C.red,"26%"],["COINPAYMENTS",C.green,"26%"],["WHY IT MATTERS",C.gold,"28%"]].map(([h,c,w])=>(
-                  <th key={h} style={{padding:"9px 12px",textAlign:"left",fontWeight:700,fontSize:10,color:c,width:w,letterSpacing:"0.05em"}}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {COMPARE_ROWS.map(([label,key],i)=>{
-                const r=(data.competitive_comparison||{})[key]||{};
-                return (
-                  <tr key={key} style={{background:i%2===0?"transparent":"#ffffff03",borderBottom:"1px solid "+C.border}}>
-                    <td style={{padding:"8px 12px",color:C.text,fontWeight:600}}>{label}</td>
-                    <td style={{padding:"8px 12px",color:C.muted}}>{r.incumbent||"—"}</td>
-                    <td style={{padding:"8px 12px",color:C.text}}>{r.coinpayments||"—"}</td>
-                    <td style={{padding:"8px 12px",color:C.gold,fontStyle:"italic"}}>{r.why_it_matters||"—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Sec>
+        {data.executive_summary && <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.7 }}>{data.executive_summary}</div>}
+      </div>
 
       {/* Missed Opportunity */}
-      <Sec title="The Missed Opportunity" icon="🚨" accent={C.red}>
-        {mo.headline&&<div style={{background:C.redDim,border:"1px solid "+C.red+"40",borderRadius:8,padding:"10px 14px",marginBottom:14,color:C.red,fontSize:13,fontWeight:700,lineHeight:1.5}}>{mo.headline}</div>}
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-          <Chip label="Crypto-Addressable Users" value={mo.crypto_addressable_customers||mo.crypto_share} color={C.accent}/>
-          <Chip label="Revenue at Risk" value={mo.revenue_at_risk} color={C.red}/>
-          {mo.urgency&&<Chip label="Urgency" value={mo.urgency} color={mo.urgency==="High"?C.red:mo.urgency==="Medium"?C.gold:C.muted}/>}
-        </div>
-        {mo.competitor_threat&&(
-          <div style={{background:C.goldDim,border:"1px solid "+C.gold+"40",borderRadius:7,padding:"10px 14px",marginBottom:12,fontSize:11,color:C.gold,lineHeight:1.6}}>
-            <span style={{fontWeight:700}}>⚔ Competitor Threat: </span>{mo.competitor_threat}
+      {mo.headline && (
+        <Sec title="🚨 Missed Opportunity" accent={C.red} open={true}>
+          <div style={{ background: C.redDim, border: "1px solid " + C.red + "40", borderRadius: 8, padding: "12px 16px", marginBottom: 10 }}>
+            <div style={{ color: C.red, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{mo.headline}</div>
+            {mo.urgency_reason && <div style={{ color: C.muted, fontSize: 11 }}>{mo.urgency_reason}</div>}
           </div>
-        )}
-        <p style={{color:C.text,fontSize:12,lineHeight:1.8,marginBottom:12}}>{mo.narrative}</p>
-        {mo.urgency_reason&&<div style={{background:C.redDim,borderRadius:7,padding:"8px 12px",fontSize:11,color:C.red,marginBottom:10}}>⏰ Why now: {mo.urgency_reason}</div>}
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {[mo.market_stat_1,mo.market_stat_2,mo.market_stat_3].filter(Boolean).map((s,i)=>(
-            <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-              <span style={{color:C.gold,marginTop:1}}>▸</span>
-              <span style={{color:C.muted,fontSize:11,lineHeight:1.6}}>{s}</span>
-            </div>
-          ))}
-          {(mo.stats||[]).map((s,i)=>(
-            <div key={"s"+i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-              <span style={{color:C.gold,marginTop:1}}>▸</span>
-              <span style={{color:C.muted,fontSize:11,lineHeight:1.6}}>{s}</span>
-            </div>
-          ))}
-        </div>
-      </Sec>
-
-      {/* GTM Attack Plan */}
-      {ap.positioning_statement && (
-        <Sec title="Hyperpersonalized GTM Attack Plan" icon="🎯" accent={C.green} open={false}>
-          <div style={{background:C.greenDim,border:"1px solid "+C.green+"30",borderRadius:8,padding:"12px 16px",marginBottom:16}}>
-            <div style={{color:C.green,fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:4}}>Core Positioning</div>
-            <div style={{color:C.text,fontSize:13,fontWeight:700,lineHeight:1.6,fontStyle:"italic"}}>"{ap.positioning_statement}"</div>
-          </div>
-          {ap.icp_profile && (
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:8,marginBottom:20}}>
-              {[["Primary Buyer",ap.icp_profile.primary_buyer,C.accent],["Champion",ap.icp_profile.champion,C.green],["Blocker",ap.icp_profile.blocker,C.red],["Trigger",ap.icp_profile.trigger_event,C.gold]].map(([k,v,c])=>v?(
-                <div key={k} style={{background:C.surface,borderRadius:7,padding:"8px 12px",border:"1px solid "+C.border}}>
-                  <div style={{color:C.dim,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{k}</div>
-                  <div style={{color:c,fontSize:11,fontWeight:600}}>{v}</div>
-                </div>
-              ):null)}
-            </div>
-          )}
-          <MotionTabs motions={ap.motions}/>
-          {(ap.sequenced_timeline||[]).length ? (
-            <div style={{marginTop:20}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:12}}>Sequenced Execution Timeline</div>
-              {ap.sequenced_timeline.map((t,i)=>(
-                <div key={i} style={{display:"flex",gap:14,marginBottom:14}}>
-                  <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center"}}>
-                    <div style={{width:32,height:32,borderRadius:"50%",background:"linear-gradient(135deg,"+C.accent+","+C.green+")",display:"flex",alignItems:"center",justifyContent:"center",color:"#000",fontWeight:800,fontSize:11}}>{i+1}</div>
-                    {i<ap.sequenced_timeline.length-1&&<div style={{width:2,flex:1,background:C.border,margin:"4px 0"}}/>}
-                  </div>
-                  <div style={{flex:1,paddingBottom:8}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-                      <span style={{color:C.text,fontWeight:700,fontSize:13}}>{t.phase}</span>
-                      <Badge color="muted" sm>{t.week}</Badge>
-                      <Badge color="accent" sm>{t.priority_motion}</Badge>
-                    </div>
-                    {(t.actions||[]).map((a,j)=>(
-                      <div key={j} style={{display:"flex",gap:8,alignItems:"flex-start",marginBottom:4}}>
-                        <span style={{color:C.accent,fontSize:11,flexShrink:0,marginTop:1}}>→</span>
-                        <span style={{color:C.muted,fontSize:11,lineHeight:1.5}}>{a}</span>
-                      </div>
-                    ))}
-                    {t.kpi&&<div style={{background:C.accentDim,borderRadius:5,padding:"4px 9px",fontSize:10,color:C.accent}}>📊 KPI: {t.kpi}</div>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-          {(ap.objection_responses||[]).length ? (
-            <div style={{marginTop:16}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:10}}>Objection Handling</div>
-              {ap.objection_responses.map((o,i)=>(
-                <div key={i} style={{marginBottom:10,background:C.surface,borderRadius:8,overflow:"hidden",border:"1px solid "+C.border}}>
-                  <div style={{padding:"7px 12px",background:C.redDim,borderBottom:"1px solid "+C.border}}>
-                    <span style={{color:C.red,fontSize:10,fontWeight:700}}>OBJECTION: </span>
-                    <span style={{color:C.muted,fontSize:11}}>{o.objection}</span>
-                  </div>
-                  <div style={{padding:"7px 12px",borderBottom:"1px solid "+C.border}}>
-                    <span style={{color:C.green,fontSize:10,fontWeight:700}}>RESPONSE: </span>
-                    <span style={{color:C.text,fontSize:11}}>{o.response}</span>
-                  </div>
-                  {o.proof_point&&<div style={{padding:"6px 12px",background:C.accentDim}}>
-                    <span style={{color:C.accent,fontSize:10,fontWeight:700}}>PROOF: </span>
-                    <span style={{color:C.muted,fontSize:10}}>{o.proof_point}</span>
-                  </div>}
-                </div>
-              ))}
-            </div>
-          ) : null}
+          {mo.competitor_threat && <div style={{ color: C.gold, fontSize: 11, marginBottom: 8 }}>⚠ Competitor threat: {mo.competitor_threat}</div>}
+          {[mo.market_stat_1, mo.market_stat_2, mo.market_stat_3].filter(Boolean).map(function(s, i) {
+            return <div key={i} style={{ padding: "6px 10px", background: C.surface, borderRadius: 6, marginBottom: 5, color: C.muted, fontSize: 11, borderLeft: "2px solid " + C.accent }}>📊 {s}</div>;
+          })}
+          {mo.narrative && <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.7, marginTop: 8 }}>{mo.narrative}</div>}
         </Sec>
       )}
 
-      {/* Chat */}
-      <Sec title="Ask About This Target" icon="💬" accent={C.purple}>
-        <div ref={chatRef} style={{background:C.surface,borderRadius:7,padding:10,marginBottom:10,maxHeight:240,overflowY:"auto",minHeight:50}}>
-          {!chat.length&&<div style={{color:C.dim,fontSize:11,textAlign:"center",paddingTop:10}}>Ask anything — objection handling, contact strategy, competitive angles...</div>}
-          {chat.map((m,i)=>(
-            <div key={i} style={{marginBottom:8,display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-              <div style={{maxWidth:"82%",padding:"7px 11px",borderRadius:7,background:m.role==="user"?C.purpleDim:C.card,border:"1px solid "+(m.role==="user"?C.purple+"40":C.border),color:m.role==="user"?C.purple:C.text,fontSize:11,lineHeight:1.6}}>{m.content}</div>
+      {/* ARR */}
+      {t.likely_arr_usd && (
+        <Sec title="💰 ARR Potential" accent={C.green}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8, marginBottom: 10 }}>
+            {t.likely_arr_usd && <Chip label="Conservative ARR" value={t.likely_arr_usd} color={C.green} />}
+            {t.upside_arr_usd && <Chip label="Upside ARR" value={t.upside_arr_usd} color={C.gold} />}
+            {t.som_usd && <Chip label="SOM" value={t.som_usd} color={C.accent} />}
+          </div>
+          {t.methodology && <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>📐 {t.methodology}</div>}
+          {(t.assumptions || []).map(function(a, i) { return <div key={i} style={{ color: C.dim, fontSize: 11, marginBottom: 4 }}>• {a}</div>; })}
+          {t.reasoning && <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>{t.reasoning}</div>}
+        </Sec>
+      )}
+
+      {/* Key Contacts */}
+      <Sec title={"👥 Key Contacts" + (contacts.length ? " (" + contacts.length + ")" : "")} accent={C.cyan} open={true}>
+        {contacts.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>No contacts found. Add a NinjaPear key for verified executives.</div>}
+        {contacts.map(function(c, i) { return <ContactCard key={i} contact={c} company={data.company} />; })}
+      </Sec>
+
+      {/* Partnerships */}
+      {(data.partnerships || []).length > 0 && (
+        <Sec title="🤝 Partnerships" accent={C.purple} open={false}>
+          {(data.partnerships || []).map(function(p, i) {
+            return (
+              <div key={i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partner}</span>
+                  <Badge color="purple" sm>{p.type}</Badge>
+                  {p.dependency && <Badge color={p.dependency === "Critical" ? "red" : p.dependency === "Important" ? "gold" : "muted"} sm>{p.dependency}</Badge>}
+                </div>
+                {p.what_they_provide && <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>{p.what_they_provide}</div>}
+                {p.cp_angle && <div style={{ color: C.accent, fontSize: 11 }}>🎯 {p.cp_angle}</div>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Competitive */}
+      {cc.coinpayments && (
+        <Sec title="⚔️ Competitive Comparison" accent={C.gold} open={false}>
+          {data.positioning_statement && <div style={{ background: C.goldDim, border: "1px solid " + C.gold + "40", borderRadius: 8, padding: "10px 14px", marginBottom: 12, color: C.gold, fontSize: 11, lineHeight: 1.6 }}>{data.positioning_statement}</div>}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead><tr style={{ background: C.card }}>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.dim, fontSize: 10, borderBottom: "1px solid " + C.border }}>Dimension</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.accent, fontSize: 10, borderBottom: "1px solid " + C.border }}>CoinPayments</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.gold, fontSize: 10, borderBottom: "1px solid " + C.border }}>{cc.incumbent ? cc.incumbent.name || "Incumbent" : "Incumbent"}</th>
+              </tr></thead>
+              <tbody>
+                {COMPARE_ROWS.map(function(row, i) {
+                  var label = row[0]; var key = row[1];
+                  return (
+                    <tr key={key} style={{ borderBottom: "1px solid " + C.border, background: i % 2 === 0 ? "transparent" : C.card + "80" }}>
+                      <td style={{ padding: "7px 10px", color: C.muted, fontWeight: 600 }}>{label}</td>
+                      <td style={{ padding: "7px 10px", color: C.text }}>{(cc.coinpayments || {})[key] || "—"}</td>
+                      <td style={{ padding: "7px 10px", color: C.muted }}>{cc.incumbent ? (cc.incumbent[key] || "—") : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Sec>
+      )}
+
+      {/* GTM */}
+      {ap.icp_profile && (
+        <Sec title="🗺️ GTM Attack Plan" accent={C.purple} open={false}>
+          <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: "1px solid " + C.border }}>
+            <div style={{ color: C.accent, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>ICP Profile</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {[["Primary Buyer", ap.icp_profile.primary_buyer], ["Champion", ap.icp_profile.champion], ["Blocker", ap.icp_profile.blocker], ["Trigger", ap.icp_profile.trigger_event]].map(function(kv) {
+                return kv[1] ? <div key={kv[0]}><span style={{ color: C.dim, fontSize: 10 }}>{kv[0]}: </span><span style={{ color: C.muted, fontSize: 11 }}>{kv[1]}</span></div> : null;
+              })}
             </div>
-          ))}
-          {asking&&<div style={{color:C.dim,fontSize:11}}>⟳ Thinking...</div>}
+          </div>
+          {(ap.sequenced_timeline || []).length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Sequenced Timeline</div>
+              {(ap.sequenced_timeline || []).map(function(s, i) {
+                return (
+                  <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "1px solid " + C.border }}>
+                    <div style={{ color: C.accent, fontSize: 10, fontWeight: 700, minWidth: 70 }}>{s.week}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: C.text, fontSize: 11 }}>{s.action}</div>
+                      {s.goal && <div style={{ color: C.dim, fontSize: 10, marginTop: 2 }}>{s.goal}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {ap.motions && (
+            <div>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>GTM Motions</div>
+              {Object.values(ap.motions).filter(Boolean).map(function(m, i) {
+                return (
+                  <div key={i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+                    <div style={{ color: C.accent, fontWeight: 700, fontSize: 11, marginBottom: 4 }}>{m.name || ""}</div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>{m.tactic || m.hook || m.trigger || m.content || m.play || m.events || ""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {(ap.objection_handling || []).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Objection Handling</div>
+              {(ap.objection_handling || []).map(function(o, i) {
+                return (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <div style={{ color: C.gold, fontSize: 11, fontWeight: 600, marginBottom: 2 }}>❓ {o.objection}</div>
+                    <div style={{ color: C.muted, fontSize: 11, paddingLeft: 12 }}>✅ {o.response}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Sec>
+      )}
+
+      {/* Intent */}
+      {(data.intent_data || []).length > 0 && (
+        <Sec title="📡 Intent Signals" accent={C.cyan} open={false}>
+          {(data.intent_data || []).map(function(s, i) {
+            return (
+              <div key={i} style={{ padding: "8px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                  <Badge color="cyan" sm>{s.type}</Badge>
+                  {s.date && <span style={{ color: C.dim, fontSize: 10 }}>{s.date}</span>}
+                </div>
+                <div style={{ color: C.muted, fontSize: 11 }}>{s.signal}</div>
+                {s.implication && <div style={{ color: C.accent, fontSize: 10, marginTop: 3 }}>→ {s.implication}</div>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Recent News */}
+      {(data.recent_news || []).length > 0 && (
+        <Sec title="📰 Recent News" accent={C.muted} open={false}>
+          {(data.recent_news || []).map(function(n, i) {
+            return (
+              <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
+                  <Badge color="muted" sm>{n.category}</Badge>
+                  <span style={{ color: C.dim, fontSize: 10 }}>{n.date} · {n.source}</span>
+                </div>
+                <a href={n.url} target="_blank" rel="noreferrer" style={{ color: C.text, fontSize: 11, fontWeight: 600, textDecoration: "none" }}>{n.title}</a>
+                {n.summary && <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{n.summary}</div>}
+                {n.cp_relevance && <div style={{ color: C.accent, fontSize: 10, marginTop: 2 }}>🎯 {n.cp_relevance}</div>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Geography */}
+      {(geo.markets || []).length > 0 && (
+        <Sec title="🌍 Geography" accent={C.muted} open={false}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            {(geo.markets || []).map(function(m) { return <Badge key={m} color="accent" sm>{m}</Badge>; })}
+          </div>
+          {geo.gaps && <div style={{ color: C.gold, fontSize: 11 }}>⚠ Gap: {geo.gaps}</div>}
+        </Sec>
+      )}
+
+      {/* AI Chat */}
+      <Sec title="💬 Ask AI About This Account" accent={C.accent} open={false}>
+        <div ref={chatRef} style={{ maxHeight: 280, overflowY: "auto", marginBottom: 12 }}>
+          {chat.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>Ask anything about this account...</div>}
+          {chat.map(function(m, i) {
+            return (
+              <div key={i} style={{ marginBottom: 8, textAlign: m.role === "user" ? "right" : "left" }}>
+                <div style={{ display: "inline-block", background: m.role === "user" ? C.accentDim : C.surface, color: C.text, borderRadius: 8, padding: "8px 12px", maxWidth: "85%", fontSize: 11, lineHeight: 1.6, textAlign: "left" }}>{m.content}</div>
+              </div>
+            );
+          })}
+          {asking && <div style={{ color: C.dim, fontSize: 11, padding: "8px 0" }}>Thinking...</div>}
         </div>
-        <div style={{display:"flex",gap:8}}>
-          <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&ask()} placeholder={"Ask about "+data.company+"..."}
-            style={{flex:1,background:C.surface,border:"1px solid "+C.border,borderRadius:7,padding:"9px 12px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-          <button onClick={ask} disabled={asking||!q.trim()} style={{padding:"9px 16px",background:C.purple,color:"#fff",border:"none",borderRadius:7,fontWeight:800,fontSize:11,cursor:asking?"wait":"pointer",fontFamily:"inherit"}}>SEND</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={q} onChange={function(e) { setQ(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && !asking) ask(); }} placeholder="e.g. What's the best hook for the CMO?" style={{ flex: 1, background: C.surface, border: "1px solid " + C.border, borderRadius: 8, padding: "8px 12px", color: C.text, fontSize: 11, outline: "none", fontFamily: "inherit" }} />
+          <button onClick={ask} disabled={asking || !q.trim()} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 800, fontSize: 11, cursor: asking ? "wait" : "pointer", fontFamily: "inherit" }}>Ask</button>
         </div>
       </Sec>
-    </div>
-  );
-}
-
-// ─── CRM Record ───────────────────────────────────────────────────────────────
-function CRMRecord({record, onUpdate, onRemove, keys}) {
-  // Build safe crm defaults BEFORE useState — handle null record safely
-  // NEVER early-return before hooks — violates Rules of Hooks
-  const safeR = record && record.company ? record : {};
-  const _crm = Object.assign({stage:"Prospecting",deal_value:"",next_action:"",notes:""}, safeR.crm||{});
-  // ALL hooks unconditionally — React requires same hook count every render
-  const [showReport, setShowReport] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [stage, setStage] = useState(_crm.stage);
-  const [note, setNote] = useState("");
-  const [dealVal, setDealVal] = useState(_crm.deal_value||"");
-  const [nextAct, setNextAct] = useState(_crm.next_action||"Schedule discovery call");
-  const [editingField, setEditingField] = useState(null);
-  const [editVal, setEditVal] = useState("");
-  // Guard AFTER hooks — safe because hooks are already called
-  if (!record || !record.company) return null;
-  // Build safeRecord AFTER useState (safe to reference record here)
-  const safeRecord = Object.assign({
-    company:"",segment:"",hq:"",website:"",employees:"",revenue:"",
-    executive_summary:"",tam_som_arr:{},incumbent:{},missed_opportunity:{},
-    geography:{},intent_data:[],competitive_comparison:{},positioning_statement:"",
-    icp_profile:{},sequenced_timeline:[],alert_keywords:[],
-  }, record, {
-    crm: _crm,
-    key_contacts: Array.isArray(record.key_contacts) ? record.key_contacts : [],
-    partnerships: Array.isArray(record.partnerships) ? record.partnerships : [],
-    recent_news: Array.isArray(record.recent_news) ? record.recent_news : [],
-    activityLog: Array.isArray(record.activityLog) ? record.activityLog : [],
-  });
-  const sc = STAGE_COLORS[stage]||C.muted;
-  const t = safeRecord.tam_som_arr; const inc = safeRecord.incumbent;
-
-  const startEdit = (field, val) => { setEditingField(field); setEditVal(val||""); };
-  const saveEdit = (field) => {
-    if (["executive_summary","incumbent_notes"].includes(field)) {
-      onUpdate(record.company, {...record, [field]: editVal});
-    } else {
-      onUpdate(record.company, {...record, crm:{...record.crm, [field]: editVal}});
-    }
-    setEditingField(null);
-  };
-
-  // Render helper (not a component) to avoid hooks-in-component rules
-  const renderEditable = (field, value, multiline) => (
-    editingField === field
-      ? <div>
-          {multiline
-            ? <textarea value={editVal} onChange={e=>setEditVal(e.target.value)} rows={4} style={{width:"100%",background:C.card,border:"1px solid "+C.accent,borderRadius:6,padding:"8px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none",resize:"vertical",boxSizing:"border-box"}}/>
-            : <input value={editVal} onChange={e=>setEditVal(e.target.value)} style={{width:"100%",background:C.card,border:"1px solid "+C.accent,borderRadius:6,padding:"6px 8px",color:C.text,fontSize:11,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>}
-          <div style={{display:"flex",gap:6,marginTop:6}}>
-            <button onClick={()=>saveEdit(field)} style={{padding:"4px 12px",borderRadius:5,background:C.accent,color:"#000",border:"none",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
-            <button onClick={()=>setEditingField(null)} style={{padding:"4px 10px",borderRadius:5,background:"transparent",color:C.muted,border:"1px solid "+C.border,fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-          </div>
-        </div>
-      : <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
-          <div style={{color:C.muted,fontSize:11,lineHeight:1.7,flex:1}}>{value||<span style={{color:C.dim,fontStyle:"italic"}}>Click ✏ to add</span>}</div>
-          <button onClick={()=>startEdit(field,value)} style={{background:"transparent",border:"none",color:C.dim,cursor:"pointer",fontSize:10,padding:"0 2px",flexShrink:0}}>✏</button>
-        </div>
-  );
-
-
-  function save() {
-    const log = safeRecord.activityLog||[];
-    const newLog = note.trim()?[{date:new Date().toLocaleString(),note:note.trim(),stage},...log]:log;
-    onUpdate(record.company, {crm:{...record.crm,stage,deal_value:dealVal,next_action:nextAct},activityLog:newLog});
-    setNote(""); setEditing(false);
-  }
-
-
-  return (
-    <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:10,marginBottom:10,overflow:"hidden"}}>
-      <div style={{padding:"12px 16px",borderBottom:"1px solid "+C.border,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,background:C.accent+"06"}}>
-        <div>
-          <div style={{color:C.text,fontWeight:800,fontSize:15}}>{record.company}</div>
-          <div style={{color:C.accent,fontSize:11,marginTop:2}}>{safeRecord.segment}</div>
-        </div>
-        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <select value={stage} onChange={e=>setStage(e.target.value)}
-            style={{background:C.surface,border:"1px solid "+sc+"50",color:sc,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,fontFamily:"inherit",cursor:"pointer",outline:"none"}}>
-            {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
-          <button onClick={()=>{setShowReport(!showReport);setEditing(false);}}
-            style={{background:showReport?C.accentDim:"transparent",border:"1px solid "+C.accent+"50",color:C.accent,borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:showReport?700:400}}>
-            {showReport?"▲ Hide Report":"📋 Full Report"}
-          </button>
-          <button onClick={()=>{setEditing(!editing);setShowReport(false);}}
-            style={{background:C.accentDim,border:"1px solid "+C.accent+"40",color:C.accent,borderRadius:6,padding:"5px 10px",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-            {editing?"Cancel":"✏ Edit"}
-          </button>
-          <button onClick={()=>onRemove(record.company)} style={{background:"transparent",border:"1px solid "+C.border,color:C.dim,borderRadius:6,padding:"5px 8px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕</button>
-        </div>
-      </div>
-      <div style={{padding:"12px 16px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8,marginBottom:12}}>
-          {[["HQ",safeRecord.hq||record.crm?.hq],["Industry",record.crm?.industry||safeRecord.segment],["Employees",safeRecord.employees||record.crm?.employees],["Revenue",safeRecord.revenue||record.crm?.revenue],["ARR Potential",t.likely_arr_usd],["Incumbent",inc.name],["Deal Value",record.crm?.deal_value||dealVal],["Website",safeRecord.website||record.crm?.website]].filter(([,v])=>v).map(([k,v])=>(
-            <div key={k} style={{background:C.surface,borderRadius:6,padding:"6px 10px"}}>
-              <div style={{color:C.dim,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>{k}</div>
-              <div style={{color:C.text,fontSize:11,wordBreak:"break-word"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-        {record.crm?.next_action&&!editing&&<div style={{background:C.goldDim,borderRadius:6,padding:"6px 10px",fontSize:11,color:C.gold,marginBottom:10}}>▶ Next: {record.crm.next_action}</div>}
-        {editing&&(
-          <div style={{background:C.surface,borderRadius:8,padding:12,marginBottom:12,border:"1px solid "+C.border}}>
-            <div style={{color:C.accent,fontSize:11,fontWeight:700,marginBottom:10}}>✏ Edit Pipeline Record</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-              <div>
-                <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>DEAL VALUE</div>
-                <input value={dealVal} onChange={e=>setDealVal(e.target.value)} placeholder="e.g. $250K" style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-              </div>
-              <div>
-                <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>NEXT ACTION</div>
-                <input value={nextAct} onChange={e=>setNextAct(e.target.value)} placeholder="e.g. Send proposal" style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-              </div>
-            </div>
-            <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>EXECUTIVE SUMMARY</div>
-            <textarea value={editingField==="executive_summary"?editVal:(safeRecord.executive_summary||"")}
-              onChange={e=>{setEditingField("executive_summary");setEditVal(e.target.value);}} rows={3}
-              placeholder="Edit executive summary..."
-              style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",marginBottom:8}}/>
-            <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>INCUMBENT NOTES</div>
-            <input value={editingField==="incumbent_notes"?editVal:(safeRecord.incumbent?.weaknesses||"")}
-              onChange={e=>{setEditingField("incumbent_notes");setEditVal(e.target.value);}}
-              placeholder="Notes on incumbent / why CP wins..."
-              style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"7px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",marginBottom:8}}/>
-            <div style={{color:C.dim,fontSize:10,fontWeight:700,marginBottom:4}}>ACTIVITY NOTE / CALL REPORT</div>
-            <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Log a call, meeting, email or update..." rows={3}
-              style={{width:"100%",background:C.card,border:"1px solid "+C.border,borderRadius:6,padding:"8px 10px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
-            <button onClick={()=>{
-              save();
-              if(editingField==="executive_summary") onUpdate(record.company,{...record,executive_summary:editVal});
-              if(editingField==="incumbent_notes") onUpdate(record.company,{...record,incumbent:{...safeRecord.incumbent,weaknesses:editVal}});
-              setEditingField(null);
-            }} style={{marginTop:8,padding:"8px 18px",background:C.green,color:"#000",border:"none",borderRadius:6,fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>SAVE ALL</button>
-          </div>
-        )}
-        {(safeRecord.activityLog||[]).length ? (
-          <div style={{marginBottom:showReport?16:0}}>
-            <div style={{color:C.dim,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Activity Log</div>
-            {safeRecord.activityLog.map((entry,i)=>(
-              <div key={i} style={{padding:"7px 10px",background:C.surface,borderRadius:6,marginBottom:5,borderLeft:"2px solid "+C.accent}}>
-                <div style={{color:C.dim,fontSize:10,marginBottom:2}}>{entry.date} · {entry.stage}</div>
-                <div style={{color:C.text,fontSize:11}}>{entry.note}</div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {showReport&&(
-          <div style={{borderTop:"1px solid "+C.border,paddingTop:16,marginTop:4}}>
-            <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:14}}>Intelligence Report — {record.company}</div>
-            <AnalysisView data={record} onAdd={null} inPipeline={true} keys={keys}/>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Dashboard ────────────────────────────────────────────────────────────────
-function Dashboard({pipeline}) {
-  const total = pipeline.length;
-  const won = pipeline.filter(r=>r.crm?.stage==="Closed / Won").length;
-  const winRate = total ? Math.round(won/total*100) : 0;
-  const withVal = pipeline.filter(r=>r.crm?.deal_value);
-  const parseVal = v => {
-    if (!v) return 0;
-    const s = String(v).replace(/[$,\s]/g,"").toUpperCase();
-    if (s.endsWith("M")) return parseFloat(s)*1000000;
-    if (s.endsWith("K")) return parseFloat(s)*1000;
-    return parseFloat(s.replace(/[^0-9.]/g,""))||0;
-  };
-  const fmtMoney = v => v>=1000000?"$"+(v/1000000).toFixed(1)+"M":v>=1000?"$"+Math.round(v/1000)+"K":v?"$"+Math.round(v):"—";
-  const totalPipeline = withVal.reduce((s,r)=>s+parseVal(r.crm?.deal_value),0);
-  const avgDealRaw = withVal.length ? totalPipeline/withVal.length : 0;
-  const avgDeal = withVal.length ? fmtMoney(avgDealRaw) : "—";
-  const totalPipelineStr = withVal.length ? fmtMoney(totalPipeline) : "—";
-  const active = pipeline.filter(r=>!["Closed / Won","Expansion / Retention"].includes(r.crm?.stage)).length;
-  const bySeg = {};
-  pipeline.forEach(r=>{ const s=r.segment||"Unknown"; if(!bySeg[s]) bySeg[s]={total:0,won:0}; bySeg[s].total++; if(r.crm?.stage==="Closed / Won") bySeg[s].won++; });
-  const stageCounts = Object.fromEntries(STAGES.map(s=>[s,pipeline.filter(r=>r.crm?.stage===s).length]));
-
-  return (
-    <div>
-      <div style={{color:C.text,fontSize:20,fontWeight:800,marginBottom:18}}>Dashboard</div>
-      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
-        {[["Total Accounts",String(total),C.accent],["Win Rate",winRate+"%",C.green],["Total Pipeline",totalPipelineStr,C.green],["Avg Deal",avgDeal,C.gold],["Active",String(active),C.purple]].map(([l,v,c])=>(
-          <Chip key={l} label={l} value={v} color={c}/>
-        ))}
-      </div>
-      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:16,marginBottom:16}}>
-        <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:12}}>Pipeline Funnel</div>
-        {STAGES.map(s=>{
-          const cnt=stageCounts[s]||0; const pct=total?Math.round(cnt/total*100):0; const color=STAGE_COLORS[s];
-          return (
-            <div key={s} style={{marginBottom:8}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                <span style={{color:C.text,fontSize:11}}>{s}</span>
-                <span style={{color,fontSize:11,fontWeight:700}}>{cnt} ({pct}%)</span>
-              </div>
-              <div style={{background:C.surface,borderRadius:4,height:6}}><div style={{width:pct+"%",height:"100%",background:color,borderRadius:4}}/></div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:16}}>
-        <div style={{color:C.muted,fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",marginBottom:12}}>Metrics by Vertical</div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-            <thead><tr style={{background:C.surface}}>{["Segment","Accounts","Win Rate","Avg Deal","Conv Rate"].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",color:C.muted,fontWeight:700,fontSize:10,letterSpacing:"0.05em"}}>{h}</th>)}</tr></thead>
-            <tbody>
-              {Object.entries(bySeg).map(([seg,d])=>{
-                const wr=d.total?Math.round(d.won/d.total*100)+"%":"—";
-                const sd=pipeline.filter(r=>r.segment===seg&&r.crm?.deal_value);
-                const ad=sd.length?fmtMoney(sd.reduce((s,r)=>s+parseVal(r.crm?.deal_value),0)/sd.length):"—";
-                const sql=pipeline.filter(r=>r.segment===seg&&r.crm?.stage!=="Prospecting").length;
-                const conv=d.total?Math.round(sql/d.total*100)+"%":"—";
-                return <tr key={seg} style={{borderBottom:"1px solid "+C.border}}>
-                  <td style={{padding:"8px 12px",color:C.text}}>{seg}</td>
-                  <td style={{padding:"8px 12px",color:C.accent,fontWeight:700}}>{d.total}</td>
-                  <td style={{padding:"8px 12px",color:C.green}}>{wr}</td>
-                  <td style={{padding:"8px 12px",color:C.gold}}>{ad}</td>
-                  <td style={{padding:"8px 12px",color:C.purple}}>{conv}</td>
-                </tr>;
-              })}
-              {!Object.keys(bySeg).length&&<tr><td colSpan={5} style={{padding:"24px 12px",color:C.dim,textAlign:"center"}}>No pipeline data yet</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Alerts ───────────────────────────────────────────────────────────────────
-function AlertsPanel({pipeline, alerts, onAddAlert}) {
-  const [checking, setChecking] = useState(false);
-  const [sel, setSel] = useState(pipeline[0]?.company||"");
-
-  async function check() {
-    if (!sel||checking) return; setChecking(true);
-    const rec = pipeline.find(r=>norm(r.company)===norm(sel));
-    if (!rec) { setChecking(false); return; }
-    const kw = (rec.alert_keywords||[]).join(", ")||"crypto, payments, blockchain";
-    try {
-      const result = await callAPI("You are a fintech news analyst. Return only a JSON array.",
-        "Generate 3 plausible recent news alerts for \""+sel+"\" related to: "+kw+", crypto, payments, blockchain, stablecoins, tokenization, licensing, regulatory, merchant acceptance, cross-border. Return only JSON array: [{\"headline\":\"...\",\"date\":\"...\",\"category\":\"...\",\"summary\":\"...\",\"relevance_to_cp\":\"...\",\"urgency\":\"High|Medium|Low\"}]",
-        1500);
-      let arr; try { arr = parseJSON(result); if (!Array.isArray(arr)) arr=[]; } catch { arr=[]; }
-      arr.forEach(a=>onAddAlert({...a,company:sel,checkedAt:new Date().toLocaleString()}));
-    } catch(e) { console.error(e); }
-    setChecking(false);
-  }
-
-  return (
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-        <div>
-          <div style={{color:C.text,fontSize:20,fontWeight:800}}>News Alerts</div>
-          <div style={{color:C.muted,fontSize:11}}>Monitor pipeline accounts for relevant news</div>
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <select value={sel} onChange={e=>setSel(e.target.value)}
-            style={{background:C.surface,border:"1px solid "+C.border,color:C.text,borderRadius:7,padding:"8px 12px",fontSize:12,fontFamily:"inherit",outline:"none"}}>
-            {pipeline.map(r=><option key={r.company} value={r.company}>{r.company}</option>)}
-          </select>
-          <button onClick={check} disabled={checking||!pipeline.length}
-            style={{padding:"8px 16px",background:checking?C.surface:C.accent,color:checking?C.muted:"#000",border:"1px solid "+(checking?C.border:C.accent),borderRadius:7,fontWeight:800,fontSize:11,cursor:checking?"wait":"pointer",fontFamily:"inherit"}}>
-            {checking?"Checking...":"⚡ Check Alerts"}
-          </button>
-        </div>
-      </div>
-      {!alerts.length&&<div style={{textAlign:"center",color:C.dim,padding:60,fontSize:12}}>No alerts yet — add companies to pipeline and click Check Alerts.</div>}
-      {alerts.map((a,i)=>(
-        <div key={i} style={{background:C.card,border:"1px solid "+(a.urgency==="High"?C.red+"40":C.border),borderRadius:10,padding:14,marginBottom:10}}>
-          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
-            <Badge color={a.urgency==="High"?"red":a.urgency==="Medium"?"gold":"muted"}>{a.urgency}</Badge>
-            <Badge color="muted" sm>{a.category}</Badge>
-            <Badge color="cyan" sm>{a.company}</Badge>
-          </div>
-          <div style={{color:C.text,fontWeight:700,fontSize:13,marginBottom:4}}>{a.headline}</div>
-          <div style={{color:C.muted,fontSize:11,marginBottom:6,lineHeight:1.6}}>{a.summary}</div>
-          <div style={{background:C.accentDim,borderRadius:5,padding:"5px 9px",fontSize:10,color:C.accent}}>↳ {a.relevance_to_cp}</div>
-          <div style={{color:C.dim,fontSize:10,marginTop:6}}>{a.date} · Checked {a.checkedAt}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Reports ──────────────────────────────────────────────────────────────────
-function Reports({pipeline}) {
-  const [filter, setFilter] = useState("All");
-  const segs = ["All",...new Set(pipeline.map(r=>r.segment).filter(Boolean))];
-  const filtered = filter==="All"?pipeline:pipeline.filter(r=>r.segment===filter);
-
-  function exportFullCSV() {
-    // Full analysis export with all fields for each account
-    const rows = [];
-    filtered.forEach(r => {
-      const c = r.crm||{}, t = r.tam_som_arr||{}, inc = r.incumbent||{}, mo = r.missed_opportunity||{};
-      // Header row per account
-      rows.push(["=== "+r.company+" ===","","","","","","","","","","",""]);
-      rows.push(["Company","Segment","HQ","Employees","Revenue","Website","Analyzed","","","","",""]);
-      rows.push([r.company,r.segment,r.hq,r.employees,r.revenue,r.website,r.analyzedAt?new Date(r.analyzedAt).toLocaleDateString():"","","","","",""]);
-      rows.push(["Executive Summary","","","","","","","","","","",""]);
-      rows.push([r.executive_summary||"","","","","","","","","","","",""]);
-      rows.push(["Stage","Deal Value","Next Action","ARR Potential","Incumbent","Notes","","","","","",""]);
-      rows.push([c.stage,c.deal_value,c.next_action,t.likely_arr_usd,inc.name,c.notes||"","","","","","",""]);
-      rows.push(["Missed Opportunity","","","","","","","","","","",""]);
-      rows.push([mo.headline||mo.narrative||"","","","","","","","","","","",""]);
-      rows.push(["Key Contacts","","","","","","","","","","",""]);
-      (r.key_contacts||[]).forEach(contact => {
-        rows.push([contact.name,contact.title,contact.category,contact.why_target,contact.outreach_angle,contact.email||"",contact.linkedin||"","","","","",""]);
-      });
-      rows.push(["Partnerships","","","","","","","","","","",""]);
-      (r.partnerships||[]).forEach(p => {
-        rows.push([p.partner,p.type,p.what_they_provide||p.relationship||"",p.cp_angle||p.cp_advantage||"","","","","","","","",""]);
-      });
-      rows.push(["","","","","","","","","","","",""]);
-    });
-    const csv = rows.map(r=>r.map(v=>"\""+((v||"").toString().replace(/"/g,'\"\""'))+"\""  ).join(",")).join("\n");
-    const blob = new Blob([csv],{type:"text/csv"});
-    Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:"coinpayments_full_analysis.csv"}).click();
-  }
-
-  function exportPDF() {
-    const win = window.open("","_blank");
-    const css = `body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;padding:20px;} h1{color:#0ea5e9;font-size:18px;} h2{color:#0ea5e9;font-size:14px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-top:20px;} h3{font-size:12px;color:#475569;margin:12px 0 4px;} .chip{display:inline-block;background:#f1f5f9;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;margin:2px;} .contact{background:#f8fafc;border-radius:6px;padding:8px;margin:6px 0;} .section{margin-bottom:16px;} table{width:100%;border-collapse:collapse;font-size:11px;} th{background:#f1f5f9;padding:6px 8px;text-align:left;} td{padding:5px 8px;border-bottom:1px solid #e2e8f0;} .page-break{page-break-after:always;} @media print{.page-break{page-break-after:always;}}`;
-    let html = `<html><head><title>CoinPayments Pipeline Report</title><style>${css}</style></head><body>`;
-    html += `<h1>CoinPayments Agent 2.0 — Pipeline Report</h1>`;
-    html += `<p style="color:#64748b">Generated ${new Date().toLocaleDateString()} · ${filtered.length} accounts</p>`;
-
-    filtered.forEach((r,idx) => {
-      const c=r.crm||{},t=r.tam_som_arr||{},inc=r.incumbent||{},mo=r.missed_opportunity||{},geo=r.geography||{};
-      if(idx>0) html+=`<div class="page-break"></div>`;
-      html+=`<h1>${r.company}</h1>`;
-      html+=`<span class="chip">${r.segment||""}</span><span class="chip">${r.hq||""}</span><span class="chip">Stage: ${c.stage||"Prospecting"}</span><span class="chip">Deal: ${c.deal_value||"TBD"}</span>`;
-      html+=`<div class="section"><h2>Executive Summary</h2><p>${r.executive_summary||""}</p></div>`;
-      html+=`<div class="section"><h2>Market Opportunity</h2><table><tr><th>TAM</th><th>SOM</th><th>Conservative ARR</th><th>Upside ARR</th></tr><tr><td>${t.tam_usd||"—"}</td><td>${t.som_usd||"—"}</td><td>${t.likely_arr_usd||"—"}</td><td>${t.upside_arr_usd||"—"}</td></tr></table>${t.reasoning?`<p style="color:#64748b;font-size:11px">${t.reasoning}</p>`:""}</div>`;
-      html+=`<div class="section"><h2>Missed Opportunity</h2>${mo.headline?`<p><strong>${mo.headline}</strong></p>`:""}<p>${mo.narrative||""}</p>${mo.competitor_threat?`<p><em>Competitor Threat: ${mo.competitor_threat}</em></p>`:""}<p>${[mo.market_stat_1,mo.market_stat_2,mo.market_stat_3].filter(Boolean).map(s=>`• ${s}`).join("<br>")}</p></div>`;
-      if((r.key_contacts||[]).length) {
-        html+=`<div class="section"><h2>Key Contacts</h2>`;
-        r.key_contacts.forEach(contact=>{html+=`<div class="contact"><strong>${contact.name}</strong> — ${contact.title||""} <span class="chip">${contact.category||""}</span><br><em>Why target: ${contact.why_target||""}</em><br>Outreach: ${contact.outreach_angle||""}${contact.email?`<br>✉ ${contact.email}`:""}${contact.linkedin?`<br>LinkedIn: ${contact.linkedin}`:""}</div>`;});
-        html+=`</div>`;
-      }
-      if((r.partnerships||[]).length) {
-        html+=`<div class="section"><h2>Strategic Partnerships</h2><table><tr><th>Partner</th><th>Type</th><th>What They Provide</th><th>CP Angle</th></tr>`;
-        r.partnerships.forEach(p=>{html+=`<tr><td><strong>${p.partner}</strong></td><td>${p.type||""}</td><td>${p.what_they_provide||p.relationship||""}</td><td>${p.cp_angle||p.cp_advantage||""}</td></tr>`;});
-        html+=`</table></div>`;
-      }
-      html+=`<div class="section"><h2>Incumbent</h2><p><strong>${inc.name||"None identified"}</strong>${inc.annual_cost?` · Annual cost: ${inc.annual_cost}`:""}${inc.cp_saving?` · CP saves: ${inc.cp_saving}`:""}</p>${inc.weaknesses?`<p>${inc.weaknesses}</p>`:""}</div>`;
-      if(c.notes||c.next_action) html+=`<div class="section"><h2>CRM Notes</h2>${c.next_action?`<p><strong>Next Action:</strong> ${c.next_action}</p>`:""}${c.notes?`<p>${c.notes}</p>`:""}</div>`;
-    });
-    html+=`</body></html>`;
-    win.document.write(html);
-    win.document.close();
-    setTimeout(()=>win.print(),500);
-  }
-
-  function exportCSV() {
-    const h = ["Company","Segment","HQ","Employees","Revenue","ARR Potential","Incumbent","Stage","Deal Value","Next Action","Website","Analyzed"];
-    const rows = filtered.map(r=>{const c=r.crm||{},t=r.tam_som_arr||{},inc=r.incumbent||{};
-      return [r.company,r.segment,r.hq,r.employees,r.revenue,t.likely_arr_usd,inc.name,c.stage,c.deal_value,c.next_action,r.website,r.analyzedAt?new Date(r.analyzedAt).toLocaleDateString():""]
-        .map(v=>"\""+((v||"").replace(/"/g,'""'))+"\"").join(",");
-    });
-    const blob = new Blob([[h.join(","),...rows].join("\n")],{type:"text/csv"});
-    Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:"coinpayments_pipeline.csv"}).click();
-  }
-
-  return (
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18,flexWrap:"wrap",gap:10}}>
-        <div>
-          <div style={{color:C.text,fontSize:20,fontWeight:800}}>Pipeline Report</div>
-          <div style={{color:C.muted,fontSize:11}}>{filtered.length} accounts{filter!=="All"?" in "+filter:""}</div>
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={exportCSV} style={{background:C.goldDim,border:"1px solid "+C.gold+"40",color:C.gold,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Export CSV</button>
-          <button onClick={exportFullCSV} style={{background:C.accentDim,border:"1px solid "+C.accent+"40",color:C.accent,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ Full Analysis Excel</button>
-          <button onClick={exportPDF} style={{background:C.redDim,border:"1px solid "+C.red+"40",color:C.red,borderRadius:7,padding:"8px 14px",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF Report</button>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
-        {segs.map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:"4px 12px",borderRadius:20,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:filter===s?C.accent:C.surface,color:filter===s?"#000":C.muted,border:"1px solid "+(filter===s?C.accent:C.border)}}>{s}</button>)}
-      </div>
-      {!filtered.length&&<div style={{textAlign:"center",color:C.dim,padding:60,fontSize:12}}>No accounts yet.</div>}
-      {filtered.length ? (
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-            <thead><tr style={{background:C.card}}>
-              {["Company","Segment","HQ","ARR Potential","Incumbent","Stage","Deal Value","Next Action"].map(h=>(
-                <th key={h} style={{padding:"10px 12px",textAlign:"left",color:C.muted,fontWeight:700,fontSize:10,letterSpacing:"0.05em",borderBottom:"1px solid "+C.border,whiteSpace:"nowrap"}}>{h}</th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {filtered.map((r,i)=>{const c=r.crm||{},t=r.tam_som_arr||{},inc=r.incumbent||{},sc=STAGE_COLORS[c.stage]||C.muted; return (
-                <tr key={i} style={{borderBottom:"1px solid "+C.border,background:i%2===0?"transparent":C.card+"80"}}>
-                  <td style={{padding:"9px 12px",color:C.text,fontWeight:700}}>{r.company}</td>
-                  <td style={{padding:"9px 12px",color:C.muted}}>{r.segment}</td>
-                  <td style={{padding:"9px 12px",color:C.muted}}>{r.hq}</td>
-                  <td style={{padding:"9px 12px",color:C.green,fontWeight:700}}>{t.likely_arr_usd||"—"}</td>
-                  <td style={{padding:"9px 12px",color:C.muted}}>{inc.name||"—"}</td>
-                  <td style={{padding:"9px 12px"}}><span style={{color:sc,fontWeight:700}}>{c.stage||"—"}</span></td>
-                  <td style={{padding:"9px 12px",color:C.gold}}>{c.deal_value||"—"}</td>
-                  <td style={{padding:"9px 12px",color:C.muted}}>{c.next_action||"—"}</td>
-                </tr>
-              );})}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
     </div>
   );
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{background:"#07090F",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:40}}>
-          <div style={{background:"#0D1117",border:"1px solid #ef4444",borderRadius:12,padding:32,maxWidth:500,textAlign:"center"}}>
-            <div style={{color:"#ef4444",fontSize:24,marginBottom:12}}>⚠ Something went wrong</div>
-            <div style={{color:"#64748b",fontSize:12,marginBottom:20,wordBreak:"break-word"}}>{this.state.error?.message}</div>
-            <button onClick={()=>{localStorage.clear();window.location.reload();}}
-              style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",fontWeight:700,marginRight:8}}>
-              Clear Data & Reload
-            </button>
-            <button onClick={()=>window.location.reload()}
-              style={{background:"transparent",color:"#64748b",border:"1px solid #334155",borderRadius:8,padding:"10px 20px",cursor:"pointer"}}>
-              Try Again
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 export default function App() {
-  const [page, setPage] = useState("analyze");
-  const [company, setCompany] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState("");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [showKeys, setShowKeys] = useState(false);
-  const [tavilyKey,    setTavilyKey]    = useState(()=>localStorage.getItem(STORAGE.tavily)||localStorage.getItem("cp_server_tavily")||"");
-  const [ninjapearKey, setNinjapearKey] = useState(()=>localStorage.getItem(STORAGE.ninjapear)||localStorage.getItem("cp_server_ninjapear")||"");
+  // ALL hooks unconditionally at the very top
+  var s1  = useState("analyze"); var page    = s1[0];  var setPage    = s1[1];
+  var s2  = useState("");        var company = s2[0];  var setCompany = s2[1];
+  var s3  = useState(false);     var loading = s3[0];  var setLoading = s3[1];
+  var s4  = useState("");        var step    = s4[0];  var setStep    = s4[1];
+  var s5  = useState(null);      var result  = s5[0];  var setResult  = s5[1];
+  var s6  = useState("");        var error   = s6[0];  var setError   = s6[1];
+  var s7  = useState(false);     var showKeys= s7[0];  var setShowKeys= s7[1];
+  var s8  = useState(function() { return localStorage.getItem(TKEY_LS)  || ""; }); var tKey  = s8[0]; var setTKey  = s8[1];
+  var s9  = useState(function() { return localStorage.getItem(NJKEY_LS) || ""; }); var njKey = s9[0]; var setNjKey = s9[1];
+  var s10 = useState([]);        var history = s10[0]; var setHistory = s10[1];
 
-  // Apply server-synced keys on mount (cross-device key sharing)
-  React.useEffect(() => {
-    const serverTavily = localStorage.getItem("cp_server_tavily");
-    const serverNinjapear = localStorage.getItem("cp_server_ninjapear");
-    if (serverTavily && !localStorage.getItem(STORAGE.tavily)) {
-      localStorage.setItem(STORAGE.tavily, serverTavily);
-      setTavilyKey(serverTavily);
-    }
-    if (serverNinjapear && !localStorage.getItem(STORAGE.ninjapear)) {
-      localStorage.setItem(STORAGE.ninjapear, serverNinjapear);
-      setNinjapearKey(serverNinjapear);
-    }
-  }, [syncStatus]); // re-run when sync completes
-  const { pipeline, alerts, addRecord, updateRecord, removeRecord, addAlert, syncStatus } = usePipeline();
-
-  const saveKey = (k,v,fn) => {
-    fn(v);
-    localStorage.setItem(k,v);
-    // Sync keys to server so other devices pick them up
-    const currentKeys = {
-      tavily: localStorage.getItem(STORAGE.tavily)||"",
-      ninjapear: localStorage.getItem(STORAGE.ninjapear)||"",
-      [k]: v
-    };
-    serverStore.save(undefined, currentKeys);
-  };
-  const keys = { tavily:tavilyKey, ninjapear:ninjapearKey };
-  const hasContacts = !!ninjapearKey;
-  const keyStatus = tavilyKey&&ninjapearKey?"🟢 Full Intel":tavilyKey||ninjapearKey?"🟡 Partial":"🔑 Add Keys";
+  // Helpers — no hooks, defined after all hooks
+  function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
   async function go() {
-    if (!company.trim()||loading) return;
-    setError(""); setResult(null); setLoading(true);
-    try { setResult(await runAnalysis(company.trim(), setStep, keys)); }
-    catch(e) { setError(e.message); }
+    if (!company.trim() || loading) return;
+    setLoading(true); setError(""); setResult(null); setStep("Starting analysis...");
+    try {
+      var data = await runAnalysis(company.trim(), setStep, { tavily: tKey, ninjapear: njKey });
+      setResult(data);
+      setHistory(function(h) { return [{ company: data.company, analyzedAt: data.analyzedAt, data: data }].concat(h.slice(0, 9)); });
+      setPage("result");
+    } catch (e) {
+      setError(e.message);
+    }
     setLoading(false); setStep("");
   }
 
-  const PAGES = [["analyze","🔬 Analyze"],["pipeline","📋 Pipeline ("+pipeline.length+")"],["dashboard","📊 Dashboard"],["alerts","🔔 Alerts"+(alerts.length?" ("+alerts.length+")":"")],["reports","📄 Reports"]];
+  var keyColor = (tKey && njKey) ? C.green : (tKey || njKey) ? C.gold : C.red;
+  var keyLabel = (tKey && njKey) ? "🟢 Full Intel" : (tKey || njKey) ? "🟡 Partial" : "🔑 Add Keys";
+
+  var NAV = [["analyze", "🔍 Analyze"], ["result", "📊 Result" + (result ? " ✓" : "")], ["history", "📋 History" + (history.length ? " (" + history.length + ")" : "")]];
 
   return (
-    <div style={{minHeight:"100vh",background:C.bg,fontFamily:"'IBM Plex Mono','Courier New',monospace",color:C.text}}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0}
-        ::-webkit-scrollbar{width:5px;height:5px}
-        ::-webkit-scrollbar-track{background:#07090F}
-        ::-webkit-scrollbar-thumb{background:#1F2937;border-radius:3px}
-        input::placeholder,textarea::placeholder{color:#334155}
-        select option{background:#111827}
-        @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-      `}</style>
+    <div style={{ background: C.bg, minHeight: "100vh", fontFamily: "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace", fontSize: 12 }}>
+      <style>{`*{box-sizing:border-box;margin:0;padding:0}button,input,select,textarea{font-family:inherit}input::placeholder,textarea::placeholder{color:#334155}`}</style>
 
       {/* Nav */}
-      <div style={{background:C.surface,borderBottom:"1px solid "+C.border,padding:"0 16px",display:"flex",alignItems:"center",justifyContent:"space-between",height:52,position:"sticky",top:0,zIndex:100,gap:8}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-          <div style={{width:28,height:28,borderRadius:7,background:"linear-gradient(135deg,"+C.accent+","+C.purple+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>₿</div>
+      <div style={{ background: C.surface, borderBottom: "1px solid " + C.border, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 52, position: "sticky", top: 0, zIndex: 100, gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg," + C.accent + "," + C.purple + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>₿</div>
           <div>
-            <div style={{color:C.text,fontWeight:800,fontSize:11,letterSpacing:"0.05em"}}>COINPAYMENTS</div>
-            <div style={{color:C.dim,fontSize:8,letterSpacing:"0.1em"}}>AGENT 2.0</div>
+            <div style={{ color: C.text, fontWeight: 800, fontSize: 11, letterSpacing: "0.05em" }}>COINPAYMENTS</div>
+            <div style={{ color: C.dim, fontSize: 8, letterSpacing: "0.1em" }}>SALES INTELLIGENCE</div>
           </div>
         </div>
-        <div style={{display:"flex",gap:3,overflowX:"auto",alignItems:"center"}}>
-          {PAGES.map(([id,label])=>(
-            <button key={id} onClick={()=>setPage(id)} style={{padding:"5px 11px",borderRadius:7,fontFamily:"inherit",background:page===id?C.accent:"transparent",color:page===id?"#000":C.muted,border:"1px solid "+(page===id?C.accent:"transparent"),fontWeight:page===id?800:500,fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>{label}</button>
-          ))}
-          <div style={{width:1,height:24,background:C.border,margin:"0 4px"}}/>
-          <button onClick={()=>setShowKeys(!showKeys)}
-            style={{padding:"4px 10px",borderRadius:7,fontFamily:"inherit",background:"transparent",color:tavilyKey&&ninjapearKey?C.green:tavilyKey||ninjapearKey?C.gold:C.red,border:"1px solid "+(tavilyKey&&ninjapearKey?C.green+"50":tavilyKey||ninjapearKey?C.gold+"50":C.red+"50"),fontSize:10,cursor:"pointer",whiteSpace:"nowrap"}}>
-            {keyStatus}
-          </button>
-          <span style={{fontSize:9,color:syncStatus==="synced"?C.green:syncStatus==="error"?C.red:C.dim,fontWeight:700}} title={syncStatus==="synced"?"Pipeline synced to cloud":syncStatus==="error"?"Cloud sync failed — using local only":"Syncing..."}>
-            {syncStatus==="synced"?"☁✓":syncStatus==="error"?"☁✗":"☁…"}
-          </span>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", overflowX: "auto" }}>
+          {NAV.map(function(n) {
+            var id = n[0]; var label = n[1];
+            return <button key={id} onClick={function() { setPage(id); }} style={{ padding: "5px 12px", borderRadius: 7, background: page === id ? C.accent : "transparent", color: page === id ? "#000" : C.muted, border: "1px solid " + (page === id ? C.accent : "transparent"), fontWeight: page === id ? 800 : 500, fontSize: 10, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>;
+          })}
+          <div style={{ width: 1, height: 22, background: C.border, margin: "0 4px" }} />
+          <button onClick={function() { setShowKeys(!showKeys); }} style={{ padding: "4px 10px", borderRadius: 7, background: "transparent", color: keyColor, border: "1px solid " + keyColor + "50", fontSize: 10, cursor: "pointer", whiteSpace: "nowrap" }}>{keyLabel}</button>
         </div>
       </div>
 
-      {/* Keys panel */}
+      {/* Keys Panel */}
       {showKeys && (
-        <div style={{background:C.surface,borderBottom:"1px solid "+C.border,padding:"14px 20px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{color:C.text,fontSize:12,fontWeight:700}}>🔑 API Key Settings</div>
-            <button onClick={()=>setShowKeys(false)} style={{background:"transparent",border:"1px solid "+C.border,color:C.dim,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Done</button>
+        <div style={{ background: C.surface, borderBottom: "1px solid " + C.border, padding: "14px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <span style={{ color: C.text, fontSize: 12, fontWeight: 700 }}>🔑 API Keys</span>
+            <button onClick={function() { setShowKeys(false); }} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>Done</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:12}}>
-            {[
-              {label:"Tavily Search",icon:"🌐",desc:"Live news & web data",sk:STORAGE.tavily,val:tavilyKey,fn:v=>saveKey(STORAGE.tavily,v,setTavilyKey),ph:"tvly-xxxx  →  tavily.com (free)"},
-              {label:"NinjaPear",icon:"🎯",desc:"Person verification + company enrichment · nubela.co",sk:STORAGE.ninjapear,val:ninjapearKey,fn:v=>saveKey(STORAGE.ninjapear,v,setNinjapearKey),ph:"api-key  →  nubela.co/dashboard (10 free credits)"},
-            ].map(({label,icon,desc,val,fn,ph})=>(
-              <div key={label} style={{background:C.card,borderRadius:8,padding:"12px 14px",border:"1px solid "+(val?C.green+"40":C.border)}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                  <span style={{fontSize:16}}>{icon}</span>
-                  <div style={{flex:1}}>
-                    <div style={{color:C.text,fontSize:11,fontWeight:700}}>{label}</div>
-                    <div style={{color:C.dim,fontSize:10}}>{desc}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 12 }}>
+            {[{ label: "🌐 Tavily Search", desc: "Live news · app.tavily.com ($35/mo Starter)", lsk: TKEY_LS, val: tKey, fn: function(v) { saveKey(TKEY_LS, v, setTKey); }, ph: "tvly-xxxx" }, { label: "🎯 NinjaPear", desc: "Executive profiles by role · nubela.co/dashboard", lsk: NJKEY_LS, val: njKey, fn: function(v) { saveKey(NJKEY_LS, v, setNjKey); }, ph: "api key from nubela.co" }].map(function(k) {
+              return (
+                <div key={k.label} style={{ background: C.card, borderRadius: 8, padding: "12px 14px", border: "1px solid " + (k.val ? C.green + "40" : C.border) }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                    <span style={{ color: C.text, fontWeight: 700, fontSize: 11 }}>{k.label}</span>
+                    {k.val && <Badge color="green" sm>CONNECTED</Badge>}
                   </div>
-                  {val&&<span style={{color:C.green,fontSize:10,fontWeight:700}}>✓ CONNECTED</span>}
+                  <div style={{ color: C.dim, fontSize: 10, marginBottom: 8 }}>{k.desc}</div>
+                  <input type="password" value={k.val} onChange={function(e) { k.fn(e.target.value); }} placeholder={k.ph} style={{ width: "100%", background: C.surface, border: "1px solid " + C.border, borderRadius: 6, padding: "7px 10px", color: C.text, fontSize: 11, outline: "none" }} />
                 </div>
-                <input value={val} onChange={e=>fn(e.target.value)} placeholder={ph}
-                  style={{width:"100%",background:C.surface,border:"1px solid "+(val?C.green+"50":C.border),borderRadius:6,padding:"7px 10px",color:C.text,fontSize:11,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div style={{marginTop:10,color:C.dim,fontSize:10,lineHeight:1.6}}>🟢 Full Intel = Tavily (live news + people scraping) + NinjaPear (person verification + company enrichment). NinjaPear confirms scraped contacts and enriches with structured data. Same API key as your Proxycurl account at nubela.co/dashboard</div>
-
+          <div style={{ marginTop: 10, color: C.dim, fontSize: 10 }}>Keys are saved to this browser only. NinjaPear (same key as old Proxycurl) finds real executives: CEO, CMO, CPO, CTO, COO, CFO + VPs.</div>
         </div>
       )}
 
-      {/* Content */}
-      <div style={{maxWidth:1080,margin:"0 auto",padding:"24px 16px"}}>
-        {page==="analyze" && (
-          <>
-            <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:"18px 20px",marginBottom:20}}>
-              <div style={{color:C.muted,fontSize:10,fontWeight:700,letterSpacing:"0.1em",marginBottom:10}}>TARGET CLIENT ANALYSIS</div>
-              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                <input value={company} onChange={e=>setCompany(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()}
-                  placeholder="Enter company name  (e.g. Revolut, Wise, Chime, Marqeta...)"
-                  style={{flex:1,minWidth:240,background:C.surface,border:"1px solid "+C.border,borderRadius:7,padding:"10px 13px",color:C.text,fontSize:12,outline:"none",fontFamily:"inherit"}}/>
-                <button onClick={go} disabled={loading||!company.trim()} style={{padding:"10px 24px",background:loading?C.surface:C.accent,color:loading?C.muted:"#000",border:"1px solid "+(loading?C.border:C.accent),borderRadius:7,fontWeight:800,fontSize:11,cursor:loading?"wait":"pointer",letterSpacing:"0.06em",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                  {loading?"ANALYZING...":"▶ RUN ANALYSIS"}
-                </button>
-              </div>
-              {step&&<div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}><span style={{color:C.accent,animation:"blink 1s infinite"}}>⟳</span><span style={{color:C.accent,fontSize:11}}>{step}</span></div>}
-              {error&&<div style={{marginTop:12,background:C.redDim,border:"1px solid "+C.red+"40",borderRadius:8,padding:12}}><div style={{color:C.red,fontSize:11,fontWeight:700,marginBottom:4}}>ERROR</div><div style={{color:C.muted,fontSize:11,lineHeight:1.6,wordBreak:"break-word",whiteSpace:"pre-wrap"}}>{error}</div></div>}
-              {/* API status warnings */}
-              {!loading && result && apiStatus.tavily.ok===false && (
-                <div style={{marginTop:10,background:C.goldDim,border:"1px solid "+C.gold+"30",borderRadius:8,padding:"10px 14px"}}>
-                  <div style={{color:C.gold,fontSize:11,fontWeight:700,marginBottom:6}}>⚠ API Status</div>
-                  {apiStatus.tavily.error==="OUT_OF_CREDITS"&&(
-                    <div style={{color:C.gold,fontSize:11,display:"flex",gap:8}}>
-                      <span>🌐</span><span><strong>Tavily credits exhausted.</strong> News and people scraping disabled. Top up at tavily.com — Starter plan ($35/mo) = 10,000 searches.</span>
-                    </div>
-                  )}
-                  {apiStatus.tavily.error==="INVALID_KEY"&&(
-                    <div style={{color:C.red,fontSize:11,display:"flex",gap:8}}>
-                      <span>🌐</span><span><strong>Tavily key invalid.</strong> Check Settings.</span>
-                    </div>
-                  )}
-                </div>
-              )}
+      {/* Main */}
+      <div style={{ padding: "20px 16px", maxWidth: 920, margin: "0 auto" }}>
 
-            </div>
-            {result && <AnalysisView data={result} onAdd={()=>addRecord({...result,crm:{...result.crm,stage:"Prospecting"}})} inPipeline={pipeline.some(r=>norm(r.company)===norm(result.company))} keys={keys} onUpdateContacts={(updated)=>{setResult(prev=>({...prev,key_contacts:updated}))}}/>}
-          </>
-        )}
-        {page==="pipeline" && (
+        {/* Analyze */}
+        {page === "analyze" && (
           <div>
-            <div style={{color:C.text,fontSize:20,fontWeight:800,marginBottom:18}}>Pipeline CRM</div>
-            {!pipeline.length&&<div style={{textAlign:"center",color:C.dim,padding:60,fontSize:12}}>No accounts yet. Analyze a company and click Add to Pipeline.</div>}
-            {pipeline.filter(r=>r&&r.company).map(r=>{
-              try {
-                return <CRMRecord key={r.company} record={r} onUpdate={updateRecord} onRemove={removeRecord} keys={keys}/>;
-              } catch(e) {
-                return (
-                  <div key={r.company} style={{background:C.card,border:"1px solid "+C.red+"40",borderRadius:10,padding:16,marginBottom:10}}>
-                    <div style={{color:C.text,fontWeight:800,fontSize:15,marginBottom:4}}>{r.company}</div>
-                    <div style={{color:C.red,fontSize:11,marginBottom:8}}>Failed to render — {e.message}</div>
-                    <button onClick={()=>removeRecord(r.company)} style={{background:"transparent",border:"1px solid "+C.border,color:C.dim,borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Remove</button>
-                  </div>
-                );
-              }
-            })}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ color: C.text, fontSize: 22, fontWeight: 900, marginBottom: 4 }}>Sales Intelligence</div>
+              <div style={{ color: C.muted, fontSize: 12 }}>Full B2B sales intelligence report for any fintech target.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+              <input value={company} onChange={function(e) { setCompany(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") go(); }} placeholder="e.g. Revolut, Chime, Wise, Marqeta, Adyen..." style={{ flex: 1, background: C.surface, border: "1px solid " + C.border, borderRadius: 8, padding: "12px 16px", color: C.text, fontSize: 14, outline: "none" }} />
+              <button onClick={go} disabled={loading || !company.trim()} style={{ padding: "12px 28px", borderRadius: 8, background: loading ? "transparent" : C.accent, color: loading ? C.muted : "#000", border: "1px solid " + (loading ? C.border : C.accent), fontWeight: 800, fontSize: 13, cursor: loading ? "wait" : "pointer", whiteSpace: "nowrap" }}>
+                {loading ? "Analyzing..." : "⚡ Analyze"}
+              </button>
+            </div>
+            {loading && step && (
+              <div style={{ color: C.accent, fontSize: 11, padding: "10px 14px", background: C.accentDim, borderRadius: 8, marginBottom: 12 }}>⟳ {step}</div>
+            )}
+            {error && (
+              <div style={{ background: C.redDim, border: "1px solid " + C.red + "40", borderRadius: 8, padding: "12px 16px", color: C.red, fontSize: 11 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Error</div>{error}
+              </div>
+            )}
+            {!loading && !error && (
+              <div style={{ marginTop: 24, color: C.dim, fontSize: 11, lineHeight: 1.9 }}>
+                <div style={{ marginBottom: 6, color: C.muted, fontWeight: 700 }}>What you get:</div>
+                {["🚨 Missed opportunity + competitor threat","💰 Conservative bottoms-up ARR projection","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison vs incumbent","🗺️ GTM attack plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions"].map(function(f) {
+                  return <div key={f}>• {f}</div>;
+                })}
+              </div>
+            )}
           </div>
         )}
-        {page==="dashboard" && <Dashboard pipeline={pipeline}/>}
-        {page==="alerts"   && <AlertsPanel pipeline={pipeline} alerts={alerts} onAddAlert={addAlert}/>}
-        {page==="reports"  && <Reports pipeline={pipeline}/>}
+
+        {/* Result */}
+        {page === "result" && (
+          result
+            ? <AnalysisView data={result} />
+            : <div style={{ textAlign: "center", padding: 80, color: C.dim }}>
+                <div style={{ fontSize: 32, marginBottom: 16 }}>📊</div>
+                <div style={{ fontSize: 14, marginBottom: 16 }}>No analysis yet</div>
+                <button onClick={function() { setPage("analyze"); }} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Run Analysis →</button>
+              </div>
+        )}
+
+        {/* History */}
+        {page === "history" && (
+          <div>
+            <div style={{ color: C.text, fontSize: 18, fontWeight: 800, marginBottom: 16 }}>Analysis History</div>
+            {history.length === 0
+              ? <div style={{ textAlign: "center", padding: 60, color: C.dim }}>
+                  <div style={{ fontSize: 28, marginBottom: 12 }}>📋</div>
+                  <div>No analyses yet. History appears here and clears when you close the tab.</div>
+                </div>
+              : history.map(function(h, i) {
+                  return (
+                    <div key={i} style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 10, padding: "14px 16px", marginBottom: 10, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                      onClick={function() { setResult(h.data); setPage("result"); }}>
+                      <div>
+                        <div style={{ color: C.text, fontWeight: 700, fontSize: 14 }}>{h.company}</div>
+                        <div style={{ color: C.muted, fontSize: 11, marginTop: 2 }}>{h.data.segment || ""} {h.data.hq ? "· " + h.data.hq : ""}</div>
+                        {h.data.tam_som_arr && h.data.tam_som_arr.likely_arr_usd && <div style={{ color: C.green, fontSize: 11, marginTop: 2 }}>ARR: {h.data.tam_som_arr.likely_arr_usd}</div>}
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ color: C.dim, fontSize: 10 }}>{new Date(h.analyzedAt).toLocaleTimeString()}</div>
+                        <div style={{ color: C.accent, fontSize: 11, marginTop: 4 }}>View →</div>
+                      </div>
+                    </div>
+                  );
+                })
+            }
+          </div>
+        )}
       </div>
     </div>
   );
