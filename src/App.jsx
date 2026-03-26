@@ -101,7 +101,7 @@ async function runAnalysis(company, onStep, keys) {
   const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
-  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM × 1-2% capture rate. Show the math inline e.g. "$100M SOM × 1% = $1M". Target range $750K-$2M ARR. Size the SOM so the math lands in this range.";
+  const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM x 1-2% capture rate. Show math e.g. $100M SOM x 1% = $1M ARR. Target range $750K-$2M. Never go below $500K.';
 
   // Phase 0a — News
   let ctx = "";
