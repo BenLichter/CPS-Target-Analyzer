@@ -101,7 +101,7 @@ async function runAnalysis(company, onStep, keys) {
   const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
-  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (2000+ cryptos, white-label, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = 1-2% of SOM at 0.75% take rate. Be extremely conservative — most deals land $20K-$150K ARR. Never exceed $500K without extraordinary justification.";
+  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM × 5-10% crypto adoption capture × 0.75% CoinPayments take rate. Show the math inline. Typical range $75K-$500K ARR.";
 
   // Phase 0a — News
   let ctx = "";
@@ -335,7 +335,7 @@ function Chip({ label, value, color }) {
 }
 
 // ─── Contact Card (pure, no hooks) ───────────────────────────────────────────
-function ContactCard({ contact, company }) {
+function ContactCard({ contact, company, onRemove }) {
   var s1 = useState(false); var showPaste = s1[0]; var setShowPaste = s1[1];
   var s2 = useState(contact.linkedin || ""); var liPaste = s2[0]; var setLiPaste = s2[1];
 
@@ -379,12 +379,25 @@ function ContactCard({ contact, company }) {
               </a>
           }
           <button onClick={function() { setShowPaste(!showPaste); }}
-            style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", title: "Paste LinkedIn URL" }}>✏</button>
+            style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✏</button>
+          {onRemove && (
+            <button onClick={onRemove}
+              title="Remove this contact"
+              style={{ background: "transparent", border: "1px solid " + C.red + "40", color: C.red, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+          )}
         </div>
       </div>
       {contact.source_url && (
         <div style={{ fontSize: 9, color: C.dim, marginTop: 4 }}>
           Found at: <a href={contact.source_url} target="_blank" rel="noreferrer" style={{ color: C.dim, textDecoration: "underline" }}>{contact.source_url.replace(/https?:\/\/(www\.)?/, "").split("/")[0]}</a>
+        </div>
+      )}
+      {(contact.verification_confidence === "LOW" || contact.verified_source === "scraped") && (
+        <div style={{ marginTop: 8, background: "#F59E0B0E", border: "1px solid #F59E0B40", borderRadius: 6, padding: "6px 10px", display: "flex", gap: 6, alignItems: "flex-start" }}>
+          <span style={{ fontSize: 13, flexShrink: 0 }}>⚠️</span>
+          <div style={{ color: "#F59E0B", fontSize: 10, lineHeight: 1.5 }}>
+            <strong>Unconfirmed — verify before outreach.</strong> This individual was found in public sources but could not be confirmed via NinjaPear or web cross-check. Search LinkedIn before contacting.
+          </div>
         </div>
       )}
       {showPaste && (
@@ -464,9 +477,10 @@ function AnalysisView({ data }) {
       {t.likely_arr_usd && (
         <Sec title="💰 ARR Potential" accent={C.green}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8, marginBottom: 10 }}>
-            {t.likely_arr_usd && <Chip label="Conservative ARR" value={t.likely_arr_usd} color={C.green} />}
-            {t.upside_arr_usd && <Chip label="Upside ARR" value={t.upside_arr_usd} color={C.gold} />}
+            {t.tam_usd && <Chip label="TAM" value={t.tam_usd} color={C.muted} />}
             {t.som_usd && <Chip label="SOM" value={t.som_usd} color={C.accent} />}
+            {t.likely_arr_usd && <Chip label="Projected ARR" value={t.likely_arr_usd} color={C.green} />}
+            {t.upside_arr_usd && <Chip label="Upside ARR" value={t.upside_arr_usd} color={C.gold} />}
           </div>
           {t.methodology && <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>📐 {t.methodology}</div>}
           {(t.assumptions || []).map(function(a, i) { return <div key={i} style={{ color: C.dim, fontSize: 11, marginBottom: 4 }}>• {a}</div>; })}
@@ -477,7 +491,7 @@ function AnalysisView({ data }) {
       {/* Key Contacts */}
       <Sec title={"👥 Key Contacts" + (contacts.length ? " (" + contacts.length + ")" : "")} accent={C.cyan} open={true}>
         {contacts.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>No contacts found. Add a NinjaPear key for verified executives.</div>}
-        {contacts.map(function(c, i) { return <ContactCard key={i} contact={c} company={data.company} />; })}
+        {contacts.map(function(c, i) { return <ContactCard key={i} contact={c} company={data.company} onRemove={function(){ setContacts(function(prev){ return prev.filter(function(_,j){ return j!==i; }); }); }} />; })}
       </Sec>
 
       {/* Partnerships */}
@@ -688,10 +702,16 @@ var PIPE_STAGES = [
 
 function parseArr(s) {
   if (!s) return 0;
-  var t = String(s).replace(/[$,\s]/g,"").toUpperCase();
-  if (t.endsWith("M")) return parseFloat(t)*1e6;
-  if (t.endsWith("K")) return parseFloat(t)*1e3;
-  return parseFloat(t.replace(/[^0-9.]/g,""))||0;
+  // Handle strings like "$187,500", "$1.2M", "$450K", "187500"
+  var raw = String(s).trim();
+  // Extract first dollar-amount-like substring
+  var match = raw.match(/\$?([0-9,]+(?:\.[0-9]+)?)(M|K|m|k)?/);
+  if (!match) return 0;
+  var num = parseFloat(match[1].replace(/,/g,""));
+  var unit = (match[2]||"").toUpperCase();
+  if (unit==="M") return num*1e6;
+  if (unit==="K") return num*1e3;
+  return num||0;
 }
 function fmtMoney(n) {
   if (!n) return "—";
@@ -701,9 +721,8 @@ function fmtMoney(n) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ history, onViewResult }) {
-  // ALL hooks first
-  var s1 = useState([]);              var deals    = s1[0]; var setDeals    = s1[1];
+function PipelineTab({ deals, setDeals, history, onViewResult }) {
+  // ALL hooks first — deals/setDeals come from App so dashboard stays in sync
   var s2 = useState("financial_services"); var activeV = s2[0]; var setActiveV  = s2[1];
   var s3 = useState(null);            var editId   = s3[0]; var setEditId   = s3[1];
   var s4 = useState(false);           var showAdd  = s4[0]; var setShowAdd  = s4[1];
@@ -956,7 +975,8 @@ export default function App() {
   var s7  = useState(false);     var showKeys= s7[0];  var setShowKeys= s7[1];
   var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; }); var tKey  = s8[0]; var setTKey  = s8[1];
   var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; }); var njKey = s9[0]; var setNjKey = s9[1];
-  var s10 = useState([]);        var history = s10[0]; var setHistory = s10[1];
+  var s10 = useState([]);        var history      = s10[0]; var setHistory      = s10[1];
+  var s11 = useState([]);        var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
 
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
@@ -1054,7 +1074,7 @@ export default function App() {
             {!loading&&!error&&(
               <div style={{ marginTop:24, color:C.dim, fontSize:11, lineHeight:1.9 }}>
                 <div style={{ marginBottom:6, color:C.muted, fontWeight:700 }}>What you get:</div>
-                {["🚨 Missed opportunity + competitor threat","💰 Conservative bottoms-up ARR (1-2% SOM capture)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison vs incumbent","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
+                {["🚨 Missed opportunity + competitor threat","💰 Bottoms-up ARR projection (5-10% SOM capture × 0.75% take rate)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison vs incumbent","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
                   return <div key={f}>• {f}</div>;
                 })}
               </div>
@@ -1066,10 +1086,23 @@ export default function App() {
         {page==="result" && (
           result
             ? <div>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexWrap:"wrap", gap:8 }}>
-                  <div/>
-                  <button onClick={function(){setPage("pipeline");}} style={{ background:C.accentDim, color:C.accent, border:"1px solid "+C.accent+"40", borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontWeight:700, fontFamily:"inherit" }}>
-                    + Add to Pipeline →
+                <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
+                  <button onClick={function(){
+                    // Auto-detect vertical from segment
+                    var seg = (result.segment||"").toLowerCase();
+                    var vert = "financial_services";
+                    if (seg.includes("travel")||seg.includes("hotel")||seg.includes("airline")||seg.includes("hospitality")) vert="luxury_travel";
+                    else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
+                    else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
+                    var arr = (result.tam_som_arr&&result.tam_som_arr.likely_arr_usd)||"";
+                    setPipelineDeals(function(prev){
+                      var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
+                      if (already) return prev;
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, stage:"prospecting", vertical:vert, notes:(result.executive_summary||"").slice(0,120), addedAt:new Date().toISOString() }]);
+                    });
+                    setPage("pipeline");
+                  }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
+                    + Add to Pipeline
                   </button>
                 </div>
                 <AnalysisView data={result}/>
@@ -1082,7 +1115,7 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab history={history} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} onViewResult={function(data){setResult(data);setPage("result");}}/>}
 
         {/* History */}
         {page==="history" && (
