@@ -101,7 +101,7 @@ async function runAnalysis(company, onStep, keys) {
   const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
-  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM × 5-10% crypto adoption capture × 0.75% CoinPayments take rate. Show the math inline. Typical range $75K-$500K ARR.";
+  const SYS = "You are a senior fintech B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM × 1-2% capture rate. Show the math inline e.g. "$100M SOM × 1% = $1M". Target range $750K-$2M ARR. Size the SOM so the math lands in this range.";
 
   // Phase 0a — News
   let ctx = "";
@@ -286,7 +286,7 @@ async function runAnalysis(company, onStep, keys) {
   // Phase 2 — Competitive + GTM (parallel)
   onStep("⚔️ Competitive analysis & GTM plan...");
   const [p2raw, p3raw] = await Promise.all([
-    callAPI(SYS, "Build competitive comparison for CoinPayments vs " + company + "'s likely incumbent.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"rating + 1 sentence\"").join(",") + "},\"incumbent\":{\"name\":\"provider name\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"rating + 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence CP positioning\"}", 3000),
+    callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
     callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
   ]);
 
@@ -522,7 +522,7 @@ function AnalysisView({ data }) {
               <thead><tr style={{ background: C.card }}>
                 <th style={{ padding: "7px 10px", textAlign: "left", color: C.dim, fontSize: 10, borderBottom: "1px solid " + C.border }}>Dimension</th>
                 <th style={{ padding: "7px 10px", textAlign: "left", color: C.accent, fontSize: 10, borderBottom: "1px solid " + C.border }}>CoinPayments</th>
-                <th style={{ padding: "7px 10px", textAlign: "left", color: C.gold, fontSize: 10, borderBottom: "1px solid " + C.border }}>{cc.incumbent ? cc.incumbent.name || "Incumbent" : "Incumbent"}</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.gold, fontSize: 10, borderBottom: "1px solid " + C.border }}>{cc.target ? cc.target.name || data.company : data.company}</th>
               </tr></thead>
               <tbody>
                 {COMPARE_ROWS.map(function(row, i) {
@@ -531,7 +531,7 @@ function AnalysisView({ data }) {
                     <tr key={key} style={{ borderBottom: "1px solid " + C.border, background: i % 2 === 0 ? "transparent" : C.card + "80" }}>
                       <td style={{ padding: "7px 10px", color: C.muted, fontWeight: 600 }}>{label}</td>
                       <td style={{ padding: "7px 10px", color: C.text }}>{(cc.coinpayments || {})[key] || "—"}</td>
-                      <td style={{ padding: "7px 10px", color: C.muted }}>{cc.incumbent ? (cc.incumbent[key] || "—") : "—"}</td>
+                      <td style={{ padding: "7px 10px", color: C.muted }}>{cc.target ? (cc.target[key] || "—") : "—"}</td>
                     </tr>
                   );
                 })}
@@ -1074,7 +1074,7 @@ export default function App() {
             {!loading&&!error&&(
               <div style={{ marginTop:24, color:C.dim, fontSize:11, lineHeight:1.9 }}>
                 <div style={{ marginBottom:6, color:C.muted, fontWeight:700 }}>What you get:</div>
-                {["🚨 Missed opportunity + competitor threat","💰 Bottoms-up ARR projection (5-10% SOM capture × 0.75% take rate)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison vs incumbent","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
+                {["🚨 Missed opportunity + competitor threat","💰 Bottoms-up ARR projection ($750K-$2M typical range)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison: CoinPayments vs target","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
                   return <div key={f}>• {f}</div>;
                 })}
               </div>
