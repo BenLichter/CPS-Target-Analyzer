@@ -1804,9 +1804,11 @@ function AnalysisView({data, onAdd, inPipeline, keys, onUpdateContacts}) {
 
 // ─── CRM Record ───────────────────────────────────────────────────────────────
 function CRMRecord({record, onUpdate, onRemove, keys}) {
-  if (!record || !record.company) return null;
-  // Build safe crm defaults BEFORE useState (no self-references)
-  const _crm = Object.assign({stage:"Prospecting",deal_value:"",next_action:"",notes:""}, record.crm||{});
+  // Build safe crm defaults BEFORE useState — handle null record safely
+  // NEVER early-return before hooks — violates Rules of Hooks
+  const safeR = record && record.company ? record : {};
+  const _crm = Object.assign({stage:"Prospecting",deal_value:"",next_action:"",notes:""}, safeR.crm||{});
+  // ALL hooks unconditionally — React requires same hook count every render
   const [showReport, setShowReport] = useState(false);
   const [editing, setEditing] = useState(false);
   const [stage, setStage] = useState(_crm.stage);
@@ -1815,6 +1817,8 @@ function CRMRecord({record, onUpdate, onRemove, keys}) {
   const [nextAct, setNextAct] = useState(_crm.next_action||"Schedule discovery call");
   const [editingField, setEditingField] = useState(null);
   const [editVal, setEditVal] = useState("");
+  // Guard AFTER hooks — safe because hooks are already called
+  if (!record || !record.company) return null;
   // Build safeRecord AFTER useState (safe to reference record here)
   const safeRecord = Object.assign({
     company:"",segment:"",hq:"",website:"",employees:"",revenue:"",
