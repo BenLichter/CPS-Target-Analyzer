@@ -1,3 +1,4 @@
+// VERSION: FIX-HOOKS-TDZ-2026-03-25
 import React, { useState, useRef, useCallback } from "react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
