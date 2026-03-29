@@ -981,9 +981,28 @@ export default function App() {
   var history      = s10[0]; var setHistory      = s10[1];
   var s11 = useState(function(){ try { return JSON.parse(localStorage.getItem(PIPE_LS)||"[]"); } catch { return []; } });
   var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
+  var pipeLoadedRef = useRef(false);
 
   useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
-  useEffect(function(){ localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); }, [pipelineDeals]);
+
+  // Load pipeline from server on mount — server is source of truth for cross-device sync
+  useEffect(function() {
+    fetch("/api/pipeline").then(function(r){ return r.json(); }).then(function(d) {
+      pipeLoadedRef.current = true;
+      if (Array.isArray(d.pipeline) && d.pipeline.length > 0) setPipelineDeals(d.pipeline);
+    }).catch(function(){ pipeLoadedRef.current = true; });
+  }, []);
+
+  // Save pipeline to server + localStorage on every change (skip initial render before load completes)
+  useEffect(function() {
+    localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals));
+    if (!pipeLoadedRef.current) return;
+    fetch("/api/pipeline", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pipeline: pipelineDeals })
+    }).catch(function(){});
+  }, [pipelineDeals]);
 
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
