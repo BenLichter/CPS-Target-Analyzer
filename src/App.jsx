@@ -301,8 +301,9 @@ async function runAnalysis(company, onStep, keys) {
 
 // ─── UI Primitives ────────────────────────────────────────────────────────────
 function Badge({ color, children, sm }) {
-  const colors = { accent: [C.accentDim, C.accent], gold: [C.goldDim, C.gold], green: [C.greenDim, C.green], purple: ["#8B5CF612", C.purple], red: [C.redDim, C.red], muted: [C.dim + "33", C.muted], cyan: ["#06B6D412", C.cyan] };
-  const [bg, fg] = colors[color || "muted"] || colors.muted;
+  var colors = { accent: [C.accentDim, C.accent], gold: [C.goldDim, C.gold], green: [C.greenDim, C.green], purple: ["#8B5CF612", C.purple], red: [C.redDim, C.red], muted: [C.dim + "33", C.muted], cyan: ["#06B6D412", C.cyan] };
+  var pair = colors[color || "muted"] || colors.muted;
+  var bg = pair[0]; var fg = pair[1];
   return <span style={{ background: bg, color: fg, borderRadius: 10, padding: sm ? "1px 7px" : "2px 10px", fontSize: sm ? 9 : 10, fontWeight: 700, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{children}</span>;
 }
 
@@ -725,11 +726,11 @@ function fmtMoney(n) {
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
 function PipelineTab({ deals, setDeals, history, onViewResult }) {
   // ALL hooks first — deals/setDeals come from App so dashboard stays in sync
-  var s2 = useState("financial_services"); var activeV = s2[0]; var setActiveV  = s2[1];
-  var s3 = useState(null);            var editId   = s3[0]; var setEditId   = s3[1];
-  var s4 = useState(false);           var showAdd  = s4[0]; var setShowAdd  = s4[1];
-  var s5 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", notes:"" });
-  var form = s5[0]; var setForm = s5[1];
+  var s1 = useState("financial_services"); var activeV = s1[0]; var setActiveV  = s1[1];
+  var s2 = useState(null);            var editId   = s2[0]; var setEditId   = s2[1];
+  var s3 = useState(false);           var showAdd  = s3[0]; var setShowAdd  = s3[1];
+  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", notes:"" });
+  var form = s4[0]; var setForm = s4[1];
 
   function addDeal() {
     if (!form.company.trim()) return;
