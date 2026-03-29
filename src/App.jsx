@@ -4,6 +4,8 @@ import React, { useState, useRef, useEffect } from "react";
 const MODEL    = "claude-sonnet-4-20250514";
 const TKEY_LS  = "cp_tavily_key";
 const NJKEY_LS = "cp_ninjapear_key";
+const HIST_LS  = "cp_history";
+const PIPE_LS  = "cp_pipeline";
 
 const C = {
   bg:"#07090F", surface:"#0D1117", card:"#111827", border:"#1F2937",
@@ -975,8 +977,13 @@ export default function App() {
   var s7  = useState(false);     var showKeys= s7[0];  var setShowKeys= s7[1];
   var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; }); var tKey  = s8[0]; var setTKey  = s8[1];
   var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; }); var njKey = s9[0]; var setNjKey = s9[1];
-  var s10 = useState([]);        var history      = s10[0]; var setHistory      = s10[1];
-  var s11 = useState([]);        var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
+  var s10 = useState(function(){ try { return JSON.parse(localStorage.getItem(HIST_LS)||"[]"); } catch { return []; } });
+  var history      = s10[0]; var setHistory      = s10[1];
+  var s11 = useState(function(){ try { return JSON.parse(localStorage.getItem(PIPE_LS)||"[]"); } catch { return []; } });
+  var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
+
+  useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
+  useEffect(function(){ localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); }, [pipelineDeals]);
 
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
@@ -1124,7 +1131,7 @@ export default function App() {
             {history.length===0
               ? <div style={{ textAlign:"center", padding:60, color:C.dim }}>
                   <div style={{ fontSize:28, marginBottom:12 }}>🕐</div>
-                  <div>No analyses yet. History clears when you close the tab.</div>
+                  <div>No analyses yet. History is saved in this browser.</div>
                 </div>
               : history.map(function(h,i){
                   return (
