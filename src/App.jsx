@@ -980,7 +980,7 @@ export default function App() {
   var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; }); var njKey = s9[0]; var setNjKey = s9[1];
   var s10 = useState(function(){ try { return JSON.parse(localStorage.getItem(HIST_LS)||"[]"); } catch { return []; } });
   var history      = s10[0]; var setHistory      = s10[1];
-  var s11 = useState(function(){ try { return JSON.parse(localStorage.getItem(PIPE_LS)||"[]"); } catch { return []; } });
+  var s11 = useState(function(){ try { return (JSON.parse(localStorage.getItem(PIPE_LS)||"[]")).filter(function(d){ return d && d.company; }); } catch { return []; } });
   var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
 
@@ -989,7 +989,7 @@ export default function App() {
   // Load pipeline from server on mount — server is source of truth for cross-device sync
   useEffect(function() {
     fetch("/api/pipeline").then(function(r){ return r.json(); }).then(function(d) {
-      if (Array.isArray(d.pipeline) && d.pipeline.length > 0) setPipelineDeals(d.pipeline);
+      if (Array.isArray(d.pipeline) && d.pipeline.length > 0) setPipelineDeals(d.pipeline.filter(function(d){ return d && d.company; }));
       setPipeLoaded(true);
     }).catch(function(){ setPipeLoaded(true); });
   }, []);
