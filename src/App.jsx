@@ -736,6 +736,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
   var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", notes:"" });
   var form = s4[0]; var setForm = s4[1];
+  var s5 = useState(null); var tierPickId = s5[0]; var setTierPickId = s5[1];
 
   function addDeal() {
     if (!form.company.trim()) return;
@@ -1023,7 +1024,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                             ) : (
                               <div style={{ borderTop:"1px solid "+C.border, paddingTop:8, marginTop:4 }}>
                                 <div style={{ color:C.dim, fontSize:9, marginBottom:5 }}>MOVE TO STAGE</div>
-                                <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                                <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:8 }}>
                                   {PIPE_STAGES.filter(function(s){ return s.id!==deal.stage; }).map(function(s) {
                                     return (
                                       <button key={s.id} onClick={function(){ updateStage(deal.id,s.id); }}
@@ -1032,6 +1033,31 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                                       </button>
                                     );
                                   })}
+                                </div>
+                                <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:4 }}>
+                                  <button onClick={function(){ setTierPickId(tierPickId===deal.id?null:deal.id); }}
+                                    style={{ background:"transparent", border:"1px solid "+(dt?dt.color+"80":C.border), color:dt?dt.color:C.dim, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+                                    {dt ? "Change Tier" : "Add to Tier"}
+                                  </button>
+                                  {tierPickId===deal.id && (
+                                    <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                                      {TIERS.map(function(t){
+                                        var isActive = deal.tier===t.id;
+                                        return (
+                                          <button key={t.id} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:t.id}):x; }); }); setTierPickId(null); }}
+                                            style={{ background:isActive?t.color:t.color+"25", border:"1px solid "+t.color, color:isActive?"#000":t.color, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>
+                                            {t.label}
+                                          </button>
+                                        );
+                                      })}
+                                      {dt && (
+                                        <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:""}):x; }); }); setTierPickId(null); }}
+                                          style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>
+                                          Unassign
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
