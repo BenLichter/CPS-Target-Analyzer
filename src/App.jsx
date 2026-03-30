@@ -702,6 +702,11 @@ var PIPE_STAGES = [
   { id:"closed_won",    label:"Closed / Won",           color:"#10B981" },
   { id:"expansion",     label:"Expansion / Retention",  color:"#10B981" },
 ];
+var TIERS = [
+  { id:"tier1", label:"Tier 1", color:"#00C2FF" },
+  { id:"tier2", label:"Tier 2", color:"#F59E0B" },
+  { id:"tier3", label:"Tier 3", color:"#8B5CF6" },
+];
 
 function parseArr(s) {
   if (!s) return 0;
@@ -725,244 +730,323 @@ function fmtMoney(n) {
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
 function PipelineTab({ deals, setDeals, history, onViewResult }) {
-  // ALL hooks first — deals/setDeals come from App so dashboard stays in sync
-  var s1 = useState("financial_services"); var activeV = s1[0]; var setActiveV  = s1[1];
-  var s2 = useState(null);            var editId   = s2[0]; var setEditId   = s2[1];
-  var s3 = useState(false);           var showAdd  = s3[0]; var setShowAdd  = s3[1];
-  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", notes:"" });
+  // ALL hooks first — var sN pattern, no const, no early returns before hooks
+  var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
+  var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
+  var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
+  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", notes:"" });
   var form = s4[0]; var setForm = s4[1];
 
   function addDeal() {
     if (!form.company.trim()) return;
-    var d = { id: Date.now(), company: form.company.trim(), arr: form.arr.trim(), stage: form.stage, vertical: form.vertical, notes: form.notes.trim(), addedAt: new Date().toISOString() };
-    setDeals(function(prev) { return prev.concat([d]); });
-    setForm({ company:"", arr:"", stage:"prospecting", vertical:activeV, notes:"" });
+    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", notes:form.notes.trim(), addedAt:new Date().toISOString() };
+    setDeals(function(prev){ return prev.concat([d]); });
+    setForm(function(f){ return Object.assign({},f,{company:"",arr:"",notes:""}); });
     setShowAdd(false);
   }
-  function updateStage(id, stage) { setDeals(function(prev) { return prev.map(function(d) { return d.id===id ? Object.assign({},d,{stage:stage}) : d; }); }); }
-  function updateDeal(id, updates) { setDeals(function(prev) { return prev.map(function(d) { return d.id===id ? Object.assign({},d,updates) : d; }); }); setEditId(null); }
-  function removeDeal(id) { setDeals(function(prev) { return prev.filter(function(d) { return d.id!==id; }); }); }
+  function updateStage(id, stage) { setDeals(function(prev){ return prev.map(function(d){ return d.id===id?Object.assign({},d,{stage:stage}):d; }); }); }
+  function updateDeal(id, updates) { setDeals(function(prev){ return prev.map(function(d){ return d.id===id?Object.assign({},d,updates):d; }); }); setEditId(null); }
+  function removeDeal(id) { setDeals(function(prev){ return prev.filter(function(d){ return d.id!==id; }); }); }
 
   function importFromHistory(h) {
-    var already = deals.find(function(d) { return d.company.toLowerCase()===(h.company||"").toLowerCase(); });
+    var already = deals.find(function(d){ return d.company.toLowerCase()===(h.company||"").toLowerCase(); });
     if (already) return;
     var seg = (h.data.segment||"").toLowerCase();
     var vert = "financial_services";
     if (seg.includes("travel")||seg.includes("hotel")||seg.includes("airline")||seg.includes("hospitality")) vert="luxury_travel";
     else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
-    var arr = (h.data.tam_som_arr && h.data.tam_som_arr.likely_arr_usd)||"";
-    var d = { id: Date.now(), company: h.company, arr: arr, stage:"prospecting", vertical: vert, notes:(h.data.executive_summary||"").slice(0,120), addedAt: h.analyzedAt };
-    setDeals(function(prev) { return prev.concat([d]); });
-    setActiveV(vert);
+    var arr = (h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd)||"";
+    var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
+    var d = { id:Date.now(), company:h.company, arr:arr, stage:"prospecting", vertical:vert, tier:autoTier, notes:(h.data.executive_summary||"").slice(0,120), addedAt:h.analyzedAt };
+    setDeals(function(prev){ return prev.concat([d]); });
   }
 
-  // Metrics
+  // Metrics helpers
   function vMetrics(vid) {
-    var vd = deals.filter(function(d) { return d.vertical===vid; });
-    var wa = vd.filter(function(d) { return d.arr; });
-    var tot = wa.reduce(function(s,d) { return s+parseArr(d.arr); }, 0);
-    return { total:vd.length, avgArr: wa.length ? tot/wa.length : 0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length };
+    var vd = deals.filter(function(d){ return d.vertical===vid; });
+    var wa = vd.filter(function(d){ return d.arr; });
+    var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length };
+  }
+  function tMetrics(vid, tid) {
+    var vd = deals.filter(function(d){ return d.vertical===vid; });
+    var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
+    var wa = td.filter(function(d){ return d.arr; });
+    var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot };
   }
 
-  var vert = VERTICALS.find(function(v){return v.id===activeV;})||VERTICALS[0];
-  var vertDeals = deals.filter(function(d){return d.vertical===activeV;});
-
-  // Input field style
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
   var sel = Object.assign({}, inp, { cursor:"pointer" });
 
-  return (
-    <div>
-      {/* ── Dashboard ── */}
-      <div style={{ marginBottom:20 }}>
-        <div style={{ color:C.text, fontSize:18, fontWeight:900, marginBottom:12 }}>Pipeline Dashboard</div>
+  var activeVert = pipeView.vertical ? (VERTICALS.find(function(v){ return v.id===pipeView.vertical; })||VERTICALS[0]) : null;
+  var activeTier = pipeView.tier ? (TIERS.find(function(t){ return t.id===pipeView.tier; })||null) : null;
+  var tierDeals  = (pipeView.vertical&&pipeView.tier)
+    ? deals.filter(function(d){
+        if (d.vertical!==pipeView.vertical) return false;
+        return pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
+      })
+    : [];
 
-        {/* Vertical cards — click to switch */}
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(190px,1fr))", gap:10, marginBottom:16 }}>
-          {VERTICALS.map(function(v) {
-            var m = vMetrics(v.id);
-            var active = activeV===v.id;
-            return (
-              <div key={v.id} onClick={function(){setActiveV(v.id);}}
-                style={{ background:active?v.dim:C.card, border:"1px solid "+(active?v.color+"60":C.border), borderRadius:10, padding:"12px 14px", cursor:"pointer" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:10 }}>
-                  <span style={{ fontSize:18 }}>{v.icon}</span>
-                  <span style={{ color:active?v.color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
-                </div>
-                <div style={{ color:v.color, fontSize:22, fontWeight:900, marginBottom:1 }}>{m.total ? fmtMoney(m.avgArr) : "—"}</div>
-                <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:10 }}>Avg Projected ARR</div>
-                <div style={{ display:"flex", gap:14 }}>
-                  <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
-                  <div><div style={{ color:C.dim, fontSize:9 }}>Total ARR</div><div style={{ color:v.color, fontWeight:700, fontSize:13 }}>{fmtMoney(m.totalArr)||"—"}</div></div>
-                  <div><div style={{ color:C.dim, fontSize:9 }}>Won</div><div style={{ color:C.green, fontWeight:700, fontSize:13 }}>{m.won}</div></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Grand total bar */}
-        {deals.length > 0 && (
-          <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 16px", display:"flex", gap:24, alignItems:"center", flexWrap:"wrap" }}>
-            <div><span style={{ color:C.dim, fontSize:10 }}>Total accounts: </span><span style={{ color:C.text, fontWeight:700, fontSize:13 }}>{deals.length}</span></div>
-            <div><span style={{ color:C.dim, fontSize:10 }}>Total pipeline ARR: </span><span style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{fmtMoney(deals.filter(function(d){return d.arr;}).reduce(function(s,d){return s+parseArr(d.arr);},0))}</span></div>
-            <div><span style={{ color:C.dim, fontSize:10 }}>Closed / Won: </span><span style={{ color:C.green, fontWeight:700, fontSize:13 }}>{deals.filter(function(d){return d.stage==="closed_won";}).length}</span></div>
-            <div><span style={{ color:C.dim, fontSize:10 }}>In Proposal: </span><span style={{ color:C.gold, fontWeight:700, fontSize:13 }}>{deals.filter(function(d){return d.stage==="proposal_neg";}).length}</span></div>
+  // ── Shared add-form snippet ──────────────────────────────────────────────────
+  function AddForm({ vert }) {
+    return (
+      <div style={{ background:C.card, border:"1px solid "+vert.color+"40", borderRadius:10, padding:"16px", marginBottom:16 }}>
+        <div style={{ color:vert.color, fontWeight:700, fontSize:12, marginBottom:12 }}>New Account</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>COMPANY NAME</div>
+            <input value={form.company} onChange={function(e){setForm(function(f){return Object.assign({},f,{company:e.target.value});});}} placeholder="e.g. Saks Fifth Avenue" style={inp}/>
           </div>
-        )}
-      </div>
-
-      {/* ── Active vertical header + actions ── */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14, flexWrap:"wrap", gap:8 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <span style={{ fontSize:20 }}>{vert.icon}</span>
-          <span style={{ color:vert.color, fontWeight:800, fontSize:16 }}>{vert.label}</span>
-          <span style={{ color:C.dim, fontSize:11 }}>({vertDeals.length} accounts)</span>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>PROJECTED ARR</div>
+            <input value={form.arr} onChange={function(e){setForm(function(f){return Object.assign({},f,{arr:e.target.value});});}} placeholder="e.g. $45K" style={inp}/>
+          </div>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>TIER</div>
+            <select value={form.tier||""} onChange={function(e){setForm(function(f){return Object.assign({},f,{tier:e.target.value});});}} style={sel}>
+              <option value="">No tier</option>
+              {TIERS.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+            </select>
+          </div>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>STAGE</div>
+            <select value={form.stage} onChange={function(e){setForm(function(f){return Object.assign({},f,{stage:e.target.value});});}} style={sel}>
+              {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+            </select>
+          </div>
+        </div>
+        <div style={{ marginBottom:10 }}>
+          <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>NOTES</div>
+          <input value={form.notes} onChange={function(e){setForm(function(f){return Object.assign({},f,{notes:e.target.value});});}} placeholder="Brief opportunity summary..." style={inp}/>
         </div>
         <div style={{ display:"flex", gap:8 }}>
-          {history.length > 0 && (
-            <div style={{ position:"relative" }}>
-              <select onChange={function(e){ if(e.target.value!=="") { importFromHistory(history[parseInt(e.target.value)]); e.target.value=""; } }}
-                style={{ background:C.surface, border:"1px solid "+C.accent+"50", borderRadius:7, padding:"6px 12px", color:C.accent, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
-                <option value="">+ Import from history…</option>
-                {history.map(function(h,i){ return <option key={i} value={String(i)}>{h.company}</option>; })}
-              </select>
-            </div>
-          )}
-          <button onClick={function(){ setForm(function(f){ return Object.assign({},f,{vertical:activeV}); }); setShowAdd(true); }}
-            style={{ background:vert.color, color:"#000", border:"none", borderRadius:7, padding:"6px 14px", fontWeight:800, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
-            + Add Account
-          </button>
+          <button onClick={addDeal} style={{ background:vert.color, color:"#000", border:"none", borderRadius:7, padding:"7px 18px", fontWeight:800, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Add to Pipeline</button>
+          <button onClick={function(){setShowAdd(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"7px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
         </div>
       </div>
+    );
+  }
 
-      {/* ── Add form ── */}
-      {showAdd && (
-        <div style={{ background:C.card, border:"1px solid "+vert.color+"40", borderRadius:10, padding:"16px", marginBottom:16 }}>
-          <div style={{ color:vert.color, fontWeight:700, fontSize:12, marginBottom:12 }}>New Account</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
-            <div>
-              <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>COMPANY NAME</div>
-              <input value={form.company} onChange={function(e){setForm(function(f){return Object.assign({},f,{company:e.target.value});});}} placeholder="e.g. Saks Fifth Avenue" style={inp}/>
-            </div>
-            <div>
-              <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>PROJECTED ARR</div>
-              <input value={form.arr} onChange={function(e){setForm(function(f){return Object.assign({},f,{arr:e.target.value});});}} placeholder="e.g. $45K" style={inp}/>
-            </div>
-            <div>
-              <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>VERTICAL</div>
-              <select value={form.vertical} onChange={function(e){setForm(function(f){return Object.assign({},f,{vertical:e.target.value});});}} style={sel}>
-                {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
-              </select>
-            </div>
-            <div>
-              <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>STAGE</div>
-              <select value={form.stage} onChange={function(e){setForm(function(f){return Object.assign({},f,{stage:e.target.value});});}} style={sel}>
-                {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
-              </select>
-            </div>
-          </div>
-          <div style={{ marginBottom:10 }}>
-            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>NOTES</div>
-            <input value={form.notes} onChange={function(e){setForm(function(f){return Object.assign({},f,{notes:e.target.value});});}} placeholder="Brief opportunity summary..." style={inp}/>
-          </div>
-          <div style={{ display:"flex", gap:8 }}>
-            <button onClick={addDeal} style={{ background:vert.color, color:"#000", border:"none", borderRadius:7, padding:"7px 18px", fontWeight:800, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Add to Pipeline</button>
-            <button onClick={function(){setShowAdd(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"7px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-          </div>
-        </div>
-      )}
+  // ── Actions bar (import + add button) ───────────────────────────────────────
+  function ActionsBar({ vert, defaultTier }) {
+    return (
+      <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+        {history.length > 0 && (
+          <select onChange={function(e){ if(e.target.value!=="") { importFromHistory(history[parseInt(e.target.value)]); e.target.value=""; } }}
+            style={{ background:C.surface, border:"1px solid "+C.accent+"50", borderRadius:7, padding:"6px 12px", color:C.accent, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+            <option value="">+ Import from history…</option>
+            {history.map(function(h,i){ return <option key={i} value={String(i)}>{h.company}</option>; })}
+          </select>
+        )}
+        <button onClick={function(){
+          setForm(function(f){ return Object.assign({},f,{vertical:vert.id, tier:defaultTier||""}); });
+          setShowAdd(true);
+        }} style={{ background:vert.color, color:"#000", border:"none", borderRadius:7, padding:"6px 14px", fontWeight:800, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+          + Add Account
+        </button>
+      </div>
+    );
+  }
 
-      {/* ── Stage columns ── */}
-      {vertDeals.length === 0 ? (
-        <div style={{ textAlign:"center", padding:"60px 20px", color:C.dim }}>
-          <div style={{ fontSize:32, marginBottom:12 }}>{vert.icon}</div>
-          <div style={{ fontSize:14, marginBottom:6 }}>No accounts in {vert.label} yet</div>
-          <div style={{ fontSize:11 }}>Add manually or import from your analysis history above.</div>
-        </div>
-      ) : (
+  return (
+    <div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MAIN DASHBOARD — vertical === null
+      ══════════════════════════════════════════════════════════════════════ */}
+      {!pipeView.vertical && (
         <div>
-          {PIPE_STAGES.map(function(stage) {
-            var stageDeals = vertDeals.filter(function(d){ return d.stage===stage.id; });
-            return (
-              <div key={stage.id} style={{ marginBottom:10 }}>
-                {/* Stage header */}
-                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, padding:"0 4px" }}>
-                  <div style={{ width:10, height:10, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
-                  <span style={{ color:stage.color, fontWeight:700, fontSize:11 }}>{stage.label}</span>
-                  <span style={{ color:C.dim, fontSize:10 }}>({stageDeals.length})</span>
-                  {stageDeals.length > 0 && stageDeals.some(function(d){return d.arr;}) && (
-                    <span style={{ color:C.dim, fontSize:10 }}>
-                      · {fmtMoney(stageDeals.filter(function(d){return d.arr;}).reduce(function(s,d){return s+parseArr(d.arr);},0))} ARR
-                    </span>
-                  )}
-                </div>
-
-                {stageDeals.length === 0 ? (
-                  <div style={{ border:"1px dashed "+C.border, borderRadius:8, padding:"10px 14px", color:C.dim, fontSize:10, textAlign:"center" }}>No accounts</div>
-                ) : (
-                  <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:8 }}>
-                    {stageDeals.map(function(deal) {
-                      var isEditing = editId===deal.id;
-                      return (
-                        <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?vert.color+"60":C.border), borderRadius:8, padding:"12px 14px" }}>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                            <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
-                            <div style={{ display:"flex", gap:4 }}>
-                              <button onClick={function(){setEditId(isEditing?null:deal.id);}} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
-                              <button onClick={function(){removeDeal(deal.id);}} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
-                            </div>
-                          </div>
-                          {deal.arr && <div style={{ color:vert.color, fontWeight:800, fontSize:14, marginBottom:4 }}>{deal.arr} ARR</div>}
-                          {deal.notes && <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, marginBottom:8 }}>{deal.notes}</div>}
-
-                          {isEditing ? (
-                            <div style={{ borderTop:"1px solid "+C.border, paddingTop:10, marginTop:6 }}>
-                              <div style={{ display:"grid", gap:6, marginBottom:8 }}>
-                                <input defaultValue={deal.arr} id={"arr_"+deal.id} placeholder="Projected ARR e.g. $45K" style={inp}/>
-                                <input defaultValue={deal.notes} id={"notes_"+deal.id} placeholder="Notes" style={inp}/>
-                                <select defaultValue={deal.stage} id={"stage_"+deal.id} style={sel}>
-                                  {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
-                                </select>
-                                <select defaultValue={deal.vertical} id={"vert_"+deal.id} style={sel}>
-                                  {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
-                                </select>
-                              </div>
-                              <button onClick={function(){
-                                var arrEl    = document.getElementById("arr_"+deal.id);
-                                var notesEl  = document.getElementById("notes_"+deal.id);
-                                var stageEl  = document.getElementById("stage_"+deal.id);
-                                var vertEl   = document.getElementById("vert_"+deal.id);
-                                updateDeal(deal.id, { arr: arrEl?arrEl.value:deal.arr, notes: notesEl?notesEl.value:deal.notes, stage: stageEl?stageEl.value:deal.stage, vertical: vertEl?vertEl.value:deal.vertical });
-                              }} style={{ background:vert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
-                              <button onClick={function(){setEditId(null);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-                            </div>
-                          ) : (
-                            <div style={{ borderTop:"1px solid "+C.border, paddingTop:8, marginTop:4 }}>
-                              <div style={{ color:C.dim, fontSize:9, marginBottom:5 }}>MOVE TO STAGE</div>
-                              <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
-                                {PIPE_STAGES.filter(function(s){return s.id!==deal.stage;}).map(function(s) {
-                                  return (
-                                    <button key={s.id} onClick={function(){updateStage(deal.id,s.id);}}
-                                      style={{ background:"transparent", border:"1px solid "+s.color+"50", color:s.color, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
-                                      {s.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+          <div style={{ color:C.text, fontSize:18, fontWeight:900, marginBottom:16 }}>Pipeline Dashboard</div>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
+            {VERTICALS.map(function(v) {
+              var m = vMetrics(v.id);
+              return (
+                <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
+                  style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s" }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:12 }}>
+                    <span style={{ fontSize:20 }}>{v.icon}</span>
+                    <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
-                )}
-              </div>
-            );
-          })}
+                  <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Total ARR</div>
+                  <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
+                  <div style={{ display:"flex", gap:16 }}>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>Won</div><div style={{ color:C.green, fontWeight:700, fontSize:13 }}>{m.won}</div></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {deals.length > 0 && (
+            <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 16px", display:"flex", gap:24, alignItems:"center", flexWrap:"wrap" }}>
+              <div><span style={{ color:C.dim, fontSize:10 }}>Total accounts: </span><span style={{ color:C.text, fontWeight:700, fontSize:13 }}>{deals.length}</span></div>
+              <div><span style={{ color:C.dim, fontSize:10 }}>Pipeline ARR: </span><span style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{fmtMoney(deals.filter(function(d){return d.arr;}).reduce(function(s,d){return s+parseArr(d.arr);},0))}</span></div>
+              <div><span style={{ color:C.dim, fontSize:10 }}>Closed / Won: </span><span style={{ color:C.green, fontWeight:700, fontSize:13 }}>{deals.filter(function(d){return d.stage==="closed_won";}).length}</span></div>
+              <div><span style={{ color:C.dim, fontSize:10 }}>In Proposal: </span><span style={{ color:C.gold, fontWeight:700, fontSize:13 }}>{deals.filter(function(d){return d.stage==="proposal_neg";}).length}</span></div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          VERTICAL VIEW — vertical set, tier === null
+      ══════════════════════════════════════════════════════════════════════ */}
+      {pipeView.vertical && !pipeView.tier && activeVert && (
+        <div>
+          {/* Breadcrumb + back */}
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+            <button onClick={function(){ setPipeView({vertical:null,tier:null}); setShowAdd(false); }}
+              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
+            <span style={{ fontSize:18 }}>{activeVert.icon}</span>
+            <span style={{ color:activeVert.color, fontWeight:900, fontSize:18 }}>{activeVert.label}</span>
+          </div>
+
+          {/* Tier cards */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
+            {[{id:"all",label:"All",color:C.green}].concat(TIERS).map(function(t) {
+              var m = tMetrics(pipeView.vertical, t.id);
+              return (
+                <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
+                  style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
+                  <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:12 }}>{t.label}</div>
+                  <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>Total ARR</div>
+                  <div style={{ display:"flex", gap:16 }}>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <ActionsBar vert={activeVert} defaultTier="" />
+          {showAdd && <AddForm vert={activeVert} />}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          TIER VIEW — vertical + tier both set
+      ══════════════════════════════════════════════════════════════════════ */}
+      {pipeView.vertical && pipeView.tier && activeVert && (
+        <div>
+          {/* Breadcrumb + back */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20 }}>
+            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); }}
+              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
+            <span style={{ fontSize:16 }}>{activeVert.icon}</span>
+            <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
+            <span style={{ color:C.dim, fontSize:13 }}>›</span>
+            <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
+            <span style={{ color:C.dim, fontSize:11 }}>({tierDeals.length})</span>
+          </div>
+
+          <ActionsBar vert={activeVert} defaultTier={pipeView.tier!=="all"?pipeView.tier:""} />
+          {showAdd && <AddForm vert={activeVert} />}
+
+          {/* Deal cards by stage */}
+          {tierDeals.length === 0 ? (
+            <div style={{ textAlign:"center", padding:"60px 20px", color:C.dim }}>
+              <div style={{ fontSize:32, marginBottom:12 }}>{activeVert.icon}</div>
+              <div style={{ fontSize:14, marginBottom:6 }}>No accounts here yet</div>
+              <div style={{ fontSize:11 }}>Add manually or import from your analysis history above.</div>
+            </div>
+          ) : (
+            <div>
+              {PIPE_STAGES.map(function(stage) {
+                var stageDeals = tierDeals.filter(function(d){ return d.stage===stage.id; });
+                if (stageDeals.length === 0) return null;
+                return (
+                  <div key={stage.id} style={{ marginBottom:14 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, padding:"0 4px" }}>
+                      <div style={{ width:10, height:10, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
+                      <span style={{ color:stage.color, fontWeight:700, fontSize:11 }}>{stage.label}</span>
+                      <span style={{ color:C.dim, fontSize:10 }}>({stageDeals.length})</span>
+                      {stageDeals.some(function(d){return d.arr;}) && (
+                        <span style={{ color:C.dim, fontSize:10 }}>· {fmtMoney(stageDeals.filter(function(d){return d.arr;}).reduce(function(s,d){return s+parseArr(d.arr);},0))} ARR</span>
+                      )}
+                    </div>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:8 }}>
+                      {stageDeals.map(function(deal) {
+                        var isEditing = editId===deal.id;
+                        var dt = TIERS.find(function(t){ return t.id===deal.tier; });
+                        return (
+                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?activeVert.color+"60":C.border), borderRadius:8, padding:"12px 14px" }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
+                              <div>
+                                <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
+                                {dt && <div style={{ color:dt.color, fontSize:9, fontWeight:700, marginTop:2 }}>{dt.label}</div>}
+                              </div>
+                              <div style={{ display:"flex", gap:4 }}>
+                                <button onClick={function(){ setEditId(isEditing?null:deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
+                                <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
+                              </div>
+                            </div>
+                            {deal.arr && <div style={{ color:activeVert.color, fontWeight:800, fontSize:14, marginBottom:4 }}>{deal.arr} ARR</div>}
+                            {deal.notes && <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, marginBottom:8 }}>{deal.notes}</div>}
+
+                            {isEditing ? (
+                              <div style={{ borderTop:"1px solid "+C.border, paddingTop:10, marginTop:6 }}>
+                                <div style={{ display:"grid", gap:6, marginBottom:8 }}>
+                                  <input defaultValue={deal.arr}     id={"arr_"+deal.id}   placeholder="Projected ARR e.g. $45K" style={inp}/>
+                                  <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
+                                  <select defaultValue={deal.tier||""} id={"tier_"+deal.id} style={sel}>
+                                    <option value="">No tier</option>
+                                    {TIERS.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+                                  </select>
+                                  <select defaultValue={deal.stage}    id={"stage_"+deal.id} style={sel}>
+                                    {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+                                  </select>
+                                  <select defaultValue={deal.vertical} id={"vert_"+deal.id}  style={sel}>
+                                    {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
+                                  </select>
+                                </div>
+                                <button onClick={function(){
+                                  var arrEl   = document.getElementById("arr_"+deal.id);
+                                  var notesEl = document.getElementById("notes_"+deal.id);
+                                  var tierEl  = document.getElementById("tier_"+deal.id);
+                                  var stageEl = document.getElementById("stage_"+deal.id);
+                                  var vertEl  = document.getElementById("vert_"+deal.id);
+                                  updateDeal(deal.id, {
+                                    arr:      arrEl   ? arrEl.value   : deal.arr,
+                                    notes:    notesEl ? notesEl.value : deal.notes,
+                                    tier:     tierEl  ? tierEl.value  : (deal.tier||""),
+                                    stage:    stageEl ? stageEl.value : deal.stage,
+                                    vertical: vertEl  ? vertEl.value  : deal.vertical,
+                                  });
+                                }} style={{ background:activeVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
+                                <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+                              </div>
+                            ) : (
+                              <div style={{ borderTop:"1px solid "+C.border, paddingTop:8, marginTop:4 }}>
+                                <div style={{ color:C.dim, fontSize:9, marginBottom:5 }}>MOVE TO STAGE</div>
+                                <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                                  {PIPE_STAGES.filter(function(s){ return s.id!==deal.stage; }).map(function(s) {
+                                    return (
+                                      <button key={s.id} onClick={function(){ updateStage(deal.id,s.id); }}
+                                        style={{ background:"transparent", border:"1px solid "+s.color+"50", color:s.color, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+                                        {s.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
