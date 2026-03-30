@@ -707,6 +707,11 @@ var TIERS = [
   { id:"tier2", label:"Tier 2", color:"#F59E0B" },
   { id:"tier3", label:"Tier 3", color:"#8B5CF6" },
 ];
+var FS_SUBVERTS = [
+  { id:"remittance", label:"Remittance Fintechs",    color:"#00C2FF" },
+  { id:"brokerage",  label:"Brokerage & Investment", color:"#F59E0B" },
+  { id:"neobanks",   label:"Neobanks",               color:"#8B5CF6" },
+];
 
 function parseArr(s) {
   if (!s) return 0;
@@ -734,13 +739,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
   var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
-  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", notes:"" });
+  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"p1", notes:"" });
   var form = s4[0]; var setForm = s4[1];
   var s5 = useState(null); var tierPickId = s5[0]; var setTierPickId = s5[1];
+  var s6 = useState(null); var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
+
+  function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
   function addDeal() {
     if (!form.company.trim()) return;
-    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", notes:form.notes.trim(), addedAt:new Date().toISOString() };
+    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", notes:form.notes.trim(), addedAt:new Date().toISOString() };
     setDeals(function(prev){ return prev.concat([d]); });
     setForm(function(f){ return Object.assign({},f,{company:"",arr:"",notes:""}); });
     setShowAdd(false);
@@ -759,7 +767,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
     var arr = (h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd)||"";
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
-    var d = { id:Date.now(), company:h.company, arr:arr, stage:"prospecting", vertical:vert, tier:autoTier, notes:(h.data.executive_summary||"").slice(0,120), addedAt:h.analyzedAt };
+    var d = { id:Date.now(), company:h.company, arr:arr, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
     setDeals(function(prev){ return prev.concat([d]); });
   }
 
@@ -768,21 +776,21 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length };
+    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot };
+    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
   var sel = Object.assign({}, inp, { cursor:"pointer" });
 
   var activeVert = pipeView.vertical ? (VERTICALS.find(function(v){ return v.id===pipeView.vertical; })||VERTICALS[0]) : null;
-  var activeTier = pipeView.tier ? (TIERS.find(function(t){ return t.id===pipeView.tier; })||null) : null;
+  var activeTier = pipeView.tier ? (getBuckets(pipeView.vertical||"").find(function(t){ return t.id===pipeView.tier; })||null) : null;
   var tierDeals  = (pipeView.vertical&&pipeView.tier)
     ? deals.filter(function(d){
         if (d.vertical!==pipeView.vertical) return false;
@@ -805,10 +813,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
             <input value={form.arr} onChange={function(e){setForm(function(f){return Object.assign({},f,{arr:e.target.value});});}} placeholder="e.g. $45K" style={inp}/>
           </div>
           <div>
-            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>TIER</div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>{vert.id==="financial_services"?"SUB-VERTICAL":"TIER"}</div>
             <select value={form.tier||""} onChange={function(e){setForm(function(f){return Object.assign({},f,{tier:e.target.value});});}} style={sel}>
-              <option value="">No tier</option>
-              {TIERS.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+              <option value="">Unassigned</option>
+              {getBuckets(vert.id).map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+            </select>
+          </div>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>PRIORITY</div>
+            <select value={form.priority||"p1"} onChange={function(e){setForm(function(f){return Object.assign({},f,{priority:e.target.value});});}} style={sel}>
+              <option value="p1">Priority 1</option>
+              <option value="p2">Priority 2</option>
             </select>
           </div>
           <div>
@@ -854,6 +869,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   return (
     <div>
 
+      {/* ── Analysis overlay ─────────────────────────────────────────────── */}
+      {overlayAnalysis && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:C.bg, zIndex:1000, overflowY:"auto", padding:"16px 20px" }}>
+          <button onClick={function(){ setOverlayAnalysis(null); }}
+            style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", marginBottom:16 }}>
+            ← Back to Pipeline
+          </button>
+          <AnalysisView data={overlayAnalysis}/>
+        </div>
+      )}
+
       {/* ══════════════════════════════════════════════════════════════════════
           MAIN DASHBOARD — vertical === null
       ══════════════════════════════════════════════════════════════════════ */}
@@ -873,9 +899,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                   <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Total ARR</div>
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
-                  <div style={{ display:"flex", gap:16 }}>
+                  <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Won</div><div style={{ color:C.green, fontWeight:700, fontSize:13 }}>{m.won}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{m.p1}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:13 }}>{m.p2}</div></div>
                   </div>
                 </div>
               );
@@ -907,7 +935,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
 
           {/* Tier cards */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
-            {[{id:"all",label:"All",color:C.green}].concat(TIERS).map(function(t) {
+            {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical)).map(function(t) {
               var m = tMetrics(pipeView.vertical, t.id);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
@@ -915,9 +943,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                   <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:12 }}>{t.label}</div>
                   <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>Total ARR</div>
-                  <div style={{ display:"flex", gap:16 }}>
+                  <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
                   </div>
                 </div>
               );
@@ -973,15 +1003,29 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:8 }}>
                       {stageDeals.map(function(deal) {
                         var isEditing = editId===deal.id;
-                        var dt = TIERS.find(function(t){ return t.id===deal.tier; });
+                        var dealBuckets = getBuckets(deal.vertical);
+                        var dt = dealBuckets.find(function(t){ return t.id===deal.tier; });
+                        var isPri2 = deal.priority==="p2";
                         return (
                           <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?activeVert.color+"60":C.border), borderRadius:8, padding:"12px 14px" }}>
                             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
                               <div>
                                 <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
-                                {dt && <div style={{ color:dt.color, fontSize:9, fontWeight:700, marginTop:2 }}>{dt.label}</div>}
+                                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:3, flexWrap:"wrap" }}>
+                                  {dt && <span style={{ color:dt.color, fontSize:9, fontWeight:700 }}>{dt.label}</span>}
+                                  <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
+                                    style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
+                                    {isPri2?"P2":"P1"}
+                                  </button>
+                                </div>
                               </div>
-                              <div style={{ display:"flex", gap:4 }}>
+                              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                                {deal.analysisData && (
+                                  <button onClick={function(){ setOverlayAnalysis(deal.analysisData); }}
+                                    style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+                                    View Analysis
+                                  </button>
+                                )}
                                 <button onClick={function(){ setEditId(isEditing?null:deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
                                 <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
                               </div>
@@ -995,8 +1039,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                                   <input defaultValue={deal.arr}     id={"arr_"+deal.id}   placeholder="Projected ARR e.g. $45K" style={inp}/>
                                   <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
                                   <select defaultValue={deal.tier||""} id={"tier_"+deal.id} style={sel}>
-                                    <option value="">No tier</option>
-                                    {TIERS.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+                                    <option value="">Unassigned</option>
+                                    {dealBuckets.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
+                                  </select>
+                                  <select defaultValue={deal.priority||"p1"} id={"priority_"+deal.id} style={sel}>
+                                    <option value="p1">Priority 1</option>
+                                    <option value="p2">Priority 2</option>
                                   </select>
                                   <select defaultValue={deal.stage}    id={"stage_"+deal.id} style={sel}>
                                     {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
@@ -1006,17 +1054,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                                   </select>
                                 </div>
                                 <button onClick={function(){
-                                  var arrEl   = document.getElementById("arr_"+deal.id);
-                                  var notesEl = document.getElementById("notes_"+deal.id);
-                                  var tierEl  = document.getElementById("tier_"+deal.id);
-                                  var stageEl = document.getElementById("stage_"+deal.id);
-                                  var vertEl  = document.getElementById("vert_"+deal.id);
+                                  var arrEl      = document.getElementById("arr_"+deal.id);
+                                  var notesEl    = document.getElementById("notes_"+deal.id);
+                                  var tierEl     = document.getElementById("tier_"+deal.id);
+                                  var priorityEl = document.getElementById("priority_"+deal.id);
+                                  var stageEl    = document.getElementById("stage_"+deal.id);
+                                  var vertEl     = document.getElementById("vert_"+deal.id);
                                   updateDeal(deal.id, {
-                                    arr:      arrEl   ? arrEl.value   : deal.arr,
-                                    notes:    notesEl ? notesEl.value : deal.notes,
-                                    tier:     tierEl  ? tierEl.value  : (deal.tier||""),
-                                    stage:    stageEl ? stageEl.value : deal.stage,
-                                    vertical: vertEl  ? vertEl.value  : deal.vertical,
+                                    arr:      arrEl      ? arrEl.value      : deal.arr,
+                                    notes:    notesEl    ? notesEl.value    : deal.notes,
+                                    tier:     tierEl     ? tierEl.value     : (deal.tier||""),
+                                    priority: priorityEl ? priorityEl.value : (deal.priority||"p1"),
+                                    stage:    stageEl    ? stageEl.value    : deal.stage,
+                                    vertical: vertEl     ? vertEl.value     : deal.vertical,
                                   });
                                 }} style={{ background:activeVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
@@ -1037,11 +1087,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                                 <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:4 }}>
                                   <button onClick={function(){ setTierPickId(tierPickId===deal.id?null:deal.id); }}
                                     style={{ background:"transparent", border:"1px solid "+(dt?dt.color+"80":C.border), color:dt?dt.color:C.dim, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
-                                    {dt ? "Change Tier" : "Add to Tier"}
+                                    {dt ? "Change" : "Add"} {deal.vertical==="financial_services"?"Sub-vertical":"Tier"}
                                   </button>
                                   {tierPickId===deal.id && (
                                     <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
-                                      {TIERS.map(function(t){
+                                      {dealBuckets.map(function(t){
                                         var isActive = deal.tier===t.id;
                                         return (
                                           <button key={t.id} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:t.id}):x; }); }); setTierPickId(null); }}
@@ -1236,7 +1286,7 @@ export default function App() {
                     setPipelineDeals(function(prev){
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, stage:"prospecting", vertical:vert, notes:(result.executive_summary||"").slice(0,120), addedAt:new Date().toISOString() }]);
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
