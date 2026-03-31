@@ -791,33 +791,73 @@ var MAP_BUCKET_OPTS = [
   { id:"gaming_casinos",label:"Gaming & Casinos",             filterType:"vertical" },
 ];
 
-// Simplified continent polygons as [lng, lat] arrays (equirectangular projection)
+// Simplified continent fallback polygons [lng, lat] — shown while TopoJSON loads
 var MAP_LANDS = [
-  // North America
   [[-168,72],[-135,58],[-125,49],[-125,32],[-85,10],[-65,10],[-52,47],[-70,55],[-80,68],[-100,83],[-168,72]],
-  // South America
   [[-82,12],[-60,12],[-35,-9],[-50,-30],[-65,-55],[-80,-35],[-80,0],[-82,12]],
-  // Eurasia (combined Europe + Asia)
   [[-10,36],[2,36],[15,37],[26,37],[36,36],[55,22],[78,8],[100,2],[109,10],[122,30],[130,40],[145,45],[170,65],[180,68],[180,72],[100,72],[30,72],[10,72],[5,58],[0,50],[-10,44],[-10,36]],
-  // Africa
   [[-6,36],[34,30],[50,12],[42,-5],[36,-22],[20,-35],[12,-18],[3,6],[-17,15],[-6,36]],
-  // Australia
   [[114,-20],[130,-15],[153,-25],[150,-38],[130,-33],[115,-35],[114,-20]],
-  // Greenland
   [[-53,83],[-20,83],[-18,76],[-30,70],[-48,62],[-53,83]],
 ];
 var MAP_GRAT_LAT = [-60,-30,0,30,60];
 var MAP_GRAT_LNG = [-150,-120,-90,-60,-30,0,30,60,90,120,150];
 
+// Mercator projection (960×500 canvas)
+var MAP_W = 960;
+var MAP_H = 500;
+function mapPx(lng) { return (lng + 180) * (MAP_W / 360); }
+function mapPy(lat) {
+  var c = Math.max(-85, Math.min(85, lat));
+  return MAP_H / 2 - (MAP_W * Math.log(Math.tan(Math.PI / 4 + c * Math.PI / 360)) / (2 * Math.PI));
+}
+function mapPoly(pts) {
+  return pts.map(function(p){ return mapPx(p[0]).toFixed(1)+","+mapPy(p[1]).toFixed(1); }).join(" ");
+}
+
+// Minimal TopoJSON decoder — decodes delta-encoded arcs, applies Mercator, returns SVG path strings
+function decodeTopo(topo) {
+  if (!topo || !topo.arcs || !topo.transform) return [];
+  var sc = topo.transform.scale, tr = topo.transform.translate;
+  var arcs = topo.arcs.map(function(arc) {
+    var x = 0, y = 0;
+    return arc.map(function(p) { x += p[0]; y += p[1]; return [x*sc[0]+tr[0], y*sc[1]+tr[1]]; });
+  });
+  function ga(i) { return i >= 0 ? arcs[i] : arcs[~i].slice().reverse(); }
+  function stitch(idxs) {
+    var pts = [];
+    for (var j = 0; j < idxs.length; j++) {
+      var a = ga(idxs[j]);
+      for (var k = (j === 0 ? 0 : 1); k < a.length; k++) pts.push(a[k]);
+    }
+    return pts;
+  }
+  function rdPath(pts) {
+    if (!pts.length) return "";
+    return "M" + pts.map(function(p){ return mapPx(p[0]).toFixed(1)+","+mapPy(p[1]).toFixed(1); }).join("L") + "Z";
+  }
+  function geoD(geo) {
+    var polys = geo.type==="Polygon" ? [geo.arcs] : geo.type==="MultiPolygon" ? geo.arcs : [];
+    return polys.map(function(poly) {
+      return poly.map(function(ring) { return rdPath(stitch(ring)); }).join(" ");
+    }).join(" ");
+  }
+  var obj = topo.objects.countries || topo.objects.land;
+  return (obj && obj.geometries || []).map(geoD);
+}
+
 function WorldMap({ deals }) {
   var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
   var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
   var s3 = useState(null);  var hov      = s3[0]; var setHov      = s3[1];
+  var s4 = useState(null);  var geoPaths = s4[0]; var setGeoPaths = s4[1];
 
-  var W = 1000; var H = 500;
-  function gx(lng) { return (lng + 180) / 360 * W; }
-  function gy(lat) { return (90 - lat) / 180 * H; }
-  function poly(pts) { return pts.map(function(p){ return gx(p[0]).toFixed(1)+","+gy(p[1]).toFixed(1); }).join(" "); }
+  useEffect(function() {
+    fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+      .then(function(r) { return r.json(); })
+      .then(function(topo) { setGeoPaths(decodeTopo(topo)); })
+      .catch(function() { setGeoPaths([]); });
+  }, []);
 
   var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
 
@@ -830,8 +870,8 @@ function WorldMap({ deals }) {
     } else {
       var opt = MAP_BUCKET_OPTS.find(function(o){ return o.id === mapTierF; });
       if (!opt || opt.filterType === "all") matchBucket = true;
-      else if (opt.filterType === "tier")     matchBucket = (d.tier||"") === mapTierF;
-      else                                    matchBucket = d.vertical === mapTierF;
+      else if (opt.filterType === "tier")   matchBucket = (d.tier||"") === mapTierF;
+      else                                  matchBucket = d.vertical === mapTierF;
     }
     var matchPrio = mapPrioF==="all" || (d.priority||"p1")===mapPrioF;
     return matchBucket && matchPrio;
@@ -854,31 +894,36 @@ function WorldMap({ deals }) {
         </div>
       </div>
       <div style={{ position:"relative" }} onClick={function(){ setHov(null); }}>
-        <svg viewBox={"0 0 "+W+" "+H} style={{ width:"100%", height:"auto", display:"block", borderRadius:6, background:"#07090F" }}>
-          {/* Graticule lines */}
+        <svg viewBox={"0 0 "+MAP_W+" "+MAP_H} style={{ width:"100%", height:"auto", display:"block", borderRadius:6, background:"#07090F" }}>
+          {/* Graticule */}
           {MAP_GRAT_LAT.map(function(lat){
-            var y = gy(lat);
-            return <line key={"lat"+lat} x1={0} y1={y} x2={W} y2={y} stroke="#111827" strokeWidth={0.7}/>;
+            var y = mapPy(lat);
+            return <line key={"lat"+lat} x1={0} y1={y} x2={MAP_W} y2={y} stroke="#111827" strokeWidth={0.6}/>;
           })}
           {MAP_GRAT_LNG.map(function(lng){
-            var x = gx(lng);
-            return <line key={"lng"+lng} x1={x} y1={0} x2={x} y2={H} stroke="#111827" strokeWidth={0.7}/>;
+            var x = mapPx(lng);
+            return <line key={"lng"+lng} x1={x} y1={0} x2={x} y2={MAP_H} stroke="#111827" strokeWidth={0.6}/>;
           })}
-          {/* Land masses */}
-          {MAP_LANDS.map(function(pts, i){
-            return <polygon key={i} points={poly(pts)} fill="#1e2d40" stroke="#263548" strokeWidth={1}/>;
-          })}
-          {/* Dots */}
+          {/* High-res country paths from TopoJSON, or simplified fallback while loading */}
+          {geoPaths
+            ? geoPaths.map(function(d, i){
+                return d ? <path key={i} d={d} fill="#1e2d40" stroke="#2a3f5a" strokeWidth={0.5}/> : null;
+              })
+            : MAP_LANDS.map(function(pts, i){
+                return <polygon key={i} points={mapPoly(pts)} fill="#1e2d40" stroke="#263548" strokeWidth={1}/>;
+              })
+          }
+          {/* Deal dots */}
           {filtered.map(function(deal){
             var coords = parseHqCoords(deal.analysisData && deal.analysisData.hq);
             if (!coords) return null;
-            var x = gx(coords[0]); var y = gy(coords[1]);
+            var x = mapPx(coords[0]); var y = mapPy(coords[1]);
             var color = VCOLOR_MAP[deal.vertical] || C.muted;
             var active = hov && hov.id===deal.id;
             return (
               <g key={deal.id} onClick={function(e){ e.stopPropagation(); setHov(active?null:deal); }} style={{ cursor:"pointer" }}>
-                {active && <circle cx={x} cy={y} r={13} fill="none" stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.7}/>}
-                <circle cx={x} cy={y} r={active?7:5} fill={color} fillOpacity={0.9} stroke={active?"#fff":color+"60"} strokeWidth={active?1.5:1}/>
+                {active && <circle cx={x} cy={y} r={16} fill="none" stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.6}/>}
+                <circle cx={x} cy={y} r={active?10:8} fill={color} fillOpacity={0.92} stroke="#fff" strokeWidth={1.5}/>
               </g>
             );
           })}
