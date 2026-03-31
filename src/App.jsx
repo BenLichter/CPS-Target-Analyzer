@@ -791,107 +791,97 @@ var MAP_BUCKET_OPTS = [
   { id:"gaming_casinos",label:"Gaming & Casinos",             filterType:"vertical" },
 ];
 
-// Static world polygons [lng, lat] — Mercator-projected via mapPoly()
-var WORLD_POLYS = [
-  /* Greenland */
-  [[-73,76],[-57,83],[-18,83],[-14,77],[-18,73],[-26,68],[-44,65],[-52,66],[-60,74],[-73,76]],
-  /* Iceland */
-  [[-24,66],[-13,63],[-12,65],[-18,67],[-24,66]],
-  /* Alaska */
-  [[-168,71],[-163,60],[-152,57],[-148,60],[-141,60],[-141,70],[-158,72],[-168,71]],
-  /* Canada */
-  [[-141,60],[-130,54],[-124,49],[-116,49],[-100,49],[-83,46],[-76,44],[-67,47],[-60,46],[-53,47],[-55,58],[-60,62],[-68,68],[-80,68],[-95,74],[-120,74],[-130,68],[-141,60]],
-  /* USA lower 48 */
-  [[-124,49],[-116,49],[-100,49],[-83,46],[-76,44],[-67,47],[-66,45],[-80,42],[-82,30],[-88,30],[-90,29],[-97,26],[-103,25],[-108,31],[-117,32],[-124,38],[-124,49]],
-  /* Mexico + Central America */
-  [[-117,32],[-110,24],[-106,20],[-97,19],[-90,16],[-86,15],[-82,10],[-84,9],[-85,11],[-90,14],[-95,19],[-97,22],[-105,28],[-117,32]],
-  /* Cuba */
-  [[-85,22],[-75,20],[-74,22],[-82,23],[-85,22]],
-  /* South America */
-  [[-80,10],[-60,10],[-50,4],[-35,-5],[-34,-10],[-38,-20],[-44,-23],[-48,-28],[-53,-34],[-65,-55],[-74,-50],[-80,-35],[-80,-17],[-75,-10],[-76,0],[-80,5],[-80,10]],
-  /* UK + Ireland */
-  [[-8,52],[-5,50],[-2,51],[1,52],[0,54],[-3,58],[-5,57],[-8,55],[-7,53],[-6,51],[-8,52]],
-  /* Scandinavia + Denmark */
-  [[5,58],[8,55],[12,56],[18,57],[25,61],[28,65],[30,70],[28,74],[22,70],[16,68],[14,63],[7,58],[5,58]],
-  /* Iberian Peninsula */
-  [[-9,44],[-9,36],[0,36],[3,43],[-2,44],[-9,44]],
-  /* France + Benelux */
-  [[-5,43],[3,43],[8,48],[8,54],[3,53],[-2,51],[-5,48],[-5,43]],
-  /* Germany + Poland + Czech + Austria */
-  [[8,54],[24,54],[24,50],[18,48],[12,46],[8,47],[8,54]],
-  /* Italy */
-  [[7,44],[12,44],[16,41],[18,40],[15,38],[12,37],[8,39],[7,44]],
-  /* Balkans + Greece */
-  [[14,46],[22,44],[26,42],[28,42],[30,40],[26,38],[22,37],[18,39],[14,42],[14,46]],
-  /* Turkey */
-  [[26,42],[36,42],[42,38],[40,36],[28,36],[26,38],[26,42]],
-  /* Ukraine + Romania + Moldova */
-  [[22,44],[28,56],[38,48],[36,44],[28,44],[22,44]],
-  /* European Russia */
-  [[28,56],[40,44],[50,48],[56,58],[48,66],[36,68],[28,62],[28,56]],
-  /* Africa */
-  [[-6,35],[-14,28],[-18,15],[-15,5],[-3,5],[10,4],[14,4],[12,-6],[16,-28],[18,-34],[26,-34],[36,-18],[42,-5],[50,10],[44,12],[36,22],[34,30],[24,31],[10,37],[2,37],[-2,35],[-6,35]],
-  /* Madagascar */
-  [[44,-12],[50,-14],[50,-24],[44,-24],[44,-12]],
-  /* Arabia + Middle East */
-  [[26,38],[36,38],[40,38],[46,28],[56,24],[58,22],[44,12],[38,12],[32,22],[34,30],[36,36],[26,38]],
-  /* Iran + Afghanistan */
-  [[44,38],[60,38],[66,34],[62,26],[58,22],[50,28],[44,32],[44,38]],
-  /* Russia (Siberia) */
-  [[30,70],[56,64],[80,72],[100,72],[130,70],[170,64],[180,68],[180,72],[130,72],[80,74],[50,68],[30,70]],
-  /* Central Asia */
-  [[50,52],[84,52],[84,46],[60,38],[52,42],[50,48],[50,52]],
-  /* Indian Subcontinent */
-  [[60,22],[68,22],[72,20],[77,8],[80,12],[80,16],[77,28],[68,38],[62,34],[60,28],[60,22]],
-  /* China + Mongolia */
-  [[80,52],[120,52],[130,48],[130,40],[130,20],[120,20],[110,18],[104,20],[100,22],[90,28],[80,36],[80,52]],
-  /* Korean Peninsula */
-  [[124,34],[128,34],[130,38],[128,40],[124,38],[124,34]],
-  /* Japan */
-  [[130,32],[135,34],[138,34],[142,36],[141,41],[137,36],[131,33],[130,32]],
-  /* Southeast Asia (Indochina) */
-  [[98,24],[105,20],[108,16],[105,10],[100,3],[104,1],[102,2],[100,6],[98,8],[98,24]],
-  /* Borneo */
-  [[108,6],[118,6],[118,0],[116,-4],[112,-4],[108,0],[108,6]],
-  /* Sumatra */
-  [[96,5],[102,4],[106,0],[106,-4],[104,-4],[98,2],[96,5]],
-  /* Java */
-  [[106,-6],[112,-7],[115,-8],[108,-8],[106,-6]],
-  /* New Guinea */
-  [[132,-2],[148,-6],[148,-8],[140,-8],[132,-4],[132,-2]],
-  /* Philippines */
-  [[118,10],[122,10],[122,18],[120,20],[118,16],[118,10]],
-  /* Australia */
-  [[114,-22],[122,-18],[128,-14],[136,-12],[140,-12],[148,-18],[153,-28],[150,-38],[140,-38],[130,-32],[122,-34],[114,-28],[114,-22]],
-  /* New Zealand N Island */
-  [[172,-37],[178,-38],[178,-41],[173,-41],[172,-37]],
-  /* New Zealand S Island */
-  [[166,-44],[172,-44],[172,-46],[167,-46],[166,-44]],
-];
-var MAP_GRAT_LAT = [-60,-30,0,30,60];
-var MAP_GRAT_LNG = [-150,-120,-90,-60,-30,0,30,60,90,120,150];
-
-// Mercator projection (960×500 canvas)
-var MAP_W = 960;
-var MAP_H = 500;
-function mapPx(lng) { return (lng + 180) * (MAP_W / 360); }
-function mapPy(lat) {
-  var c = Math.max(-85, Math.min(85, lat));
-  return MAP_H / 2 - (MAP_W * Math.log(Math.tan(Math.PI / 4 + c * Math.PI / 360)) / (2 * Math.PI));
-}
-function mapPoly(pts) {
-  return pts.map(function(p){ return mapPx(p[0]).toFixed(1)+","+mapPy(p[1]).toFixed(1); }).join(" ");
-}
-
-
 function WorldMap({ deals }) {
-  var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
-  var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
-  var s3 = useState(null);  var hov      = s3[0]; var setHov      = s3[1];
+  var s1 = useState("all");  var mapTierF = s1[0]; var setMapTierF = s1[1];
+  var s2 = useState("all");  var mapPrioF = s2[0]; var setMapPrioF = s2[1];
+  var s3 = useState(false);  var lfReady  = s3[0]; var setLfReady  = s3[1];
+  var mapRef     = useRef(null);
+  var lMapRef    = useRef(null);
+  var markersRef = useRef([]);
 
-  var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
+  // Inject Leaflet CSS + JS from CDN once
+  useEffect(function() {
+    if (!document.getElementById("lf-css")) {
+      var link = document.createElement("link");
+      link.id = "lf-css"; link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    if (!document.getElementById("lf-tip-css")) {
+      var st = document.createElement("style"); st.id = "lf-tip-css";
+      st.textContent = ".leaflet-tooltip.cp-tt{background:#111827;border:1px solid #1F2937;border-radius:8px;padding:10px 14px;box-shadow:0 4px 16px rgba(0,0,0,.6);color:#F1F5F9;font-size:12px;pointer-events:none}.leaflet-tooltip.cp-tt::before{border-top-color:#1F2937}.leaflet-container{font-family:inherit}";
+      document.head.appendChild(st);
+    }
+    if (window.L) { setLfReady(true); return; }
+    var script = document.createElement("script"); script.id = "lf-js";
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = function() { setLfReady(true); };
+    document.head.appendChild(script);
+  }, []);
 
-  var filtered = deals.filter(function(d) {
+  // Initialize map once Leaflet is loaded
+  useEffect(function() {
+    if (!lfReady || !mapRef.current || lMapRef.current) return;
+    var L = window.L;
+    var map = L.map(mapRef.current, { center: [20, 0], zoom: 2, zoomControl: true });
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd", maxZoom: 19,
+    }).addTo(map);
+    lMapRef.current = map;
+  }, [lfReady]);
+
+  // Re-plot markers whenever deals or filters change
+  useEffect(function() {
+    if (!lfReady || !lMapRef.current) return;
+    var L = window.L;
+    markersRef.current.forEach(function(m) { m.remove(); });
+    markersRef.current = [];
+    deals.forEach(function(d) {
+      var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
+      if (!coords) return;
+      var matchBucket;
+      if (mapTierF === "all") {
+        matchBucket = true;
+      } else {
+        var opt = MAP_BUCKET_OPTS.find(function(o){ return o.id === mapTierF; });
+        if (!opt || opt.filterType === "all") matchBucket = true;
+        else if (opt.filterType === "tier")   matchBucket = (d.tier||"") === mapTierF;
+        else                                  matchBucket = d.vertical === mapTierF;
+      }
+      if (!matchBucket) return;
+      if (mapPrioF !== "all" && (d.priority||"p1") !== mapPrioF) return;
+      var color = VCOLOR_MAP[d.vertical] || "#94A3B8";
+      var marker = L.circleMarker([coords[1], coords[0]], {
+        radius: 8, fillColor: color, color: "#fff", weight: 1.5, opacity: 1, fillOpacity: 0.9,
+      });
+      var v   = VERTICALS.find(function(x){ return x.id === d.vertical; });
+      var bkts = d.vertical === "financial_services" ? FS_SUBVERTS : TIERS;
+      var bkt  = bkts.find(function(x){ return x.id === d.tier; });
+      var vc   = v ? v.color : color;
+      var bc   = bkt ? bkt.color : null;
+      var pri  = (d.priority||"p1") === "p2";
+      var tip  = '<div style="min-width:160px">' +
+        '<div style="font-weight:700;font-size:12px;margin-bottom:6px">' + d.company + '</div>' +
+        (d.analysisData && d.analysisData.hq ? '<div style="color:#94A3B8;font-size:10px;margin-bottom:6px">\uD83D\uDCCD ' + d.analysisData.hq + '</div>' : '') +
+        '<div style="display:flex;flex-wrap:wrap;gap:4px">' +
+          (v   ? '<span style="background:' + vc + '22;color:' + vc + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + v.label + '</span>' : '') +
+          (bkt ? '<span style="background:' + bc + '22;color:' + bc + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + bkt.label + '</span>' : '') +
+          '<span style="background:' + (pri ? '#33415522' : '#00C2FF22') + ';color:' + (pri ? '#94A3B8' : '#00C2FF') + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + (pri ? 'P2' : 'P1') + '</span>' +
+        '</div></div>';
+      marker.bindTooltip(tip, { className: "cp-tt", sticky: false, direction: "top", offset: [0, -10] });
+      marker.addTo(lMapRef.current);
+      markersRef.current.push(marker);
+    });
+  }, [lfReady, deals, mapTierF, mapPrioF]);
+
+  // Remove map on unmount
+  useEffect(function() {
+    return function() { if (lMapRef.current) { lMapRef.current.remove(); lMapRef.current = null; } };
+  }, []);
+
+  // Plotted count (mirrors filter above, computed in render)
+  var plotCount = deals.filter(function(d) {
     var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
     if (!coords) return false;
     var matchBucket;
@@ -903,78 +893,30 @@ function WorldMap({ deals }) {
       else if (opt.filterType === "tier")   matchBucket = (d.tier||"") === mapTierF;
       else                                  matchBucket = d.vertical === mapTierF;
     }
-    var matchPrio = mapPrioF==="all" || (d.priority||"p1")===mapPrioF;
-    return matchBucket && matchPrio;
-  });
+    if (!matchBucket) return false;
+    return mapPrioF === "all" || (d.priority||"p1") === mapPrioF;
+  }).length;
+
+  var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
 
   return (
     <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:10, padding:"16px", marginTop:16 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
         <span style={{ color:C.text, fontWeight:700, fontSize:13 }}>Global Pipeline Map</span>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
-          <select value={mapTierF} onChange={function(e){ setMapTierF(e.target.value); setHov(null); }} style={sel}>
+          <select value={mapTierF} onChange={function(e){ setMapTierF(e.target.value); }} style={sel}>
             {MAP_BUCKET_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
           </select>
-          <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); setHov(null); }} style={sel}>
+          <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); }} style={sel}>
             <option value="all">All Priorities</option>
             <option value="p1">Priority 1</option>
             <option value="p2">Priority 2</option>
           </select>
-          <span style={{ color:C.dim, fontSize:10 }}>{filtered.length} plotted</span>
+          <span style={{ color:C.dim, fontSize:10 }}>{plotCount} plotted</span>
         </div>
       </div>
-      <div style={{ position:"relative" }} onClick={function(){ setHov(null); }}>
-        <svg viewBox={"0 0 "+MAP_W+" "+MAP_H} style={{ width:"100%", height:"auto", display:"block", borderRadius:6, background:"#07090F" }}>
-          {/* Graticule */}
-          {MAP_GRAT_LAT.map(function(lat){
-            var y = mapPy(lat);
-            return <line key={"lat"+lat} x1={0} y1={y} x2={MAP_W} y2={y} stroke="#111827" strokeWidth={0.6}/>;
-          })}
-          {MAP_GRAT_LNG.map(function(lng){
-            var x = mapPx(lng);
-            return <line key={"lng"+lng} x1={x} y1={0} x2={x} y2={MAP_H} stroke="#111827" strokeWidth={0.6}/>;
-          })}
-          {/* Static world polygons — always renders, no network dependency */}
-          {WORLD_POLYS.map(function(pts, i){
-            return <polygon key={i} points={mapPoly(pts)} fill="#1e2d40" stroke="#2a3f5a" strokeWidth={0.5}/>;
-          })}
-          {/* Deal dots */}
-          {filtered.map(function(deal){
-            var coords = parseHqCoords(deal.analysisData && deal.analysisData.hq);
-            if (!coords) return null;
-            var x = mapPx(coords[0]); var y = mapPy(coords[1]);
-            var color = VCOLOR_MAP[deal.vertical] || C.muted;
-            var active = hov && hov.id===deal.id;
-            return (
-              <g key={deal.id} onClick={function(e){ e.stopPropagation(); setHov(active?null:deal); }} style={{ cursor:"pointer" }}>
-                {active && <circle cx={x} cy={y} r={16} fill="none" stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.6}/>}
-                <circle cx={x} cy={y} r={active?10:8} fill={color} fillOpacity={0.92} stroke="#fff" strokeWidth={1.5}/>
-              </g>
-            );
-          })}
-        </svg>
-        {hov && (
-          <div style={{ position:"absolute", top:10, left:10, background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", minWidth:180, maxWidth:240, zIndex:10, pointerEvents:"none" }}>
-            <div style={{ color:C.text, fontWeight:700, fontSize:12, marginBottom:6 }}>{hov.company}</div>
-            {hov.analysisData && hov.analysisData.hq && (
-              <div style={{ color:C.dim, fontSize:10, marginBottom:5 }}>📍 {hov.analysisData.hq}</div>
-            )}
-            <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
-              {(function(){
-                var v = VERTICALS.find(function(x){ return x.id===hov.vertical; });
-                var bkts = hov.vertical==="financial_services" ? FS_SUBVERTS : TIERS;
-                var bkt = bkts.find(function(x){ return x.id===hov.tier; });
-                var vc = v ? v.color : C.muted;
-                var isPri2 = hov.priority==="p2";
-                return [
-                  <span key="v" style={{ background:vc+"20", color:vc, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{v?v.label:hov.vertical}</span>,
-                  bkt ? <span key="b" style={{ background:bkt.color+"20", color:bkt.color, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{bkt.label}</span> : null,
-                  <span key="p" style={{ background:isPri2?C.surface:C.accentDim, color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{isPri2?"P2":"P1"}</span>
-                ];
-              })()}
-            </div>
-          </div>
-        )}
+      <div ref={mapRef} style={{ width:"100%", height:420, borderRadius:8, overflow:"hidden", background:"#0D1117" }}>
+        {!lfReady && <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:C.dim, fontSize:12 }}>Loading map…</div>}
       </div>
       <div style={{ display:"flex", gap:16, marginTop:10, flexWrap:"wrap" }}>
         {VERTICALS.map(function(v){
