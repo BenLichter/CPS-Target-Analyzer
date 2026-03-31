@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL    = "claude-sonnet-4-20250514";
@@ -781,25 +780,61 @@ function parseHqCoords(hq) {
   return null;
 }
 
-var MAP_GEO = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
 var VCOLOR_MAP = { financial_services:"#00C2FF", luxury_travel:"#F59E0B", luxury_goods:"#8B5CF6", gaming_casinos:"#10B981" };
 var MAP_BUCKET_OPTS = [
-  { id:"all", label:"All Sub-verticals / Tiers" },
-].concat(FS_SUBVERTS).concat(TIERS);
+  { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
+  { id:"remittance",    label:"Remittance Fintechs",          filterType:"tier"     },
+  { id:"brokerage",     label:"Brokerage & Investment Firms", filterType:"tier"     },
+  { id:"neobanks",      label:"Neobanks",                     filterType:"tier"     },
+  { id:"luxury_travel", label:"Luxury Travel",                filterType:"vertical" },
+  { id:"luxury_goods",  label:"Luxury Goods",                 filterType:"vertical" },
+  { id:"gaming_casinos",label:"Gaming & Casinos",             filterType:"vertical" },
+];
+
+// Simplified continent polygons as [lng, lat] arrays (equirectangular projection)
+var MAP_LANDS = [
+  // North America
+  [[-168,72],[-135,58],[-125,49],[-125,32],[-85,10],[-65,10],[-52,47],[-70,55],[-80,68],[-100,83],[-168,72]],
+  // South America
+  [[-82,12],[-60,12],[-35,-9],[-50,-30],[-65,-55],[-80,-35],[-80,0],[-82,12]],
+  // Eurasia (combined Europe + Asia)
+  [[-10,36],[2,36],[15,37],[26,37],[36,36],[55,22],[78,8],[100,2],[109,10],[122,30],[130,40],[145,45],[170,65],[180,68],[180,72],[100,72],[30,72],[10,72],[5,58],[0,50],[-10,44],[-10,36]],
+  // Africa
+  [[-6,36],[34,30],[50,12],[42,-5],[36,-22],[20,-35],[12,-18],[3,6],[-17,15],[-6,36]],
+  // Australia
+  [[114,-20],[130,-15],[153,-25],[150,-38],[130,-33],[115,-35],[114,-20]],
+  // Greenland
+  [[-53,83],[-20,83],[-18,76],[-30,70],[-48,62],[-53,83]],
+];
+var MAP_GRAT_LAT = [-60,-30,0,30,60];
+var MAP_GRAT_LNG = [-150,-120,-90,-60,-30,0,30,60,90,120,150];
 
 function WorldMap({ deals }) {
   var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
   var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
-  var s3 = useState(null);  var pin     = s3[0]; var setPin     = s3[1];
+  var s3 = useState(null);  var hov      = s3[0]; var setHov      = s3[1];
 
-  var sel = { background:"#111827", border:"1px solid #1F2937", borderRadius:6, padding:"5px 10px", color:"#94A3B8", fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
+  var W = 1000; var H = 500;
+  function gx(lng) { return (lng + 180) / 360 * W; }
+  function gy(lat) { return (90 - lat) / 180 * H; }
+  function poly(pts) { return pts.map(function(p){ return gx(p[0]).toFixed(1)+","+gy(p[1]).toFixed(1); }).join(" "); }
 
-  var mapped = deals.filter(function(d) {
+  var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
+
+  var filtered = deals.filter(function(d) {
     var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
     if (!coords) return false;
-    var matchTier = mapTierF==="all" || (d.tier||"")===mapTierF;
+    var matchBucket;
+    if (mapTierF === "all") {
+      matchBucket = true;
+    } else {
+      var opt = MAP_BUCKET_OPTS.find(function(o){ return o.id === mapTierF; });
+      if (!opt || opt.filterType === "all") matchBucket = true;
+      else if (opt.filterType === "tier")     matchBucket = (d.tier||"") === mapTierF;
+      else                                    matchBucket = d.vertical === mapTierF;
+    }
     var matchPrio = mapPrioF==="all" || (d.priority||"p1")===mapPrioF;
-    return matchTier && matchPrio;
+    return matchBucket && matchPrio;
   });
 
   return (
@@ -807,51 +842,64 @@ function WorldMap({ deals }) {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
         <span style={{ color:C.text, fontWeight:700, fontSize:13 }}>Global Pipeline Map</span>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
-          <select value={mapTierF} onChange={function(e){ setMapTierF(e.target.value); setPin(null); }} style={sel}>
+          <select value={mapTierF} onChange={function(e){ setMapTierF(e.target.value); setHov(null); }} style={sel}>
             {MAP_BUCKET_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
           </select>
-          <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); setPin(null); }} style={sel}>
+          <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); setHov(null); }} style={sel}>
             <option value="all">All Priorities</option>
             <option value="p1">Priority 1</option>
             <option value="p2">Priority 2</option>
           </select>
-          <span style={{ color:C.dim, fontSize:10 }}>{mapped.length} plotted</span>
+          <span style={{ color:C.dim, fontSize:10 }}>{filtered.length} plotted</span>
         </div>
       </div>
-      <div style={{ position:"relative" }} onClick={function(){ setPin(null); }}>
-        <ComposableMap projectionConfig={{ scale:140, center:[0,10] }}
-          style={{ width:"100%", height:"auto", display:"block", background:"#07090F", borderRadius:6 }}>
-          <Geographies geography={MAP_GEO}>
-            {function(ref) {
-              return ref.geographies.map(function(geo) {
-                return <Geography key={geo.rsmKey} geography={geo} fill="#1a2535" stroke="#1F2937" strokeWidth={0.5} style={{ outline:"none" }}/>;
-              });
-            }}
-          </Geographies>
-          {mapped.map(function(deal) {
+      <div style={{ position:"relative" }} onClick={function(){ setHov(null); }}>
+        <svg viewBox={"0 0 "+W+" "+H} style={{ width:"100%", height:"auto", display:"block", borderRadius:6, background:"#07090F" }}>
+          {/* Graticule lines */}
+          {MAP_GRAT_LAT.map(function(lat){
+            var y = gy(lat);
+            return <line key={"lat"+lat} x1={0} y1={y} x2={W} y2={y} stroke="#111827" strokeWidth={0.7}/>;
+          })}
+          {MAP_GRAT_LNG.map(function(lng){
+            var x = gx(lng);
+            return <line key={"lng"+lng} x1={x} y1={0} x2={x} y2={H} stroke="#111827" strokeWidth={0.7}/>;
+          })}
+          {/* Land masses */}
+          {MAP_LANDS.map(function(pts, i){
+            return <polygon key={i} points={poly(pts)} fill="#1e2d40" stroke="#263548" strokeWidth={1}/>;
+          })}
+          {/* Dots */}
+          {filtered.map(function(deal){
             var coords = parseHqCoords(deal.analysisData && deal.analysisData.hq);
+            if (!coords) return null;
+            var x = gx(coords[0]); var y = gy(coords[1]);
             var color = VCOLOR_MAP[deal.vertical] || C.muted;
-            var active = pin && pin.id===deal.id;
+            var active = hov && hov.id===deal.id;
             return (
-              <Marker key={deal.id} coordinates={coords} onClick={function(e){ e.stopPropagation(); setPin(active?null:deal); }}>
-                <circle r={active?7:5} fill={color} fillOpacity={0.9} stroke={active?"#fff":color} strokeWidth={active?1.5:0.5} style={{ cursor:"pointer", transition:"r 0.15s" }}/>
-              </Marker>
+              <g key={deal.id} onClick={function(e){ e.stopPropagation(); setHov(active?null:deal); }} style={{ cursor:"pointer" }}>
+                {active && <circle cx={x} cy={y} r={13} fill="none" stroke={color} strokeWidth={1} strokeDasharray="3 2" opacity={0.7}/>}
+                <circle cx={x} cy={y} r={active?7:5} fill={color} fillOpacity={0.9} stroke={active?"#fff":color+"60"} strokeWidth={active?1.5:1}/>
+              </g>
             );
           })}
-        </ComposableMap>
-        {pin && (
+        </svg>
+        {hov && (
           <div style={{ position:"absolute", top:10, left:10, background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", minWidth:180, maxWidth:240, zIndex:10, pointerEvents:"none" }}>
-            <div style={{ color:C.text, fontWeight:700, fontSize:12, marginBottom:6 }}>{pin.company}</div>
-            {pin.analysisData && pin.analysisData.hq && <div style={{ color:C.dim, fontSize:10, marginBottom:4 }}>📍 {pin.analysisData.hq}</div>}
+            <div style={{ color:C.text, fontWeight:700, fontSize:12, marginBottom:6 }}>{hov.company}</div>
+            {hov.analysisData && hov.analysisData.hq && (
+              <div style={{ color:C.dim, fontSize:10, marginBottom:5 }}>📍 {hov.analysisData.hq}</div>
+            )}
             <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
               {(function(){
-                var v = VERTICALS.find(function(x){ return x.id===pin.vertical; });
-                var bkt = (pin.vertical==="financial_services"?FS_SUBVERTS:TIERS).find(function(x){ return x.id===pin.tier; });
-                var color = v ? v.color : C.muted;
+                var v = VERTICALS.find(function(x){ return x.id===hov.vertical; });
+                var bkts = hov.vertical==="financial_services" ? FS_SUBVERTS : TIERS;
+                var bkt = bkts.find(function(x){ return x.id===hov.tier; });
+                var vc = v ? v.color : C.muted;
+                var isPri2 = hov.priority==="p2";
                 return [
-                  <span key="v" style={{ background:color+"20", color:color, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{v?v.label:pin.vertical}</span>,
+                  <span key="v" style={{ background:vc+"20", color:vc, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{v?v.label:hov.vertical}</span>,
                   bkt ? <span key="b" style={{ background:bkt.color+"20", color:bkt.color, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{bkt.label}</span> : null,
-                  <span key="p" style={{ background:(pin.priority==="p2"?C.surface:C.accentDim), color:(pin.priority==="p2"?C.muted:C.accent), borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{pin.priority==="p2"?"P2":"P1"}</span>
+                  <span key="p" style={{ background:isPri2?C.surface:C.accentDim, color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{isPri2?"P2":"P1"}</span>
                 ];
               })()}
             </div>
