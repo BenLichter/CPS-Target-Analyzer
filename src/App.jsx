@@ -791,14 +791,82 @@ var MAP_BUCKET_OPTS = [
   { id:"gaming_casinos",label:"Gaming & Casinos",             filterType:"vertical" },
 ];
 
-// Simplified continent fallback polygons [lng, lat] — shown while TopoJSON loads
-var MAP_LANDS = [
-  [[-168,72],[-135,58],[-125,49],[-125,32],[-85,10],[-65,10],[-52,47],[-70,55],[-80,68],[-100,83],[-168,72]],
-  [[-82,12],[-60,12],[-35,-9],[-50,-30],[-65,-55],[-80,-35],[-80,0],[-82,12]],
-  [[-10,36],[2,36],[15,37],[26,37],[36,36],[55,22],[78,8],[100,2],[109,10],[122,30],[130,40],[145,45],[170,65],[180,68],[180,72],[100,72],[30,72],[10,72],[5,58],[0,50],[-10,44],[-10,36]],
-  [[-6,36],[34,30],[50,12],[42,-5],[36,-22],[20,-35],[12,-18],[3,6],[-17,15],[-6,36]],
-  [[114,-20],[130,-15],[153,-25],[150,-38],[130,-33],[115,-35],[114,-20]],
-  [[-53,83],[-20,83],[-18,76],[-30,70],[-48,62],[-53,83]],
+// Static world polygons [lng, lat] — Mercator-projected via mapPoly()
+var WORLD_POLYS = [
+  /* Greenland */
+  [[-73,76],[-57,83],[-18,83],[-14,77],[-18,73],[-26,68],[-44,65],[-52,66],[-60,74],[-73,76]],
+  /* Iceland */
+  [[-24,66],[-13,63],[-12,65],[-18,67],[-24,66]],
+  /* Alaska */
+  [[-168,71],[-163,60],[-152,57],[-148,60],[-141,60],[-141,70],[-158,72],[-168,71]],
+  /* Canada */
+  [[-141,60],[-130,54],[-124,49],[-116,49],[-100,49],[-83,46],[-76,44],[-67,47],[-60,46],[-53,47],[-55,58],[-60,62],[-68,68],[-80,68],[-95,74],[-120,74],[-130,68],[-141,60]],
+  /* USA lower 48 */
+  [[-124,49],[-116,49],[-100,49],[-83,46],[-76,44],[-67,47],[-66,45],[-80,42],[-82,30],[-88,30],[-90,29],[-97,26],[-103,25],[-108,31],[-117,32],[-124,38],[-124,49]],
+  /* Mexico + Central America */
+  [[-117,32],[-110,24],[-106,20],[-97,19],[-90,16],[-86,15],[-82,10],[-84,9],[-85,11],[-90,14],[-95,19],[-97,22],[-105,28],[-117,32]],
+  /* Cuba */
+  [[-85,22],[-75,20],[-74,22],[-82,23],[-85,22]],
+  /* South America */
+  [[-80,10],[-60,10],[-50,4],[-35,-5],[-34,-10],[-38,-20],[-44,-23],[-48,-28],[-53,-34],[-65,-55],[-74,-50],[-80,-35],[-80,-17],[-75,-10],[-76,0],[-80,5],[-80,10]],
+  /* UK + Ireland */
+  [[-8,52],[-5,50],[-2,51],[1,52],[0,54],[-3,58],[-5,57],[-8,55],[-7,53],[-6,51],[-8,52]],
+  /* Scandinavia + Denmark */
+  [[5,58],[8,55],[12,56],[18,57],[25,61],[28,65],[30,70],[28,74],[22,70],[16,68],[14,63],[7,58],[5,58]],
+  /* Iberian Peninsula */
+  [[-9,44],[-9,36],[0,36],[3,43],[-2,44],[-9,44]],
+  /* France + Benelux */
+  [[-5,43],[3,43],[8,48],[8,54],[3,53],[-2,51],[-5,48],[-5,43]],
+  /* Germany + Poland + Czech + Austria */
+  [[8,54],[24,54],[24,50],[18,48],[12,46],[8,47],[8,54]],
+  /* Italy */
+  [[7,44],[12,44],[16,41],[18,40],[15,38],[12,37],[8,39],[7,44]],
+  /* Balkans + Greece */
+  [[14,46],[22,44],[26,42],[28,42],[30,40],[26,38],[22,37],[18,39],[14,42],[14,46]],
+  /* Turkey */
+  [[26,42],[36,42],[42,38],[40,36],[28,36],[26,38],[26,42]],
+  /* Ukraine + Romania + Moldova */
+  [[22,44],[28,56],[38,48],[36,44],[28,44],[22,44]],
+  /* European Russia */
+  [[28,56],[40,44],[50,48],[56,58],[48,66],[36,68],[28,62],[28,56]],
+  /* Africa */
+  [[-6,35],[-14,28],[-18,15],[-15,5],[-3,5],[10,4],[14,4],[12,-6],[16,-28],[18,-34],[26,-34],[36,-18],[42,-5],[50,10],[44,12],[36,22],[34,30],[24,31],[10,37],[2,37],[-2,35],[-6,35]],
+  /* Madagascar */
+  [[44,-12],[50,-14],[50,-24],[44,-24],[44,-12]],
+  /* Arabia + Middle East */
+  [[26,38],[36,38],[40,38],[46,28],[56,24],[58,22],[44,12],[38,12],[32,22],[34,30],[36,36],[26,38]],
+  /* Iran + Afghanistan */
+  [[44,38],[60,38],[66,34],[62,26],[58,22],[50,28],[44,32],[44,38]],
+  /* Russia (Siberia) */
+  [[30,70],[56,64],[80,72],[100,72],[130,70],[170,64],[180,68],[180,72],[130,72],[80,74],[50,68],[30,70]],
+  /* Central Asia */
+  [[50,52],[84,52],[84,46],[60,38],[52,42],[50,48],[50,52]],
+  /* Indian Subcontinent */
+  [[60,22],[68,22],[72,20],[77,8],[80,12],[80,16],[77,28],[68,38],[62,34],[60,28],[60,22]],
+  /* China + Mongolia */
+  [[80,52],[120,52],[130,48],[130,40],[130,20],[120,20],[110,18],[104,20],[100,22],[90,28],[80,36],[80,52]],
+  /* Korean Peninsula */
+  [[124,34],[128,34],[130,38],[128,40],[124,38],[124,34]],
+  /* Japan */
+  [[130,32],[135,34],[138,34],[142,36],[141,41],[137,36],[131,33],[130,32]],
+  /* Southeast Asia (Indochina) */
+  [[98,24],[105,20],[108,16],[105,10],[100,3],[104,1],[102,2],[100,6],[98,8],[98,24]],
+  /* Borneo */
+  [[108,6],[118,6],[118,0],[116,-4],[112,-4],[108,0],[108,6]],
+  /* Sumatra */
+  [[96,5],[102,4],[106,0],[106,-4],[104,-4],[98,2],[96,5]],
+  /* Java */
+  [[106,-6],[112,-7],[115,-8],[108,-8],[106,-6]],
+  /* New Guinea */
+  [[132,-2],[148,-6],[148,-8],[140,-8],[132,-4],[132,-2]],
+  /* Philippines */
+  [[118,10],[122,10],[122,18],[120,20],[118,16],[118,10]],
+  /* Australia */
+  [[114,-22],[122,-18],[128,-14],[136,-12],[140,-12],[148,-18],[153,-28],[150,-38],[140,-38],[130,-32],[122,-34],[114,-28],[114,-22]],
+  /* New Zealand N Island */
+  [[172,-37],[178,-38],[178,-41],[173,-41],[172,-37]],
+  /* New Zealand S Island */
+  [[166,-44],[172,-44],[172,-46],[167,-46],[166,-44]],
 ];
 var MAP_GRAT_LAT = [-60,-30,0,30,60];
 var MAP_GRAT_LNG = [-150,-120,-90,-60,-30,0,30,60,90,120,150];
@@ -815,49 +883,11 @@ function mapPoly(pts) {
   return pts.map(function(p){ return mapPx(p[0]).toFixed(1)+","+mapPy(p[1]).toFixed(1); }).join(" ");
 }
 
-// Minimal TopoJSON decoder — decodes delta-encoded arcs, applies Mercator, returns SVG path strings
-function decodeTopo(topo) {
-  if (!topo || !topo.arcs || !topo.transform) return [];
-  var sc = topo.transform.scale, tr = topo.transform.translate;
-  var arcs = topo.arcs.map(function(arc) {
-    var x = 0, y = 0;
-    return arc.map(function(p) { x += p[0]; y += p[1]; return [x*sc[0]+tr[0], y*sc[1]+tr[1]]; });
-  });
-  function ga(i) { return i >= 0 ? arcs[i] : arcs[~i].slice().reverse(); }
-  function stitch(idxs) {
-    var pts = [];
-    for (var j = 0; j < idxs.length; j++) {
-      var a = ga(idxs[j]);
-      for (var k = (j === 0 ? 0 : 1); k < a.length; k++) pts.push(a[k]);
-    }
-    return pts;
-  }
-  function rdPath(pts) {
-    if (!pts.length) return "";
-    return "M" + pts.map(function(p){ return mapPx(p[0]).toFixed(1)+","+mapPy(p[1]).toFixed(1); }).join("L") + "Z";
-  }
-  function geoD(geo) {
-    var polys = geo.type==="Polygon" ? [geo.arcs] : geo.type==="MultiPolygon" ? geo.arcs : [];
-    return polys.map(function(poly) {
-      return poly.map(function(ring) { return rdPath(stitch(ring)); }).join(" ");
-    }).join(" ");
-  }
-  var obj = topo.objects.countries || topo.objects.land;
-  return (obj && obj.geometries || []).map(geoD);
-}
 
 function WorldMap({ deals }) {
   var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
   var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
   var s3 = useState(null);  var hov      = s3[0]; var setHov      = s3[1];
-  var s4 = useState(null);  var geoPaths = s4[0]; var setGeoPaths = s4[1];
-
-  useEffect(function() {
-    fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
-      .then(function(r) { return r.json(); })
-      .then(function(topo) { setGeoPaths(decodeTopo(topo)); })
-      .catch(function() { setGeoPaths([]); });
-  }, []);
 
   var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
 
@@ -904,15 +934,10 @@ function WorldMap({ deals }) {
             var x = mapPx(lng);
             return <line key={"lng"+lng} x1={x} y1={0} x2={x} y2={MAP_H} stroke="#111827" strokeWidth={0.6}/>;
           })}
-          {/* High-res country paths from TopoJSON, or simplified fallback while loading */}
-          {geoPaths
-            ? geoPaths.map(function(d, i){
-                return d ? <path key={i} d={d} fill="#1e2d40" stroke="#2a3f5a" strokeWidth={0.5}/> : null;
-              })
-            : MAP_LANDS.map(function(pts, i){
-                return <polygon key={i} points={mapPoly(pts)} fill="#1e2d40" stroke="#263548" strokeWidth={1}/>;
-              })
-          }
+          {/* Static world polygons — always renders, no network dependency */}
+          {WORLD_POLYS.map(function(pts, i){
+            return <polygon key={i} points={mapPoly(pts)} fill="#1e2d40" stroke="#2a3f5a" strokeWidth={0.5}/>;
+          })}
           {/* Deal dots */}
           {filtered.map(function(deal){
             var coords = parseHqCoords(deal.analysisData && deal.analysisData.hq);
