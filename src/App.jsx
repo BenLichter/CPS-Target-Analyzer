@@ -916,7 +916,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s5 = useState(null);  var tierPickId      = s5[0]; var setTierPickId      = s5[1];
   var s6 = useState(null);  var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
   var s7 = useState("all"); var prioFilter      = s7[0]; var setPrioFilter      = s7[1];
-  var s8 = useState({});    var rerunStatus     = s8[0]; var setRerunStatus     = s8[1];
+  var s8  = useState({});    var rerunStatus  = s8[0];  var setRerunStatus  = s8[1];
+  var s9  = useState("");    var dealSearch   = s9[0];  var setDealSearch   = s9[1];
+  var s10 = useState("all"); var stageFilter  = s10[0]; var setStageFilter  = s10[1];
+  var s11 = useState("all"); var arrFilter    = s11[0]; var setArrFilter    = s11[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -962,11 +965,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   }
 
   // Metrics helpers
+  function getDealTam(d) {
+    if (!d.analysisData || !d.analysisData.tam_som_arr) return 0;
+    var t = d.analysisData.tam_som_arr.tam;
+    return t ? parseArr(String(t)) : 0;
+  }
   function vMetrics(vid) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
+    var tam = vd.reduce(function(s,d){ return s+getDealTam(d); }, 0);
+    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid, prio) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
@@ -974,7 +983,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
+    var tam = td.reduce(function(s,d){ return s+getDealTam(d); }, 0);
+    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
@@ -982,14 +992,25 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
   var activeVert = pipeView.vertical ? (VERTICALS.find(function(v){ return v.id===pipeView.vertical; })||VERTICALS[0]) : null;
   var activeTier = pipeView.tier ? (getBuckets(pipeView.vertical||"").find(function(t){ return t.id===pipeView.tier; })||null) : null;
-  var tierDeals  = (pipeView.vertical&&pipeView.tier)
+  var baseTierDeals = (pipeView.vertical&&pipeView.tier)
     ? deals.filter(function(d){
         if (d.vertical!==pipeView.vertical) return false;
-        var matchTier = pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
-        var matchPrio = prioFilter==="all" ? true : (d.priority||"p1")===prioFilter;
-        return matchTier && matchPrio;
+        return pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
       })
     : [];
+  var tierDeals = baseTierDeals.filter(function(d){
+    if (prioFilter!=="all" && (d.priority||"p1")!==prioFilter) return false;
+    if (dealSearch && !d.company.toLowerCase().includes(dealSearch.toLowerCase())) return false;
+    if (stageFilter!=="all" && d.stage!==stageFilter) return false;
+    if (arrFilter!=="all") {
+      if (!d.arr) return false;
+      var av = parseArr(d.arr);
+      if (arrFilter==="under1m" && av >= 1000000) return false;
+      if (arrFilter==="1m_2m" && (av < 1000000 || av > 2000000)) return false;
+      if (arrFilter==="over2m" && av <= 2000000) return false;
+    }
+    return true;
+  });
 
   // ── Shared add-form snippet ──────────────────────────────────────────────────
   function AddForm({ vert }) {
@@ -1090,7 +1111,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
                   <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
-                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Total ARR</div>
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Total ARR</div>
+                  {m.tam > 0 && <div style={{ color:C.gold, fontSize:12, fontWeight:700, marginBottom:2 }}>{fmtMoney(m.tam)} TAM</div>}
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
@@ -1145,10 +1167,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
-                  <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:12 }}>{t.label}</div>
+                  <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
                   <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
-                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>Total ARR</div>
-                  <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
+                  {m.tam > 0 && <div style={{ color:C.gold, fontSize:11, fontWeight:700, marginBottom:6 }}>{fmtMoney(m.tam)} TAM</div>}
+                  <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.tam > 0 ? 0 : 6 }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
@@ -1169,26 +1192,50 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       ══════════════════════════════════════════════════════════════════════ */}
       {pipeView.vertical && pipeView.tier && activeVert && (
         <div>
-          {/* Breadcrumb + back + priority toggle */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-              <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); }}
-                style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
-              <span style={{ fontSize:16 }}>{activeVert.icon}</span>
-              <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
-              <span style={{ color:C.dim, fontSize:13 }}>›</span>
-              <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
-              <span style={{ color:C.dim, fontSize:11 }}>({tierDeals.length})</span>
-            </div>
-            <div style={{ display:"flex", gap:4 }}>
-              {[["all","All"],["p1","P1"],["p2","P2"]].map(function(pair){
-                var active = prioFilter===pair[0];
-                return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
-                  style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
-                  {pair[1]}
-                </button>;
-              })}
-            </div>
+          {/* Breadcrumb + back */}
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); }}
+              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
+            <span style={{ fontSize:16 }}>{activeVert.icon}</span>
+            <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
+            <span style={{ color:C.dim, fontSize:13 }}>›</span>
+            <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
+            <span style={{ color:C.dim, fontSize:11 }}>
+              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all")
+                ? "(Showing "+tierDeals.length+" of "+baseTierDeals.length+")"
+                : "("+baseTierDeals.length+")"}
+            </span>
+          </div>
+
+          {/* Search + filter bar */}
+          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+            <input value={dealSearch} onChange={function(e){ setDealSearch(e.target.value); }}
+              placeholder="Search companies…"
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", minWidth:160, flex:"1 1 160px" }}/>
+            <select value={stageFilter} onChange={function(e){ setStageFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All Stages</option>
+              {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+            </select>
+            <select value={prioFilter} onChange={function(e){ setPrioFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All Priorities</option>
+              <option value="p1">Priority 1</option>
+              <option value="p2">Priority 2</option>
+            </select>
+            <select value={arrFilter} onChange={function(e){ setArrFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All ARR</option>
+              <option value="under1m">Under $1M</option>
+              <option value="1m_2m">$1M – $2M</option>
+              <option value="over2m">Over $2M</option>
+            </select>
+            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all") && (
+              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); }}
+                style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>
+                Clear
+              </button>
+            )}
           </div>
 
           <ActionsBar vert={activeVert} defaultTier={pipeView.tier!=="all"?pipeView.tier:""} />
