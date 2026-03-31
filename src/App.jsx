@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL    = "claude-sonnet-4-20250514";
@@ -792,49 +794,29 @@ var MAP_BUCKET_OPTS = [
 ];
 
 function WorldMap({ deals }) {
-  var s1 = useState("all");  var mapTierF = s1[0]; var setMapTierF = s1[1];
-  var s2 = useState("all");  var mapPrioF = s2[0]; var setMapPrioF = s2[1];
-  var s3 = useState(false);  var lfReady  = s3[0]; var setLfReady  = s3[1];
+  var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
+  var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
   var mapRef     = useRef(null);
   var lMapRef    = useRef(null);
   var markersRef = useRef([]);
 
-  // Inject Leaflet CSS + JS from CDN once
+  // Initialize Leaflet map once on mount
   useEffect(function() {
-    if (!document.getElementById("lf-css")) {
-      var link = document.createElement("link");
-      link.id = "lf-css"; link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
-    if (!document.getElementById("lf-tip-css")) {
-      var st = document.createElement("style"); st.id = "lf-tip-css";
-      st.textContent = ".leaflet-tooltip.cp-tt{background:#111827;border:1px solid #1F2937;border-radius:8px;padding:10px 14px;box-shadow:0 4px 16px rgba(0,0,0,.6);color:#F1F5F9;font-size:12px;pointer-events:none}.leaflet-tooltip.cp-tt::before{border-top-color:#1F2937}.leaflet-container{font-family:inherit}";
-      document.head.appendChild(st);
-    }
-    if (window.L) { setLfReady(true); return; }
-    var script = document.createElement("script"); script.id = "lf-js";
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.onload = function() { setLfReady(true); };
-    document.head.appendChild(script);
-  }, []);
-
-  // Initialize map once Leaflet is loaded
-  useEffect(function() {
-    if (!lfReady || !mapRef.current || lMapRef.current) return;
-    var L = window.L;
+    if (!mapRef.current || mapRef.current._leaflet_id) return;
     var map = L.map(mapRef.current, { center: [20, 0], zoom: 2, zoomControl: true });
     L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: "abcd", maxZoom: 19,
     }).addTo(map);
     lMapRef.current = map;
-  }, [lfReady]);
+    // Force correct size after DOM settle
+    setTimeout(function() { map.invalidateSize(); }, 100);
+    return function() { map.remove(); lMapRef.current = null; };
+  }, []);
 
   // Re-plot markers whenever deals or filters change
   useEffect(function() {
-    if (!lfReady || !lMapRef.current) return;
-    var L = window.L;
+    if (!lMapRef.current) return;
     markersRef.current.forEach(function(m) { m.remove(); });
     markersRef.current = [];
     deals.forEach(function(d) {
@@ -855,7 +837,7 @@ function WorldMap({ deals }) {
       var marker = L.circleMarker([coords[1], coords[0]], {
         radius: 8, fillColor: color, color: "#fff", weight: 1.5, opacity: 1, fillOpacity: 0.9,
       });
-      var v   = VERTICALS.find(function(x){ return x.id === d.vertical; });
+      var v    = VERTICALS.find(function(x){ return x.id === d.vertical; });
       var bkts = d.vertical === "financial_services" ? FS_SUBVERTS : TIERS;
       var bkt  = bkts.find(function(x){ return x.id === d.tier; });
       var vc   = v ? v.color : color;
@@ -873,14 +855,9 @@ function WorldMap({ deals }) {
       marker.addTo(lMapRef.current);
       markersRef.current.push(marker);
     });
-  }, [lfReady, deals, mapTierF, mapPrioF]);
+  }, [deals, mapTierF, mapPrioF]);
 
-  // Remove map on unmount
-  useEffect(function() {
-    return function() { if (lMapRef.current) { lMapRef.current.remove(); lMapRef.current = null; } };
-  }, []);
-
-  // Plotted count (mirrors filter above, computed in render)
+  // Plotted count for header
   var plotCount = deals.filter(function(d) {
     var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
     if (!coords) return false;
@@ -915,9 +892,7 @@ function WorldMap({ deals }) {
           <span style={{ color:C.dim, fontSize:10 }}>{plotCount} plotted</span>
         </div>
       </div>
-      <div ref={mapRef} style={{ width:"100%", height:420, borderRadius:8, overflow:"hidden", background:"#0D1117" }}>
-        {!lfReady && <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100%", color:C.dim, fontSize:12 }}>Loading map…</div>}
-      </div>
+      <div ref={mapRef} style={{ width:"100%", height:400, borderRadius:8, overflow:"hidden" }}/>
       <div style={{ display:"flex", gap:16, marginTop:10, flexWrap:"wrap" }}>
         {VERTICALS.map(function(v){
           return <div key={v.id} style={{ display:"flex", alignItems:"center", gap:5 }}>
