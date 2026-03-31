@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { ComposableMap, Geographies, Geography, Marker } from "react-simple-maps";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL    = "claude-sonnet-4-20250514";
@@ -733,6 +734,142 @@ function fmtMoney(n) {
   return "$"+Math.round(n);
 }
 
+// ─── City coords for world map ────────────────────────────────────────────────
+var CITY_COORDS = {
+  "new york":[-74.006,40.714],"new york city":[-74.006,40.714],"nyc":[-74.006,40.714],
+  "san francisco":[-122.419,37.775],"los angeles":[-118.244,34.052],"chicago":[-87.629,41.878],
+  "miami":[-80.191,25.761],"boston":[-71.059,42.360],"seattle":[-122.333,47.608],
+  "austin":[-97.743,30.267],"denver":[-104.990,39.739],"las vegas":[-115.139,36.175],
+  "phoenix":[-112.074,33.448],"atlanta":[-84.387,33.749],"dallas":[-96.797,32.777],
+  "houston":[-95.369,29.760],"washington":[-77.037,38.907],"washington dc":[-77.037,38.907],
+  "toronto":[-79.383,43.653],"vancouver":[-123.121,49.283],"montreal":[-73.588,45.508],
+  "mexico city":[-99.133,19.433],
+  "london":[-0.118,51.508],"paris":[2.349,48.864],"frankfurt":[8.682,50.111],
+  "berlin":[13.405,52.520],"amsterdam":[4.904,52.367],"zurich":[8.541,47.377],
+  "geneva":[6.143,46.204],"stockholm":[18.063,59.334],"copenhagen":[12.568,55.676],
+  "oslo":[10.757,59.913],"helsinki":[24.940,60.170],"madrid":[-3.703,40.417],
+  "barcelona":[2.154,41.385],"milan":[9.190,45.464],"rome":[12.496,41.903],
+  "dublin":[-6.260,53.338],"luxembourg":[6.130,49.611],"monaco":[7.412,43.736],
+  "monte carlo":[7.412,43.736],"lisbon":[-9.139,38.717],"vienna":[16.373,48.210],
+  "warsaw":[21.012,52.229],"prague":[14.420,50.088],"budapest":[19.040,47.498],
+  "athens":[23.728,37.984],"brussels":[4.352,50.846],"munich":[11.582,48.135],
+  "dubai":[55.297,25.205],"abu dhabi":[54.367,24.453],"riyadh":[46.675,24.683],
+  "tel aviv":[34.782,32.085],"istanbul":[28.978,41.013],"cairo":[31.235,30.044],
+  "johannesburg":[28.047,-26.204],"cape town":[18.423,-33.924],
+  "nairobi":[36.822,-1.292],"lagos":[3.379,6.524],
+  "hong kong":[114.177,22.302],"singapore":[103.820,1.352],"tokyo":[139.689,35.690],
+  "osaka":[135.502,34.693],"shanghai":[121.473,31.230],"beijing":[116.407,39.904],
+  "shenzhen":[114.059,22.543],"guangzhou":[113.264,23.129],"seoul":[126.978,37.566],
+  "taipei":[121.565,25.033],"sydney":[151.207,-33.868],"melbourne":[144.963,-37.814],
+  "auckland":[174.763,-36.848],"bangalore":[77.591,12.972],"mumbai":[72.878,19.076],
+  "delhi":[77.209,28.614],"new delhi":[77.209,28.614],"jakarta":[106.845,-6.208],
+  "kuala lumpur":[101.687,3.140],"bangkok":[100.523,13.736],"macau":[113.543,22.197],
+  "manila":[120.984,14.563],"ho chi minh city":[106.662,10.823],
+  "sao paulo":[-46.633,-23.550],"rio de janeiro":[-43.173,-22.907],
+  "buenos aires":[-58.382,-34.608],"bogota":[-74.072,4.711],
+  "lima":[-77.043,-12.046],"santiago":[-70.649,-33.459],"panama city":[-79.519,8.994],
+};
+function parseHqCoords(hq) {
+  if (!hq) return null;
+  var lower = String(hq).toLowerCase().trim();
+  if (CITY_COORDS[lower]) return CITY_COORDS[lower];
+  var parts = lower.split(",");
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    if (CITY_COORDS[p]) return CITY_COORDS[p];
+  }
+  return null;
+}
+
+var MAP_GEO = "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json";
+var VCOLOR_MAP = { financial_services:"#00C2FF", luxury_travel:"#F59E0B", luxury_goods:"#8B5CF6", gaming_casinos:"#10B981" };
+var MAP_BUCKET_OPTS = [
+  { id:"all", label:"All Sub-verticals / Tiers" },
+].concat(FS_SUBVERTS).concat(TIERS);
+
+function WorldMap({ deals }) {
+  var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
+  var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
+  var s3 = useState(null);  var pin     = s3[0]; var setPin     = s3[1];
+
+  var sel = { background:"#111827", border:"1px solid #1F2937", borderRadius:6, padding:"5px 10px", color:"#94A3B8", fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
+
+  var mapped = deals.filter(function(d) {
+    var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
+    if (!coords) return false;
+    var matchTier = mapTierF==="all" || (d.tier||"")===mapTierF;
+    var matchPrio = mapPrioF==="all" || (d.priority||"p1")===mapPrioF;
+    return matchTier && matchPrio;
+  });
+
+  return (
+    <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:10, padding:"16px", marginTop:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12, flexWrap:"wrap", gap:8 }}>
+        <span style={{ color:C.text, fontWeight:700, fontSize:13 }}>Global Pipeline Map</span>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <select value={mapTierF} onChange={function(e){ setMapTierF(e.target.value); setPin(null); }} style={sel}>
+            {MAP_BUCKET_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
+          </select>
+          <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); setPin(null); }} style={sel}>
+            <option value="all">All Priorities</option>
+            <option value="p1">Priority 1</option>
+            <option value="p2">Priority 2</option>
+          </select>
+          <span style={{ color:C.dim, fontSize:10 }}>{mapped.length} plotted</span>
+        </div>
+      </div>
+      <div style={{ position:"relative" }} onClick={function(){ setPin(null); }}>
+        <ComposableMap projectionConfig={{ scale:140, center:[0,10] }}
+          style={{ width:"100%", height:"auto", display:"block", background:"#07090F", borderRadius:6 }}>
+          <Geographies geography={MAP_GEO}>
+            {function(ref) {
+              return ref.geographies.map(function(geo) {
+                return <Geography key={geo.rsmKey} geography={geo} fill="#1a2535" stroke="#1F2937" strokeWidth={0.5} style={{ outline:"none" }}/>;
+              });
+            }}
+          </Geographies>
+          {mapped.map(function(deal) {
+            var coords = parseHqCoords(deal.analysisData && deal.analysisData.hq);
+            var color = VCOLOR_MAP[deal.vertical] || C.muted;
+            var active = pin && pin.id===deal.id;
+            return (
+              <Marker key={deal.id} coordinates={coords} onClick={function(e){ e.stopPropagation(); setPin(active?null:deal); }}>
+                <circle r={active?7:5} fill={color} fillOpacity={0.9} stroke={active?"#fff":color} strokeWidth={active?1.5:0.5} style={{ cursor:"pointer", transition:"r 0.15s" }}/>
+              </Marker>
+            );
+          })}
+        </ComposableMap>
+        {pin && (
+          <div style={{ position:"absolute", top:10, left:10, background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", minWidth:180, maxWidth:240, zIndex:10, pointerEvents:"none" }}>
+            <div style={{ color:C.text, fontWeight:700, fontSize:12, marginBottom:6 }}>{pin.company}</div>
+            {pin.analysisData && pin.analysisData.hq && <div style={{ color:C.dim, fontSize:10, marginBottom:4 }}>📍 {pin.analysisData.hq}</div>}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+              {(function(){
+                var v = VERTICALS.find(function(x){ return x.id===pin.vertical; });
+                var bkt = (pin.vertical==="financial_services"?FS_SUBVERTS:TIERS).find(function(x){ return x.id===pin.tier; });
+                var color = v ? v.color : C.muted;
+                return [
+                  <span key="v" style={{ background:color+"20", color:color, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{v?v.label:pin.vertical}</span>,
+                  bkt ? <span key="b" style={{ background:bkt.color+"20", color:bkt.color, borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{bkt.label}</span> : null,
+                  <span key="p" style={{ background:(pin.priority==="p2"?C.surface:C.accentDim), color:(pin.priority==="p2"?C.muted:C.accent), borderRadius:4, padding:"2px 6px", fontSize:9, fontWeight:700 }}>{pin.priority==="p2"?"P2":"P1"}</span>
+                ];
+              })()}
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{ display:"flex", gap:16, marginTop:10, flexWrap:"wrap" }}>
+        {VERTICALS.map(function(v){
+          return <div key={v.id} style={{ display:"flex", alignItems:"center", gap:5 }}>
+            <div style={{ width:8, height:8, borderRadius:"50%", background:v.color }}/>
+            <span style={{ color:C.dim, fontSize:9 }}>{v.label}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
 function PipelineTab({ deals, setDeals, history, onViewResult }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
@@ -741,8 +878,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
   var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"p1", notes:"" });
   var form = s4[0]; var setForm = s4[1];
-  var s5 = useState(null); var tierPickId = s5[0]; var setTierPickId = s5[1];
-  var s6 = useState(null); var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
+  var s5 = useState(null);  var tierPickId      = s5[0]; var setTierPickId      = s5[1];
+  var s6 = useState(null);  var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
+  var s7 = useState("all"); var prioFilter      = s7[0]; var setPrioFilter      = s7[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -778,9 +916,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
-  function tMetrics(vid, tid) {
+  function tMetrics(vid, tid, prio) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
+    if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
@@ -794,7 +933,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   var tierDeals  = (pipeView.vertical&&pipeView.tier)
     ? deals.filter(function(d){
         if (d.vertical!==pipeView.vertical) return false;
-        return pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
+        var matchTier = pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
+        var matchPrio = prioFilter==="all" ? true : (d.priority||"p1")===prioFilter;
+        return matchTier && matchPrio;
       })
     : [];
 
@@ -917,6 +1058,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
               <div><span style={{ color:C.dim, fontSize:10 }}>In Proposal: </span><span style={{ color:C.gold, fontWeight:700, fontSize:13 }}>{deals.filter(function(d){return d.stage==="proposal_neg";}).length}</span></div>
             </div>
           )}
+          <WorldMap deals={deals}/>
         </div>
       )}
 
@@ -925,18 +1067,29 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
       ══════════════════════════════════════════════════════════════════════ */}
       {pipeView.vertical && !pipeView.tier && activeVert && (
         <div>
-          {/* Breadcrumb + back */}
-          <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-            <button onClick={function(){ setPipeView({vertical:null,tier:null}); setShowAdd(false); }}
-              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
-            <span style={{ fontSize:18 }}>{activeVert.icon}</span>
-            <span style={{ color:activeVert.color, fontWeight:900, fontSize:18 }}>{activeVert.label}</span>
+          {/* Breadcrumb + back + priority toggle */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <button onClick={function(){ setPipeView({vertical:null,tier:null}); setShowAdd(false); setPrioFilter("all"); }}
+                style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
+              <span style={{ fontSize:18 }}>{activeVert.icon}</span>
+              <span style={{ color:activeVert.color, fontWeight:900, fontSize:18 }}>{activeVert.label}</span>
+            </div>
+            <div style={{ display:"flex", gap:4 }}>
+              {[["all","All"],["p1","Priority 1"],["p2","Priority 2"]].map(function(pair){
+                var active = prioFilter===pair[0];
+                return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
+                  style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                  {pair[1]}
+                </button>;
+              })}
+            </div>
           </div>
 
-          {/* Tier cards */}
+          {/* Tier/sub-vert cards */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
             {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical)).map(function(t) {
-              var m = tMetrics(pipeView.vertical, t.id);
+              var m = tMetrics(pipeView.vertical, t.id, prioFilter);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -964,15 +1117,26 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
       ══════════════════════════════════════════════════════════════════════ */}
       {pipeView.vertical && pipeView.tier && activeVert && (
         <div>
-          {/* Breadcrumb + back */}
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:20 }}>
-            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); }}
-              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
-            <span style={{ fontSize:16 }}>{activeVert.icon}</span>
-            <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
-            <span style={{ color:C.dim, fontSize:13 }}>›</span>
-            <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
-            <span style={{ color:C.dim, fontSize:11 }}>({tierDeals.length})</span>
+          {/* Breadcrumb + back + priority toggle */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); }}
+                style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
+              <span style={{ fontSize:16 }}>{activeVert.icon}</span>
+              <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
+              <span style={{ color:C.dim, fontSize:13 }}>›</span>
+              <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
+              <span style={{ color:C.dim, fontSize:11 }}>({tierDeals.length})</span>
+            </div>
+            <div style={{ display:"flex", gap:4 }}>
+              {[["all","All"],["p1","P1"],["p2","P2"]].map(function(pair){
+                var active = prioFilter===pair[0];
+                return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
+                  style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                  {pair[1]}
+                </button>;
+              })}
+            </div>
           </div>
 
           <ActionsBar vert={activeVert} defaultTier={pipeView.tier!=="all"?pipeView.tier:""} />
