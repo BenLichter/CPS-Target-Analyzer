@@ -939,9 +939,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
       var freshArr = (data.tam_som_arr&&data.tam_som_arr.likely_arr_usd)||deal.arr;
+      var freshTam = (data.tam_som_arr&&data.tam_som_arr.tam_usd)||"";
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, arr:freshArr, notes:(data.executive_summary||"").slice(0,120) });
+        return Object.assign({},d,{ analysisData:data, arr:freshArr, tam:freshTam, notes:(data.executive_summary||"").slice(0,120) });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
     }).catch(function(err) {
@@ -959,15 +960,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
     var arr = (h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd)||"";
+    var tam = (h.data.tam_som_arr&&h.data.tam_som_arr.tam_usd)||"";
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
-    var d = { id:Date.now(), company:h.company, arr:arr, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
+    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
     setDeals(function(prev){ return prev.concat([d]); });
   }
 
   // Metrics helpers
   function getDealTam(d) {
+    if (d.tam) return parseArr(String(d.tam));
     if (!d.analysisData || !d.analysisData.tam_som_arr) return 0;
-    var t = d.analysisData.tam_som_arr.tam;
+    var t = d.analysisData.tam_som_arr.tam_usd || d.analysisData.tam_som_arr.tam;
     return t ? parseArr(String(t)) : 0;
   }
   function vMetrics(vid) {
@@ -1553,10 +1556,11 @@ export default function App() {
                     else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
                     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
                     var arr = (result.tam_som_arr&&result.tam_som_arr.likely_arr_usd)||"";
+                    var tam = (result.tam_som_arr&&result.tam_som_arr.tam_usd)||"";
                     setPipelineDeals(function(prev){
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
