@@ -717,21 +717,23 @@ var FS_SUBVERTS = [
 
 function parseArr(s) {
   if (!s) return 0;
-  // Handle strings like "$187,500", "$1.2M", "$450K", "187500"
   var raw = String(s).trim();
-  // Extract first dollar-amount-like substring
-  var match = raw.match(/\$?([0-9,]+(?:\.[0-9]+)?)(M|K|m|k)?/);
+  var match = raw.match(/\$?([0-9,]+(?:\.[0-9]+)?)\s*(T|B|M|K|t|b|m|k)?/);
   if (!match) return 0;
   var num = parseFloat(match[1].replace(/,/g,""));
   var unit = (match[2]||"").toUpperCase();
+  if (unit==="T") return num*1e12;
+  if (unit==="B") return num*1e9;
   if (unit==="M") return num*1e6;
   if (unit==="K") return num*1e3;
   return num||0;
 }
 function fmtMoney(n) {
   if (!n) return "—";
-  if (n>=1e6) return "$"+(n/1e6).toFixed(1)+"M";
-  if (n>=1e3) return "$"+Math.round(n/1e3)+"K";
+  if (n>=1e12) return "$"+(n/1e12).toFixed(1)+"T";
+  if (n>=1e9)  return "$"+(n/1e9).toFixed(1)+"B";
+  if (n>=1e6)  return "$"+(n/1e6).toFixed(1)+"M";
+  if (n>=1e3)  return "$"+Math.round(n/1e3)+"K";
   return "$"+Math.round(n);
 }
 
