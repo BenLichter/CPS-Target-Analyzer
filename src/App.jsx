@@ -1117,7 +1117,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   </div>
                   <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Total ARR</div>
-                  {m.tam > 0 && <div style={{ color:C.gold, fontSize:12, fontWeight:700, marginBottom:2 }}>{fmtMoney(m.tam)} TAM</div>}
+                  {m.tam > 0 && <div style={{ marginBottom:6 }}>
+                    <div style={{ color:C.gold, fontSize:11, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.tam)}</div>
+                    <div style={{ color:C.cyan, fontSize:11, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.tam*0.125)}</div>
+                  </div>}
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
@@ -1175,7 +1178,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
                   <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
-                  {m.tam > 0 && <div style={{ color:C.gold, fontSize:11, fontWeight:700, marginBottom:6 }}>{fmtMoney(m.tam)} TAM</div>}
+                  {m.tam > 0 && <div style={{ marginBottom:6 }}>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.tam)}</div>
+                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.tam*0.125)}</div>
+                  </div>}
                   <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.tam > 0 ? 0 : 6 }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
