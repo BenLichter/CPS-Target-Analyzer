@@ -871,7 +871,7 @@ function WorldMap({ deals }) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ deals, setDeals, history, onViewResult }) {
+function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
@@ -881,6 +881,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   var s5 = useState(null);  var tierPickId      = s5[0]; var setTierPickId      = s5[1];
   var s6 = useState(null);  var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
   var s7 = useState("all"); var prioFilter      = s7[0]; var setPrioFilter      = s7[1];
+  var s8 = useState({});    var rerunStatus     = s8[0]; var setRerunStatus     = s8[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -894,6 +895,22 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
   function updateStage(id, stage) { setDeals(function(prev){ return prev.map(function(d){ return d.id===id?Object.assign({},d,{stage:stage}):d; }); }); }
   function updateDeal(id, updates) { setDeals(function(prev){ return prev.map(function(d){ return d.id===id?Object.assign({},d,updates):d; }); }); setEditId(null); }
   function removeDeal(id) { setDeals(function(prev){ return prev.filter(function(d){ return d.id!==id; }); }); }
+  function rerunAnalysis(deal) {
+    setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Starting..."}); });
+    runAnalysis(deal.company, function(step){
+      setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
+    }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
+      var freshArr = (data.tam_som_arr&&data.tam_som_arr.likely_arr_usd)||deal.arr;
+      setDeals(function(prev){ return prev.map(function(d){
+        if (d.id!==deal.id) return d;
+        return Object.assign({},d,{ analysisData:data, arr:freshArr, notes:(data.executive_summary||"").slice(0,120) });
+      }); });
+      setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
+    }).catch(function(err) {
+      setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
+      setTimeout(function(){ setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
+    });
+  }
 
   function importFromHistory(h) {
     var already = deals.find(function(d){ return d.company.toLowerCase()===(h.company||"").toLowerCase(); });
@@ -1184,16 +1201,23 @@ function PipelineTab({ deals, setDeals, history, onViewResult }) {
                                 </div>
                               </div>
                               <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-                                {deal.analysisData && (
+                                {deal.analysisData && !rerunStatus[deal.id] && (
                                   <button onClick={function(){ setOverlayAnalysis(deal.analysisData); }}
                                     style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
                                     View Analysis
                                   </button>
                                 )}
+                                <button onClick={function(){ rerunAnalysis(deal); }} disabled={!!rerunStatus[deal.id]}
+                                  style={{ background:"transparent", border:"1px solid "+(rerunStatus[deal.id]?C.dim+"40":C.border), color:rerunStatus[deal.id]?C.dim:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:rerunStatus[deal.id]?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:rerunStatus[deal.id]?0.5:1 }}>
+                                  ↺ Rerun
+                                </button>
                                 <button onClick={function(){ setEditId(isEditing?null:deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
                                 <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
                               </div>
                             </div>
+                            {rerunStatus[deal.id] && (
+                              <div style={{ color:C.accent, fontSize:9, fontWeight:600, padding:"4px 0 2px", lineHeight:1.4 }}>⟳ {rerunStatus[deal.id]}</div>
+                            )}
                             {deal.arr && <div style={{ color:activeVert.color, fontWeight:800, fontSize:14, marginBottom:4 }}>{deal.arr} ARR</div>}
                             {deal.notes && <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, marginBottom:8 }}>{deal.notes}</div>}
 
@@ -1467,7 +1491,7 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
 
         {/* History */}
         {page==="history" && (
