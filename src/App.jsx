@@ -785,6 +785,25 @@ function parseHqCoords(hq) {
 }
 
 var VCOLOR_MAP = { financial_services:"#00C2FF", luxury_travel:"#F59E0B", luxury_goods:"#8B5CF6", gaming_casinos:"#10B981" };
+
+var GEO_OPTS = [
+  { id:"all",  label:"All Regions" },
+  { id:"AMER", label:"AMER" },
+  { id:"EMEA", label:"EMEA" },
+  { id:"APAC", label:"APAC" },
+];
+function detectGeo(hq) {
+  if (!hq) return "";
+  var h = String(hq).toLowerCase();
+  var APAC = /\b(china|japan|india|singapore|hong kong|australia|south korea|korea|taiwan|thailand|vietnam|indonesia|philippines|malaysia|new zealand|bangladesh|pakistan|sri lanka|myanmar|tokyo|beijing|shanghai|mumbai|delhi|bangalore|hyderabad|chennai|sydney|melbourne|seoul|taipei|bangkok|jakarta|kuala lumpur|manila|ho chi minh|hanoi)\b/;
+  var EMEA = /\b(u\.k|united kingdom|england|britain|france|germany|spain|italy|netherlands|sweden|norway|denmark|finland|switzerland|austria|belgium|portugal|ireland|poland|czech|hungary|romania|greece|turkey|uae|dubai|abu dhabi|saudi|israel|south africa|nigeria|kenya|egypt|ghana|morocco|tunisia|algeria|london|paris|berlin|madrid|rome|amsterdam|stockholm|oslo|copenhagen|zurich|brussels|dublin|warsaw|tel aviv|nairobi|lagos|johannesburg|cape town|cairo)\b/;
+  var AMER = /\b(u\.s\.a|usa|united states|canada|mexico|brazil|argentina|colombia|chile|peru|venezuela|costa rica|panama|new york|los angeles|chicago|houston|miami|san francisco|boston|seattle|toronto|vancouver|montreal|sao paulo|buenos aires|bogota|lima|mexico city)\b|\bus\b/;
+  if (APAC.test(h)) return "APAC";
+  if (EMEA.test(h)) return "EMEA";
+  if (AMER.test(h)) return "AMER";
+  return "";
+}
+
 var MAP_BUCKET_OPTS = [
   { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
   { id:"remittance",    label:"Remittance Fintechs",          filterType:"tier"     },
@@ -798,6 +817,7 @@ var MAP_BUCKET_OPTS = [
 function WorldMap({ deals }) {
   var s1 = useState("all"); var mapTierF = s1[0]; var setMapTierF = s1[1];
   var s2 = useState("all"); var mapPrioF = s2[0]; var setMapPrioF = s2[1];
+  var s3 = useState("all"); var mapGeoF  = s3[0]; var setMapGeoF  = s3[1];
   var mapRef     = useRef(null);
   var lMapRef    = useRef(null);
   var markersRef = useRef([]);
@@ -835,6 +855,7 @@ function WorldMap({ deals }) {
       }
       if (!matchBucket) return;
       if (mapPrioF !== "all" && (d.priority||"p1") !== mapPrioF) return;
+      if (mapGeoF !== "all" && (d.geography||"") !== mapGeoF) return;
       var color = VCOLOR_MAP[d.vertical] || "#94A3B8";
       var marker = L.circleMarker([coords[1], coords[0]], {
         radius: 8, fillColor: color, color: "#fff", weight: 1.5, opacity: 1, fillOpacity: 0.9,
@@ -857,7 +878,7 @@ function WorldMap({ deals }) {
       marker.addTo(lMapRef.current);
       markersRef.current.push(marker);
     });
-  }, [deals, mapTierF, mapPrioF]);
+  }, [deals, mapTierF, mapPrioF, mapGeoF]);
 
   // Plotted count for header
   var plotCount = deals.filter(function(d) {
@@ -873,7 +894,8 @@ function WorldMap({ deals }) {
       else                                  matchBucket = d.vertical === mapTierF;
     }
     if (!matchBucket) return false;
-    return mapPrioF === "all" || (d.priority||"p1") === mapPrioF;
+    if (mapPrioF !== "all" && (d.priority||"p1") !== mapPrioF) return false;
+    return mapGeoF === "all" || (d.geography||"") === mapGeoF;
   }).length;
 
   var sel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" };
@@ -890,6 +912,9 @@ function WorldMap({ deals }) {
             <option value="all">All Priorities</option>
             <option value="p1">Priority 1</option>
             <option value="p2">Priority 2</option>
+          </select>
+          <select value={mapGeoF} onChange={function(e){ setMapGeoF(e.target.value); }} style={sel}>
+            {GEO_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
           </select>
           <span style={{ color:C.dim, fontSize:10 }}>{plotCount} plotted</span>
         </div>
@@ -913,7 +938,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
   var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
-  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"p1", notes:"" });
+  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"p1", geography:"", notes:"" });
   var form = s4[0]; var setForm = s4[1];
   var s5 = useState(null);  var tierPickId      = s5[0]; var setTierPickId      = s5[1];
   var s6 = useState(null);  var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
@@ -922,12 +947,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s9  = useState("");    var dealSearch   = s9[0];  var setDealSearch   = s9[1];
   var s10 = useState("all"); var stageFilter  = s10[0]; var setStageFilter  = s10[1];
   var s11 = useState("all"); var arrFilter    = s11[0]; var setArrFilter    = s11[1];
+  var s12 = useState("all"); var geoFilter    = s12[0]; var setGeoFilter    = s12[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
   function addDeal() {
     if (!form.company.trim()) return;
-    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", notes:form.notes.trim(), addedAt:new Date().toISOString() };
+    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", geography:form.geography||"", notes:form.notes.trim(), addedAt:new Date().toISOString() };
     setDeals(function(prev){ return prev.concat([d]); });
     setForm(function(f){ return Object.assign({},f,{company:"",arr:"",notes:""}); });
     setShowAdd(false);
@@ -942,9 +968,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
       var freshArr = (data.tam_som_arr&&data.tam_som_arr.likely_arr_usd)||deal.arr;
       var freshTam = (data.tam_som_arr&&data.tam_som_arr.tam_usd)||"";
+      var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, arr:freshArr, tam:freshTam, notes:(data.executive_summary||"").slice(0,120) });
+        return Object.assign({},d,{ analysisData:data, arr:freshArr, tam:freshTam, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120) });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
     }).catch(function(err) {
@@ -963,8 +990,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
     var arr = (h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd)||"";
     var tam = (h.data.tam_som_arr&&h.data.tam_som_arr.tam_usd)||"";
+    var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
-    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
+    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
     setDeals(function(prev){ return prev.concat([d]); });
   }
 
@@ -975,17 +1003,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var t = d.analysisData.tam_som_arr.tam_usd || d.analysisData.tam_som_arr.tam;
     return t ? parseArr(String(t)) : 0;
   }
-  function vMetrics(vid) {
+  function vMetrics(vid, geo) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
+    if (geo && geo!=="all") vd = vd.filter(function(d){ return (d.geography||"")===geo; });
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var tam = vd.reduce(function(s,d){ return s+getDealTam(d); }, 0);
     return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
-  function tMetrics(vid, tid, prio) {
+  function tMetrics(vid, tid, prio, geo) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
     if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
+    if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var tam = td.reduce(function(s,d){ return s+getDealTam(d); }, 0);
@@ -1005,6 +1035,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     : [];
   var tierDeals = baseTierDeals.filter(function(d){
     if (prioFilter!=="all" && (d.priority||"p1")!==prioFilter) return false;
+    if (geoFilter!=="all" && (d.geography||"")!==geoFilter) return false;
     if (dealSearch && !d.company.toLowerCase().includes(dealSearch.toLowerCase())) return false;
     if (stageFilter!=="all" && d.stage!==stageFilter) return false;
     if (arrFilter!=="all") {
@@ -1049,6 +1080,15 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>STAGE</div>
             <select value={form.stage} onChange={function(e){setForm(function(f){return Object.assign({},f,{stage:e.target.value});});}} style={sel}>
               {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+            </select>
+          </div>
+          <div>
+            <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>GEOGRAPHY</div>
+            <select value={form.geography||""} onChange={function(e){setForm(function(f){return Object.assign({},f,{geography:e.target.value});});}} style={sel}>
+              <option value="">Auto / Unknown</option>
+              <option value="AMER">AMER</option>
+              <option value="EMEA">EMEA</option>
+              <option value="APAC">APAC</option>
             </select>
           </div>
         </div>
@@ -1104,10 +1144,21 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       ══════════════════════════════════════════════════════════════════════ */}
       {!pipeView.vertical && (
         <div>
-          <div style={{ color:C.text, fontSize:18, fontWeight:900, marginBottom:16 }}>Pipeline Dashboard</div>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+            <div style={{ color:C.text, fontSize:18, fontWeight:900 }}>Pipeline Dashboard</div>
+            <div style={{ display:"flex", gap:4 }}>
+              {GEO_OPTS.map(function(o){
+                var active = geoFilter===o.id;
+                return <button key={o.id} onClick={function(){ setGeoFilter(o.id); }}
+                  style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                  {o.label}
+                </button>;
+              })}
+            </div>
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
             {VERTICALS.map(function(v) {
-              var m = vMetrics(v.id);
+              var m = vMetrics(v.id, geoFilter);
               return (
                 <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s" }}>
@@ -1149,29 +1200,40 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       ══════════════════════════════════════════════════════════════════════ */}
       {pipeView.vertical && !pipeView.tier && activeVert && (
         <div>
-          {/* Breadcrumb + back + priority toggle */}
-          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:20, flexWrap:"wrap" }}>
+          {/* Breadcrumb + back + priority + geo toggles */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:16, flexWrap:"wrap" }}>
             <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button onClick={function(){ setPipeView({vertical:null,tier:null}); setShowAdd(false); setPrioFilter("all"); }}
+              <button onClick={function(){ setPipeView({vertical:null,tier:null}); setShowAdd(false); setPrioFilter("all"); setGeoFilter("all"); }}
                 style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
               <span style={{ fontSize:18 }}>{activeVert.icon}</span>
               <span style={{ color:activeVert.color, fontWeight:900, fontSize:18 }}>{activeVert.label}</span>
             </div>
-            <div style={{ display:"flex", gap:4 }}>
-              {[["all","All"],["p1","Priority 1"],["p2","Priority 2"]].map(function(pair){
-                var active = prioFilter===pair[0];
-                return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
-                  style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
-                  {pair[1]}
-                </button>;
-              })}
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", gap:4 }}>
+                {[["all","All"],["p1","P1"],["p2","P2"]].map(function(pair){
+                  var active = prioFilter===pair[0];
+                  return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
+                    style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                    {pair[1]}
+                  </button>;
+                })}
+              </div>
+              <div style={{ display:"flex", gap:4 }}>
+                {GEO_OPTS.map(function(o){
+                  var active = geoFilter===o.id;
+                  return <button key={o.id} onClick={function(){ setGeoFilter(o.id); }}
+                    style={{ background:active?"#334155":C.surface, color:active?C.text:C.muted, border:"1px solid "+(active?"#475569":C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                    {o.label}
+                  </button>;
+                })}
+              </div>
             </div>
           </div>
 
           {/* Tier/sub-vert cards */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
             {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical)).map(function(t) {
-              var m = tMetrics(pipeView.vertical, t.id, prioFilter);
+              var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -1205,14 +1267,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         <div>
           {/* Breadcrumb + back */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); }}
+            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); setGeoFilter("all"); }}
               style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
             <span style={{ fontSize:16 }}>{activeVert.icon}</span>
             <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
             <span style={{ color:C.dim, fontSize:13 }}>›</span>
             <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
             <span style={{ color:C.dim, fontSize:11 }}>
-              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all")
+              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all")
                 ? "(Showing "+tierDeals.length+" of "+baseTierDeals.length+")"
                 : "("+baseTierDeals.length+")"}
             </span>
@@ -1241,8 +1303,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="1m_2m">$1M – $2M</option>
               <option value="over2m">Over $2M</option>
             </select>
-            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all") && (
-              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); }}
+            <select value={geoFilter} onChange={function(e){ setGeoFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              {GEO_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
+            </select>
+            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all") && (
+              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); }}
                 style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>
                 Clear
               </button>
@@ -1287,6 +1353,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                 <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
                                 <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:3, flexWrap:"wrap" }}>
                                   {dt && <span style={{ color:dt.color, fontSize:9, fontWeight:700 }}>{dt.label}</span>}
+                                  <select value={deal.geography||""} onChange={function(e){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:e.target.value}):x; }); }); }}
+                                    style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:4, padding:"1px 4px", fontSize:8, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+                                    <option value="">Region</option>
+                                    <option value="AMER">AMER</option>
+                                    <option value="EMEA">EMEA</option>
+                                    <option value="APAC">APAC</option>
+                                  </select>
                                   <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
                                     style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
                                     {isPri2?"P2":"P1"}
@@ -1333,6 +1406,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   <select defaultValue={deal.vertical} id={"vert_"+deal.id}  style={sel}>
                                     {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
                                   </select>
+                                  <select defaultValue={deal.geography||""} id={"geo_"+deal.id} style={sel}>
+                                    <option value="">No Region</option>
+                                    <option value="AMER">AMER</option>
+                                    <option value="EMEA">EMEA</option>
+                                    <option value="APAC">APAC</option>
+                                  </select>
                                 </div>
                                 <button onClick={function(){
                                   var arrEl      = document.getElementById("arr_"+deal.id);
@@ -1341,6 +1420,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   var priorityEl = document.getElementById("priority_"+deal.id);
                                   var stageEl    = document.getElementById("stage_"+deal.id);
                                   var vertEl     = document.getElementById("vert_"+deal.id);
+                                  var geoEl      = document.getElementById("geo_"+deal.id);
                                   updateDeal(deal.id, {
                                     arr:      arrEl      ? arrEl.value      : deal.arr,
                                     notes:    notesEl    ? notesEl.value    : deal.notes,
@@ -1348,6 +1428,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                     priority: priorityEl ? priorityEl.value : (deal.priority||"p1"),
                                     stage:    stageEl    ? stageEl.value    : deal.stage,
                                     vertical: vertEl     ? vertEl.value     : deal.vertical,
+                                    geography:geoEl      ? geoEl.value      : (deal.geography||""),
                                   });
                                 }} style={{ background:activeVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
@@ -1565,10 +1646,11 @@ export default function App() {
                     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
                     var arr = (result.tam_som_arr&&result.tam_som_arr.likely_arr_usd)||"";
                     var tam = (result.tam_som_arr&&result.tam_som_arr.tam_usd)||"";
+                    var geo = detectGeo(result.hq||"");
                     setPipelineDeals(function(prev){
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
