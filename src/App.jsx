@@ -804,6 +804,8 @@ function detectGeo(hq) {
   return "";
 }
 
+var GEO_CENTERS = { AMER: [-95, 40], EMEA: [20, 50], APAC: [105, 35] };
+
 var MAP_BUCKET_OPTS = [
   { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
   { id:"remittance",    label:"Remittance Fintechs",          filterType:"tier"     },
@@ -842,7 +844,7 @@ function WorldMap({ deals }) {
     markersRef.current.forEach(function(m) { m.remove(); });
     markersRef.current = [];
     deals.forEach(function(d) {
-      var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
+      var coords = parseHqCoords(d.analysisData && d.analysisData.hq) || GEO_CENTERS[d.geography||""] || null;
       if (!coords) return;
       var matchBucket;
       if (mapTierF === "all") {
@@ -882,7 +884,7 @@ function WorldMap({ deals }) {
 
   // Plotted count for header
   var plotCount = deals.filter(function(d) {
-    var coords = parseHqCoords(d.analysisData && d.analysisData.hq);
+    var coords = parseHqCoords(d.analysisData && d.analysisData.hq) || GEO_CENTERS[d.geography||""] || null;
     if (!coords) return false;
     var matchBucket;
     if (mapTierF === "all") {
