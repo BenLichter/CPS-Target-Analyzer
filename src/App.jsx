@@ -1351,15 +1351,18 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
                               <div>
                                 <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
-                                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:3, flexWrap:"wrap" }}>
+                                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
                                   {dt && <span style={{ color:dt.color, fontSize:9, fontWeight:700 }}>{dt.label}</span>}
-                                  <select value={deal.geography||""} onChange={function(e){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:e.target.value}):x; }); }); }}
-                                    style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:4, padding:"1px 4px", fontSize:8, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
-                                    <option value="">Region</option>
-                                    <option value="AMER">AMER</option>
-                                    <option value="EMEA">EMEA</option>
-                                    <option value="APAC">APAC</option>
-                                  </select>
+                                  <div style={{ display:"flex", gap:2 }}>
+                                    {["AMER","EMEA","APAC"].map(function(g){
+                                      var isGeo = (deal.geography||"") === g;
+                                      var gc = g==="AMER" ? C.accent : g==="EMEA" ? C.gold : C.green;
+                                      return <button key={g} onClick={function(e){ e.stopPropagation(); setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:isGeo?"":g}):x; }); }); }}
+                                        style={{ background:isGeo?gc+"22":"transparent", border:"1px solid "+(isGeo?gc:C.border), color:isGeo?gc:C.dim, borderRadius:4, padding:"2px 5px", fontSize:7, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
+                                        {g}
+                                      </button>;
+                                    })}
+                                  </div>
                                   <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
                                     style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
                                     {isPri2?"P2":"P1"}
