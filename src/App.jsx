@@ -805,6 +805,11 @@ function detectGeo(hq) {
 }
 
 var GEO_CENTERS = { AMER: [-95, 40], EMEA: [20, 50], APAC: [105, 35] };
+function geoFallbackCoords(geography) {
+  var center = GEO_CENTERS[geography] || GEO_CENTERS["AMER"];
+  var offset = function() { return (Math.random() - 0.5) * 6; };
+  return [center[0] + offset(), center[1] + offset()];
+}
 
 var MAP_BUCKET_OPTS = [
   { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
@@ -844,8 +849,7 @@ function WorldMap({ deals }) {
     markersRef.current.forEach(function(m) { m.remove(); });
     markersRef.current = [];
     deals.forEach(function(d) {
-      var coords = parseHqCoords(d.analysisData && d.analysisData.hq) || GEO_CENTERS[d.geography||""] || null;
-      if (!coords) return;
+      var coords = parseHqCoords(d.analysisData && d.analysisData.hq) || geoFallbackCoords(d.geography||"");
       var matchBucket;
       if (mapTierF === "all") {
         matchBucket = true;
@@ -884,8 +888,6 @@ function WorldMap({ deals }) {
 
   // Plotted count for header
   var plotCount = deals.filter(function(d) {
-    var coords = parseHqCoords(d.analysisData && d.analysisData.hq) || GEO_CENTERS[d.geography||""] || null;
-    if (!coords) return false;
     var matchBucket;
     if (mapTierF === "all") {
       matchBucket = true;
