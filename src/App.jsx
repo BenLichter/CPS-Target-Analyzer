@@ -105,7 +105,7 @@ async function runAnalysis(company, onStep, keys) {
   const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
-  const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words. ARR: bottoms-up only. likely_arr_usd = SOM x 1-2% capture rate. Show math e.g. $100M SOM x 1% = $1M ARR. Target range $750K-$2M. Never go below $500K.';
+  const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow exactly:\nStep 1: Find the company real scale metric from scraped data: active users OR monthly transaction volume OR annual payment volume OR AUM. Use the most specific number from search results, not industry estimates.\nStep 2: Apply vertical-specific crypto penetration rate to get addressable base:\n  Remittance Fintechs: 12-18% | Neobanks: 4-8% | Brokerage & Investment: 8-15% | Luxury Travel: 3-6% | Luxury Goods: 2-5% | Gaming & Casinos: 15-25%\nStep 3: SOM = addressable base × $450 per user per year (default if transaction value unavailable).\nStep 4: projected_arr = SOM × 1.5% capture rate (use 1% early-stage, 2% if already exploring crypto). upside_arr = SOM × 3%.\nStep 5: Output fields: tam = broad industry market size (reference only), som = bottoms-up per above, projected_arr = SOM × capture rate, upside_arr = SOM × 3%. Always show math inline e.g. "15M users × 6% = 900K users × $450 = $405M SOM × 1.5% = $6.1M ARR".';
 
   // Phase 0a — News
   let ctx = "";
@@ -266,7 +266,7 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 1 — Core intelligence
   onStep("🧠 Claude core analysis...");
-  const p1raw = await callAPI(SYS, sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": { \"tam_usd\": \"$X\", \"som_usd\": \"$X\", \"likely_arr_usd\": \"$X conservative\", \"upside_arr_usd\": \"$X optimistic\", \"methodology\": \"1 sentence\", \"assumptions\": [\"assumption 1\", \"assumption 2\"], \"reasoning\": \"2 sentences\" },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}", 7000);
+  const p1raw = await callAPI(SYS, sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}", 7000);
   const p1 = parseJSON(p1raw);
 
   // Merge contacts
@@ -479,17 +479,21 @@ function AnalysisView({ data }) {
       </div>
 
       {/* ARR */}
-      {t.likely_arr_usd && (
+      {(t.projected_arr || t.likely_arr_usd) && (
         <Sec title="💰 ARR Potential" accent={C.green}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8, marginBottom: 10 }}>
-            {t.tam_usd && <Chip label="TAM" value={t.tam_usd} color={C.muted} />}
-            {t.som_usd && <Chip label="SOM" value={t.som_usd} color={C.accent} />}
-            {t.likely_arr_usd && <Chip label="Projected ARR" value={t.likely_arr_usd} color={C.green} />}
-            {t.upside_arr_usd && <Chip label="Upside ARR" value={t.upside_arr_usd} color={C.gold} />}
+            {t.tam_usd && <Chip label="TAM (ref)" value={t.tam_usd} color={C.muted} />}
+            {(t.som || t.som_usd) && <Chip label="SOM" value={t.som || t.som_usd} color={C.accent} />}
+            {(t.projected_arr || t.likely_arr_usd) && <Chip label="Projected ARR" value={t.projected_arr || t.likely_arr_usd} color={C.green} />}
+            {(t.upside_arr || t.upside_arr_usd) && <Chip label="Upside ARR" value={t.upside_arr || t.upside_arr_usd} color={C.gold} />}
           </div>
-          {t.methodology && <div style={{ color: C.muted, fontSize: 11, marginBottom: 6 }}>📐 {t.methodology}</div>}
+          {t.som_calculation && (
+            <div style={{ background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
+              <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>📐 Bottoms-Up Calculation</div>
+              <div style={{ color: C.cyan, fontSize: 11, lineHeight: 1.7, fontFamily: "monospace" }}>{t.som_calculation}</div>
+            </div>
+          )}
           {(t.assumptions || []).map(function(a, i) { return <div key={i} style={{ color: C.dim, fontSize: 11, marginBottom: 4 }}>• {a}</div>; })}
-          {t.reasoning && <div style={{ color: C.muted, fontSize: 11, marginTop: 6, lineHeight: 1.6 }}>{t.reasoning}</div>}
         </Sec>
       )}
 
@@ -970,7 +974,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     runAnalysis(deal.company, function(step){
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
-      var freshArr = (data.tam_som_arr&&data.tam_som_arr.likely_arr_usd)||deal.arr;
+      var freshArr = (data.tam_som_arr&&(data.tam_som_arr.projected_arr||data.tam_som_arr.likely_arr_usd))||deal.arr;
       var freshTam = (data.tam_som_arr&&data.tam_som_arr.tam_usd)||"";
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       setDeals(function(prev){ return prev.map(function(d){
@@ -992,7 +996,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (seg.includes("travel")||seg.includes("hotel")||seg.includes("airline")||seg.includes("hospitality")) vert="luxury_travel";
     else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
-    var arr = (h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd)||"";
+    var arr = (h.data.tam_som_arr&&(h.data.tam_som_arr.projected_arr||h.data.tam_som_arr.likely_arr_usd))||"";
     var tam = (h.data.tam_som_arr&&h.data.tam_som_arr.tam_usd)||"";
     var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
@@ -1651,7 +1655,7 @@ export default function App() {
                     if (seg.includes("travel")||seg.includes("hotel")||seg.includes("airline")||seg.includes("hospitality")) vert="luxury_travel";
                     else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
                     else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
-                    var arr = (result.tam_som_arr&&result.tam_som_arr.likely_arr_usd)||"";
+                    var arr = (result.tam_som_arr&&(result.tam_som_arr.projected_arr||result.tam_som_arr.likely_arr_usd))||"";
                     var tam = (result.tam_som_arr&&result.tam_som_arr.tam_usd)||"";
                     var geo = detectGeo(result.hq||"");
                     setPipelineDeals(function(prev){
@@ -1692,7 +1696,7 @@ export default function App() {
                       <div>
                         <div style={{ color:C.text, fontWeight:700, fontSize:14 }}>{h.company}</div>
                         <div style={{ color:C.muted, fontSize:11, marginTop:2 }}>{h.data.segment||""} {h.data.hq?"· "+h.data.hq:""}</div>
-                        {h.data.tam_som_arr&&h.data.tam_som_arr.likely_arr_usd&&<div style={{ color:C.green, fontSize:11, marginTop:2 }}>ARR: {h.data.tam_som_arr.likely_arr_usd}</div>}
+                        {h.data.tam_som_arr&&(h.data.tam_som_arr.projected_arr||h.data.tam_som_arr.likely_arr_usd)&&<div style={{ color:C.green, fontSize:11, marginTop:2 }}>ARR: {h.data.tam_som_arr.projected_arr||h.data.tam_som_arr.likely_arr_usd}</div>}
                       </div>
                       <div style={{ textAlign:"right" }}>
                         <div style={{ color:C.dim, fontSize:10 }}>{new Date(h.analyzedAt).toLocaleTimeString()}</div>
