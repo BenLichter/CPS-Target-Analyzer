@@ -264,6 +264,25 @@ async function runAnalysis(company, onStep, keys) {
     if (rPart.length) { ctx += "PARTNER SIGNALS:\n" + rPart.slice(0, 4).map(function(r) { return r.title + ": " + (r.content || "").slice(0, 150); }).join("\n") + "\n\n"; }
   }
 
+  // Phase 0d — Upcoming events research (in parallel with building context)
+  var rawEvents = [];
+  if (tKey) {
+    onStep("🗓️ Researching upcoming events...");
+    var execQ = contacts.slice(0, 3).map(function(c) { return '"' + c.name + '"'; }).join(" OR ");
+    var evtSearches = [
+      tavilyRaw(company + " conference 2025 2026 speaking sponsor exhibitor", tKey, 8, 365),
+      tavilyRaw("crypto payments fintech conference summit 2025 2026 upcoming", tKey, 8, 180),
+      tavilyRaw("neobank remittance fintech summit event 2025 2026 upcoming", tKey, 6, 180),
+      tavilyRaw("remittance digital assets banking conference 2025 2026", tKey, 6, 365),
+      tavilyRaw("broker dealer treasury crypto event 2025 2026", tKey, 6, 365),
+      tavilyRaw("site:10times.com fintech crypto payments conference 2026", tKey, 6, 365),
+    ];
+    if (execQ) evtSearches.push(tavilyRaw("(" + execQ + ") speaking conference 2025 2026", tKey, 6, 365));
+    var evtResults = await Promise.all(evtSearches);
+    var seenEvtU = new Set();
+    for (var _ea of evtResults) { for (var _er of _ea) { if (!_er.url || seenEvtU.has(_er.url)) continue; seenEvtU.add(_er.url); rawEvents.push(_er); } }
+  }
+
   // Phase 1 — Core intelligence
   onStep("🧠 Claude core analysis...");
   const p1raw = await callAPI(SYS, sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}", 7000);
@@ -287,15 +306,29 @@ async function runAnalysis(company, onStep, keys) {
     } catch { p1.recent_news = rawNews.slice(0, 6).map(r => ({ title: r.title, url: r.url, date: r.published_date || "", source: r.url.split("/")[2] || "" })); }
   }
 
-  // Phase 2 — Competitive + GTM (parallel)
+  // Phase 2 — Competitive + GTM + Events (parallel)
   onStep("⚔️ Competitive analysis & GTM plan...");
-  const [p2raw, p3raw] = await Promise.all([
+  var evtCtx = rawEvents.length ? rawEvents.slice(0, 15).map(function(r, i) { return (i+1) + ". " + r.title + "\n   " + r.url + "\n   " + (r.content || "").slice(0, 280); }).join("\n\n") : "";
+  const [p2raw, p3raw, p4raw] = await Promise.all([
     callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
     callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
+    evtCtx ? callAPI(
+      "Extract upcoming industry events from web search results. Output ONLY a JSON array, no markdown.",
+      "Company: " + company + ". Today: " + todayStr + ". Contacts: " + contacts.slice(0,3).map(function(c){return c.name+" ("+c.title+")";}).join(", ") + ".\n\nFrom the search results below, extract upcoming events (next 6 months preferred) relevant to " + company + " or the payments/crypto/fintech industry. Include 4-8 best matches.\n\nFor each event output a JSON object: {\"name\":\"event name\",\"date\":\"Month YYYY or specific date\",\"location\":\"City, Country or Virtual\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Likely Attendee\",\"contact\":\"\",\"url\":\"best source url\",\"notes\":\"\"}\n\nRelevance: Speaker if a named exec is speaking; Sponsor if listed as sponsor; Exhibitor if has booth; else Likely Attendee.\n\nSOURCES:\n" + evtCtx,
+      2000
+    ) : Promise.resolve("[]"),
   ]);
 
   try { const p2 = parseJSON(p2raw); p1.competitive_comparison = p2.competitive_comparison; p1.positioning_statement = p2.positioning_statement; } catch {}
   try { const p3 = parseJSON(p3raw); p1.attack_plan = p3.attack_plan; } catch {}
+  try {
+    var evtStr = p4raw.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
+    if (evtStr.startsWith("[")) {
+      p1.upcoming_events = JSON.parse(evtStr).slice(0, 8).map(function(e, i) {
+        return { id: "evt_" + Date.now() + "_" + i, name: e.name||"", date: e.date||"", location: e.location||"", relevance: e.relevance||"Likely Attendee", contact: e.contact||"", url: e.url||"", notes: e.notes||"", dismissed: false };
+      });
+    }
+  } catch { p1.upcoming_events = []; }
 
   p1.analyzedAt = new Date().toISOString();
   return p1;
@@ -421,8 +454,184 @@ function ContactCard({ contact, company, onRemove }) {
   );
 }
 
+// ─── Event Card ───────────────────────────────────────────────────────────────
+var RELEVANCE_OPTS = ["Speaker", "Sponsor", "Exhibitor", "Likely Attendee"];
+var RELEVANCE_ICON = { "Speaker": "🎤", "Sponsor": "💰", "Exhibitor": "🏢", "Likely Attendee": "👤" };
+var RELEVANCE_COLOR = { "Speaker": "green", "Sponsor": "gold", "Exhibitor": "purple", "Likely Attendee": "accent" };
+
+function EventCard({ event, contactNames, onUpdate, onDismiss }) {
+  var s1 = useState(false); var editing = s1[0]; var setEditing = s1[1];
+  var s2 = useState(event); var draft = s2[0]; var setDraft = s2[1];
+  var s3 = useState(event.notes || ""); var notes = s3[0]; var setNotes = s3[1];
+
+  var inp = { background: C.surface, border: "1px solid " + C.border, borderRadius: 5, padding: "4px 8px", color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none", width: "100%" };
+
+  function save() {
+    var updated = Object.assign({}, draft, { notes: notes });
+    onUpdate(updated);
+    setEditing(false);
+  }
+
+  var rc = RELEVANCE_COLOR[event.relevance] || "accent";
+  var ri = RELEVANCE_ICON[event.relevance] || "👤";
+
+  if (editing) {
+    return (
+      <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.accent + "50" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>EVENT NAME</div>
+            <input style={inp} value={draft.name} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{name:e.target.value}); }); }} />
+          </div>
+          <div>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>DATE</div>
+            <input style={inp} value={draft.date} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{date:e.target.value}); }); }} placeholder="e.g. May 2025" />
+          </div>
+          <div>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>LOCATION</div>
+            <input style={inp} value={draft.location} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{location:e.target.value}); }); }} placeholder="City, Country" />
+          </div>
+          <div>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>RELEVANCE</div>
+            <select style={Object.assign({},inp,{cursor:"pointer"})} value={draft.relevance} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{relevance:e.target.value}); }); }}>
+              {RELEVANCE_OPTS.map(function(o){ return <option key={o} value={o}>{RELEVANCE_ICON[o]} {o}</option>; })}
+            </select>
+          </div>
+          <div>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>LINKED CONTACT</div>
+            <select style={Object.assign({},inp,{cursor:"pointer"})} value={draft.contact} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{contact:e.target.value}); }); }}>
+              <option value="">None</option>
+              {(contactNames||[]).map(function(n){ return <option key={n} value={n}>{n}</option>; })}
+            </select>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>SOURCE URL</div>
+            <input style={inp} value={draft.url} onChange={function(e){ setDraft(function(p){ return Object.assign({},p,{url:e.target.value}); }); }} placeholder="https://..." />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>NOTES</div>
+            <textarea style={Object.assign({},inp,{resize:"vertical",minHeight:48})} value={notes} onChange={function(e){ setNotes(e.target.value); }} placeholder="e.g. Book a meeting with Sarah at this event" />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={save} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 5, padding: "5px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+          <button onClick={function(){ setDraft(event); setNotes(event.notes||""); setEditing(false); }} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 5, padding: "5px 10px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.border }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+            <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{event.name}</span>
+            <Badge color={rc} sm>{ri} {event.relevance}</Badge>
+            {event.contact && <Badge color="cyan" sm>👤 {event.contact}</Badge>}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: event.notes ? 6 : 0 }}>
+            {event.date && <span style={{ color: C.muted, fontSize: 10 }}>📅 {event.date}</span>}
+            {event.location && <span style={{ color: C.muted, fontSize: 10 }}>📍 {event.location}</span>}
+            {event.url && <a href={event.url} target="_blank" rel="noreferrer" style={{ color: C.accent, fontSize: 10, textDecoration: "none" }}>🔗 Source</a>}
+          </div>
+          {event.notes && <div style={{ color: C.gold, fontSize: 10, marginTop: 4, fontStyle: "italic" }}>"{event.notes}"</div>}
+          {!event.notes && (
+            <div style={{ marginTop: 4 }}>
+              <input placeholder="Add notes (e.g. book meeting with Sarah here)..." style={{ background: "transparent", border: "none", borderBottom: "1px solid " + C.dim, color: C.dim, fontSize: 10, outline: "none", fontFamily: "inherit", width: "100%", padding: "2px 0" }}
+                onBlur={function(e){ if (e.target.value.trim()) { onUpdate(Object.assign({}, event, { notes: e.target.value.trim() })); } }}
+                onKeyDown={function(e){ if (e.key === "Enter" && e.target.value.trim()) { onUpdate(Object.assign({}, event, { notes: e.target.value.trim() })); e.target.blur(); } }} />
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button onClick={function(){ setEditing(true); }} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 4, padding: "3px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>✏ Edit</button>
+          <button onClick={onDismiss} style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 4, padding: "3px 7px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }} title="Dismiss">✕</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
+  var s1 = useState(function(){ return (initEvents||[]).filter(function(e){ return !e.dismissed; }); });
+  var events = s1[0]; var setEvents = s1[1];
+  var s2 = useState(false); var addingNew = s2[0]; var setAddingNew = s2[1];
+  var s3 = useState({ name:"", date:"", location:"", relevance:"Likely Attendee", contact:"", url:"", notes:"" });
+  var newEvt = s3[0]; var setNewEvt = s3[1];
+
+  var inp = { background: C.surface, border: "1px solid " + C.border, borderRadius: 5, padding: "4px 8px", color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none", width: "100%" };
+
+  function updateEvent(updated) {
+    var next = events.map(function(e){ return e.id === updated.id ? updated : e; });
+    setEvents(next);
+    if (onEventsUpdate) onEventsUpdate(next);
+  }
+
+  function dismissEvent(id) {
+    var next = events.filter(function(e){ return e.id !== id; });
+    setEvents(next);
+    if (onEventsUpdate) onEventsUpdate(next);
+  }
+
+  function addEvent() {
+    if (!newEvt.name.trim()) return;
+    var e = Object.assign({}, newEvt, { id: "evt_" + Date.now(), dismissed: false, name: newEvt.name.trim() });
+    var next = events.concat([e]);
+    setEvents(next);
+    if (onEventsUpdate) onEventsUpdate(next);
+    setNewEvt({ name:"", date:"", location:"", relevance:"Likely Attendee", contact:"", url:"", notes:"" });
+    setAddingNew(false);
+  }
+
+  return (
+    <Sec title={"🗓️ Upcoming Industry Events" + (events.length ? " (" + events.length + ")" : "")} accent={C.green} open={false}>
+      {events.length === 0 && !addingNew && (
+        <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: "12px 0" }}>No upcoming events found in the next 90 days.</div>
+      )}
+      {events.map(function(evt) {
+        return <EventCard key={evt.id} event={evt} contactNames={contactNames} onUpdate={updateEvent} onDismiss={function(){ dismissEvent(evt.id); }} />;
+      })}
+      {addingNew && (
+        <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.accent + "50" }}>
+          <div style={{ color: C.accent, fontSize: 10, fontWeight: 700, marginBottom: 8 }}>Add Event</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <input style={inp} value={newEvt.name} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{name:e.target.value}); }); }} placeholder="Event name *" />
+            </div>
+            <input style={inp} value={newEvt.date} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{date:e.target.value}); }); }} placeholder="Date (e.g. May 2025)" />
+            <input style={inp} value={newEvt.location} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{location:e.target.value}); }); }} placeholder="Location" />
+            <select style={Object.assign({},inp,{cursor:"pointer"})} value={newEvt.relevance} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{relevance:e.target.value}); }); }}>
+              {RELEVANCE_OPTS.map(function(o){ return <option key={o} value={o}>{RELEVANCE_ICON[o]} {o}</option>; })}
+            </select>
+            <select style={Object.assign({},inp,{cursor:"pointer"})} value={newEvt.contact} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{contact:e.target.value}); }); }}>
+              <option value="">No linked contact</option>
+              {(contactNames||[]).map(function(n){ return <option key={n} value={n}>{n}</option>; })}
+            </select>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <input style={inp} value={newEvt.url} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{url:e.target.value}); }); }} placeholder="Source URL" />
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <textarea style={Object.assign({},inp,{resize:"vertical",minHeight:40})} value={newEvt.notes} onChange={function(e){ setNewEvt(function(p){ return Object.assign({},p,{notes:e.target.value}); }); }} placeholder="Notes" />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={addEvent} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 5, padding: "5px 12px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Add</button>
+            <button onClick={function(){ setAddingNew(false); }} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 5, padding: "5px 10px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {!addingNew && (
+        <button onClick={function(){ setAddingNew(true); }} style={{ background: "transparent", border: "1px dashed " + C.border, color: C.dim, borderRadius: 7, padding: "7px 14px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: events.length ? 4 : 0 }}>
+          + Add Event
+        </button>
+      )}
+    </Sec>
+  );
+}
+
 // ─── Analysis View ────────────────────────────────────────────────────────────
-function AnalysisView({ data }) {
+function AnalysisView({ data, onEventsUpdate }) {
   // ALL hooks declared unconditionally at the very top — NEVER move these
   var s1 = useState([]); var contacts = s1[0]; var setContacts = s1[1];
   var s2 = useState([]); var chat = s2[0]; var setChat = s2[1];
@@ -521,6 +730,13 @@ function AnalysisView({ data }) {
           })}
         </Sec>
       )}
+
+      {/* Upcoming Events */}
+      <EventsSection
+        initEvents={data.upcoming_events || []}
+        contactNames={(data.key_contacts || contacts).map(function(c){ return c.name; })}
+        onEventsUpdate={onEventsUpdate}
+      />
 
       {/* Competitive */}
       {cc.coinpayments && (
@@ -956,6 +1172,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s10 = useState("all"); var stageFilter  = s10[0]; var setStageFilter  = s10[1];
   var s11 = useState("all"); var arrFilter    = s11[0]; var setArrFilter    = s11[1];
   var s12 = useState("all"); var geoFilter    = s12[0]; var setGeoFilter    = s12[1];
+  var s13 = useState(null);  var overlayDealId = s13[0]; var setOverlayDealId = s13[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1139,11 +1356,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       {/* ── Analysis overlay ─────────────────────────────────────────────── */}
       {overlayAnalysis && (
         <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:C.bg, zIndex:1000, overflowY:"auto", padding:"16px 20px" }}>
-          <button onClick={function(){ setOverlayAnalysis(null); }}
+          <button onClick={function(){ setOverlayAnalysis(null); setOverlayDealId(null); }}
             style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", marginBottom:16 }}>
             ← Back to Pipeline
           </button>
-          <AnalysisView data={overlayAnalysis}/>
+          <AnalysisView data={overlayAnalysis} onEventsUpdate={overlayDealId ? function(events) {
+            setDeals(function(prev){ return prev.map(function(d){ return d.id===overlayDealId ? Object.assign({},d,{ analysisData: Object.assign({},d.analysisData,{ upcoming_events: events }) }) : d; }); });
+          } : null}/>
         </div>
       )}
 
@@ -1379,7 +1598,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                               </div>
                               <div style={{ display:"flex", gap:4, alignItems:"center" }}>
                                 {deal.analysisData && !rerunStatus[deal.id] && (
-                                  <button onClick={function(){ setOverlayAnalysis(deal.analysisData); }}
+                                  <button onClick={function(){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); }}
                                     style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
                                     View Analysis
                                   </button>
