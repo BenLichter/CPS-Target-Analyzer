@@ -264,23 +264,61 @@ async function runAnalysis(company, onStep, keys) {
     if (rPart.length) { ctx += "PARTNER SIGNALS:\n" + rPart.slice(0, 4).map(function(r) { return r.title + ": " + (r.content || "").slice(0, 150); }).join("\n") + "\n\n"; }
   }
 
-  // Phase 0d — Upcoming events research (in parallel with building context)
+  // Phase 0d — Upcoming events research: targeted conference + exec social searches
   var rawEvents = [];
-  if (tKey) {
+  var njEvtCtx = "";
+  if (tKey || njKey) {
     onStep("🗓️ Researching upcoming events...");
-    var execQ = contacts.slice(0, 3).map(function(c) { return '"' + c.name + '"'; }).join(" OR ");
-    var evtSearches = [
-      tavilyRaw(company + " conference 2025 2026 speaking sponsor exhibitor", tKey, 8, 365),
-      tavilyRaw("crypto payments fintech conference summit 2025 2026 upcoming", tKey, 8, 180),
-      tavilyRaw("neobank remittance fintech summit event 2025 2026 upcoming", tKey, 6, 180),
-      tavilyRaw("remittance digital assets banking conference 2025 2026", tKey, 6, 365),
-      tavilyRaw("broker dealer treasury crypto event 2025 2026", tKey, 6, 365),
-      tavilyRaw("site:10times.com fintech crypto payments conference 2026", tKey, 6, 365),
-    ];
-    if (execQ) evtSearches.push(tavilyRaw("(" + execQ + ") speaking conference 2025 2026", tKey, 6, 365));
-    var evtResults = await Promise.all(evtSearches);
+    var evtSearches = [];
+
+    // Step 1 — Specific named-conference searches + exec social searches (Tavily)
+    if (tKey) {
+      var KNOWN_CONFS = ["Consensus 2026", "Money 20/20 2026", "Fintech Nexus 2026", "Singapore Fintech Festival 2026"];
+      for (var _cn of KNOWN_CONFS) {
+        evtSearches.push(tavilyRaw(company + " " + _cn, tKey, 5, 365));
+      }
+      evtSearches.push(tavilyRaw(company + " conference speaking sponsor exhibitor 2026", tKey, 8, 365));
+      evtSearches.push(tavilyRaw('"' + company + '" event 2026 site:linkedin.com OR site:x.com', tKey, 6, 365));
+      for (var _ec of contacts.slice(0, 4)) {
+        evtSearches.push(tavilyRaw('"' + _ec.name + '" speaking attending conference 2026 site:linkedin.com OR site:x.com', tKey, 5, 365));
+        evtSearches.push(tavilyRaw('"' + _ec.name + '" Consensus OR "Money 20/20" OR "Fintech Nexus" 2026', tKey, 4, 365));
+      }
+    }
+
+    // Step 2 — NinjaPear company updates (social posts / press releases)
+    var njCoUpdatesP = njKey ? (async function() {
+      try {
+        var r = await fetch("/api/ninjapear", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: "v1/company/updates", params: { website: "https://" + domain, page_size: 15 }, key: njKey }) });
+        if (!r.ok) return null;
+        var d = await r.json();
+        return (d.updates || d.results || d.posts || null);
+      } catch { return null; }
+    })() : Promise.resolve(null);
+
+    var [evtResultBatches, njPosts] = await Promise.all([
+      evtSearches.length ? Promise.all(evtSearches) : Promise.resolve([]),
+      njCoUpdatesP,
+    ]);
+
+    // Deduplicate Tavily results
     var seenEvtU = new Set();
-    for (var _ea of evtResults) { for (var _er of _ea) { if (!_er.url || seenEvtU.has(_er.url)) continue; seenEvtU.add(_er.url); rawEvents.push(_er); } }
+    for (var _ea of evtResultBatches) {
+      for (var _er of _ea) {
+        if (!_er.url || seenEvtU.has(_er.url)) continue;
+        seenEvtU.add(_er.url); rawEvents.push(_er);
+      }
+    }
+
+    // Build NinjaPear context string
+    if (njPosts && njPosts.length) {
+      njEvtCtx = "=== NINJAPEAR COMPANY SOCIAL POSTS for " + company + " ===\n";
+      njPosts.slice(0, 10).forEach(function(p, i) {
+        var txt = p.text || p.content || p.message || p.description || "";
+        if (txt) njEvtCtx += (i+1) + ". " + txt.slice(0, 350) + "\n";
+      });
+      njEvtCtx += "=== END NINJAPEAR POSTS ===\n\n";
+    }
   }
 
   // Phase 1 — Core intelligence
@@ -308,14 +346,21 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 2 — Competitive + GTM + Events (parallel)
   onStep("⚔️ Competitive analysis & GTM plan...");
-  var evtCtx = rawEvents.length ? rawEvents.slice(0, 15).map(function(r, i) { return (i+1) + ". " + r.title + "\n   " + r.url + "\n   " + (r.content || "").slice(0, 280); }).join("\n\n") : "";
+  var evtCtx = "";
+  if (rawEvents.length) {
+    evtCtx += rawEvents.slice(0, 18).map(function(r, i) { return (i+1) + ". TITLE: " + r.title + "\n   URL: " + r.url + "\n   TEXT: " + (r.content || "").slice(0, 300); }).join("\n\n");
+  }
+  if (njEvtCtx) evtCtx = njEvtCtx + "\n" + evtCtx;
+
+  var contactsForEvt = contacts.slice(0,5).map(function(c){return c.name+" ("+c.title+")";}).join(", ");
+
   const [p2raw, p3raw, p4raw] = await Promise.all([
     callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
     callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
     evtCtx ? callAPI(
-      "Extract upcoming industry events from web search results. Output ONLY a JSON array, no markdown.",
-      "Company: " + company + ". Today: " + todayStr + ". Contacts: " + contacts.slice(0,3).map(function(c){return c.name+" ("+c.title+")";}).join(", ") + ".\n\nFrom the search results below, extract upcoming events (next 6 months preferred) relevant to " + company + " or the payments/crypto/fintech industry. Include 4-8 best matches.\n\nFor each event output a JSON object: {\"name\":\"event name\",\"date\":\"Month YYYY or specific date\",\"location\":\"City, Country or Virtual\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Likely Attendee\",\"contact\":\"\",\"url\":\"best source url\",\"notes\":\"\"}\n\nRelevance: Speaker if a named exec is speaking; Sponsor if listed as sponsor; Exhibitor if has booth; else Likely Attendee.\n\nSOURCES:\n" + evtCtx,
-      2000
+      "Extract confirmed industry event attendance from search results and social posts. Output ONLY a JSON array, no markdown. STRICT RULES: (1) Only include events where a source EXPLICITLY names " + company + " or a specific person as attending/speaking/sponsoring/exhibiting — do not speculate. (2) Must have specific event name AND specific date AND specific location. (3) No generic industry events where attendance is not confirmed. (4) relevance must be: Speaker, Sponsor, Exhibitor, or Confirmed Attendee — never Likely Attendee.",
+      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSEARCH SOURCES AND SOCIAL POSTS:\n" + evtCtx + "\n\nFor each CONFIRMED event output:\n{\"name\":\"exact event name\",\"date\":\"exact date or Month YYYY\",\"location\":\"exact city and country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[\"Name (role) — confirmation quote from source\"],\"confirmation_source\":\"one sentence describing the evidence\",\"source_post\":\"verbatim quote from post or article confirming attendance (max 120 chars)\",\"url\":\"source URL\",\"notes\":\"\"}\n\nIf no confirmed events exist in the sources, output []. Do not invent events.",
+      2500
     ) : Promise.resolve("[]"),
   ]);
 
@@ -325,7 +370,15 @@ async function runAnalysis(company, onStep, keys) {
     var evtStr = p4raw.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
     if (evtStr.startsWith("[")) {
       p1.upcoming_events = JSON.parse(evtStr).slice(0, 8).map(function(e, i) {
-        return { id: "evt_" + Date.now() + "_" + i, name: e.name||"", date: e.date||"", location: e.location||"", relevance: e.relevance||"Likely Attendee", contact: e.contact||"", url: e.url||"", notes: e.notes||"", dismissed: false };
+        return {
+          id: "evt_" + Date.now() + "_" + i,
+          name: e.name||"", date: e.date||"", location: e.location||"",
+          relevance: e.relevance||"Confirmed Attendee",
+          contacts_attending: e.contacts_attending||[],
+          confirmation_source: e.confirmation_source||"",
+          source_post: e.source_post||"",
+          url: e.url||"", notes: e.notes||"", dismissed: false,
+        };
       });
     }
   } catch { p1.upcoming_events = []; }
@@ -455,9 +508,9 @@ function ContactCard({ contact, company, onRemove }) {
 }
 
 // ─── Event Card ───────────────────────────────────────────────────────────────
-var RELEVANCE_OPTS = ["Speaker", "Sponsor", "Exhibitor", "Likely Attendee"];
-var RELEVANCE_ICON = { "Speaker": "🎤", "Sponsor": "💰", "Exhibitor": "🏢", "Likely Attendee": "👤" };
-var RELEVANCE_COLOR = { "Speaker": "green", "Sponsor": "gold", "Exhibitor": "purple", "Likely Attendee": "accent" };
+var RELEVANCE_OPTS = ["Speaker", "Sponsor", "Exhibitor", "Confirmed Attendee"];
+var RELEVANCE_ICON = { "Speaker": "🎤", "Sponsor": "💰", "Exhibitor": "🏢", "Confirmed Attendee": "✅" };
+var RELEVANCE_COLOR = { "Speaker": "green", "Sponsor": "gold", "Exhibitor": "purple", "Confirmed Attendee": "accent" };
 
 function EventCard({ event, contactNames, onUpdate, onDismiss }) {
   var s1 = useState(false); var editing = s1[0]; var setEditing = s1[1];
@@ -521,6 +574,8 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
     );
   }
 
+  var hasContacts = (event.contacts_attending||[]).length > 0;
+
   return (
     <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.border }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -528,14 +583,30 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
             <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{event.name}</span>
             <Badge color={rc} sm>{ri} {event.relevance}</Badge>
-            {event.contact && <Badge color="cyan" sm>👤 {event.contact}</Badge>}
           </div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: event.notes ? 6 : 0 }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
             {event.date && <span style={{ color: C.muted, fontSize: 10 }}>📅 {event.date}</span>}
             {event.location && <span style={{ color: C.muted, fontSize: 10 }}>📍 {event.location}</span>}
             {event.url && <a href={event.url} target="_blank" rel="noreferrer" style={{ color: C.accent, fontSize: 10, textDecoration: "none" }}>🔗 Source</a>}
           </div>
-          {event.notes && <div style={{ color: C.gold, fontSize: 10, marginTop: 4, fontStyle: "italic" }}>"{event.notes}"</div>}
+          {hasContacts && (
+            <div style={{ background: C.green + "12", border: "1px solid " + C.green + "40", borderRadius: 5, padding: "5px 8px", marginBottom: 6 }}>
+              <div style={{ color: C.green, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>🎯 Key Contacts Attending</div>
+              {(event.contacts_attending||[]).map(function(ca, i) {
+                return <div key={i} style={{ color: C.text, fontSize: 10, marginBottom: 2 }}>• {ca}</div>;
+              })}
+            </div>
+          )}
+          {event.source_post && (
+            <div style={{ background: C.dim + "22", borderLeft: "2px solid " + C.muted, paddingLeft: 7, marginBottom: 6 }}>
+              <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 2 }}>CONFIRMATION</div>
+              <div style={{ color: C.muted, fontSize: 10, fontStyle: "italic" }}>"{event.source_post}"</div>
+            </div>
+          )}
+          {!event.source_post && event.confirmation_source && (
+            <div style={{ color: C.muted, fontSize: 10, marginBottom: 6 }}>📋 {event.confirmation_source}</div>
+          )}
+          {event.notes && <div style={{ color: C.gold, fontSize: 10, marginTop: 2, fontStyle: "italic" }}>"{event.notes}"</div>}
           {!event.notes && (
             <div style={{ marginTop: 4 }}>
               <input placeholder="Add notes (e.g. book meeting with Sarah here)..." style={{ background: "transparent", border: "none", borderBottom: "1px solid " + C.dim, color: C.dim, fontSize: 10, outline: "none", fontFamily: "inherit", width: "100%", padding: "2px 0" }}
@@ -557,7 +628,7 @@ function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
   var s1 = useState(function(){ return (initEvents||[]).filter(function(e){ return !e.dismissed; }); });
   var events = s1[0]; var setEvents = s1[1];
   var s2 = useState(false); var addingNew = s2[0]; var setAddingNew = s2[1];
-  var s3 = useState({ name:"", date:"", location:"", relevance:"Likely Attendee", contact:"", url:"", notes:"" });
+  var s3 = useState({ name:"", date:"", location:"", relevance:"Confirmed Attendee", contacts_attending:[], confirmation_source:"", source_post:"", url:"", notes:"" });
   var newEvt = s3[0]; var setNewEvt = s3[1];
 
   var inp = { background: C.surface, border: "1px solid " + C.border, borderRadius: 5, padding: "4px 8px", color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none", width: "100%" };
@@ -580,14 +651,14 @@ function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
     var next = events.concat([e]);
     setEvents(next);
     if (onEventsUpdate) onEventsUpdate(next);
-    setNewEvt({ name:"", date:"", location:"", relevance:"Likely Attendee", contact:"", url:"", notes:"" });
+    setNewEvt({ name:"", date:"", location:"", relevance:"Confirmed Attendee", contacts_attending:[], confirmation_source:"", source_post:"", url:"", notes:"" });
     setAddingNew(false);
   }
 
   return (
     <Sec title={"🗓️ Upcoming Industry Events" + (events.length ? " (" + events.length + ")" : "")} accent={C.green} open={false}>
       {events.length === 0 && !addingNew && (
-        <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: "12px 0" }}>No upcoming events found in the next 90 days.</div>
+        <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: "12px 0" }}>No confirmed event attendance found in the next 90 days.</div>
       )}
       {events.map(function(evt) {
         return <EventCard key={evt.id} event={evt} contactNames={contactNames} onUpdate={updateEvent} onDismiss={function(){ dismissEvent(evt.id); }} />;
