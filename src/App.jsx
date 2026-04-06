@@ -358,8 +358,8 @@ async function runAnalysis(company, onStep, keys) {
     callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
     callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
     evtCtx ? callAPI(
-      "Extract confirmed industry event attendance. Output ONLY a JSON array, no markdown.\n\nABSOLUTE RULES — violating any rule means output []:\n(1) You MUST be able to quote a specific sentence from the provided sources that explicitly names " + company + " or the individual at that event. Generic relevance, business fit, or industry overlap is NOT confirmation.\n(2) Every event must have a specific event name, a specific date, and a specific location — not 'TBD' or 'various'.\n(3) relevance must be exactly one of: Speaker, Sponsor, Exhibitor, Confirmed Attendee. Never use 'Likely Attendee' or any other value.\n(4) For every person listed in contacts_attending, you must provide the verbatim sentence from the source that names them, and the source URL. If you cannot provide this, do not list them.\n(5) If the source text only says the event is 'highly relevant' or 'important for the industry' — that is NOT confirmation. Do not include it.\n(6) If no events meet all rules, output []. Do not pad with speculative entries.",
-      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts to watch for: " + (contactsForEvt || "none") + ".\n\nSOURCES (search results and social posts):\n" + evtCtx + "\n\nFor each event that passes ALL rules, output:\n{\n  \"name\": \"exact official event name\",\n  \"date\": \"exact date e.g. May 12-14, 2026\",\n  \"location\": \"exact city and country\",\n  \"relevance\": \"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\n  \"contacts_attending\": [\n    {\n      \"name\": \"Full Name\",\n      \"role\": \"their job title\",\n      \"evidence_quote\": \"verbatim sentence from the source naming them at this event (max 140 chars)\",\n      \"evidence_url\": \"URL of the source containing this quote\",\n      \"evidence_platform\": \"X|LinkedIn|Official Event Page|Press Release|News Article\"\n    }\n  ],\n  \"source_post\": \"verbatim quote from article or post confirming company/event attendance (max 120 chars)\",\n  \"url\": \"primary source URL\",\n  \"notes\": \"\"\n}\n\nIf no events qualify, output [].",
+      "Extract industry event attendance in TWO tiers. Output ONLY a JSON array, no markdown.\n\nTIER 1 — CONFIRMED (tier: \"confirmed\"): Source explicitly names " + company + " or a specific individual as Speaker/Sponsor/Exhibitor/Confirmed Attendee. You must be able to quote the exact sentence. No inference allowed.\n\nTIER 2 — LIKELY (tier: \"likely\"): Company or individual has historical attendance record at this event, OR the event is the primary industry event for their specific vertical, AND you have a Tavily source supporting this — e.g. '[Company] attended Money20/20 2024' or 'CMO-level executives from remittance fintechs typically present at...'. Still requires a source sentence. Pure inference with no source = exclude.\n\nFor ALL events (both tiers): must have specific event name, specific date, specific location.\nFor CONFIRMED: relevance = Speaker|Sponsor|Exhibitor|Confirmed Attendee. Must include source_post (verbatim quote, max 120 chars) and/or contacts_attending with evidence_quote.\nFor LIKELY: relevance = Likely. Must include reasoning (1 sentence with the sourced basis) and reasoning_url.",
+      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSOURCES:\n" + evtCtx + "\n\nOutput array of event objects. For CONFIRMED events:\n{\"tier\":\"confirmed\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[{\"name\":\"Full Name\",\"role\":\"title\",\"evidence_quote\":\"verbatim sentence (max 140 chars)\",\"evidence_url\":\"url\",\"evidence_platform\":\"X|LinkedIn|Official Event Page|Press Release|News Article\"}],\"source_post\":\"verbatim confirmation quote (max 120 chars)\",\"url\":\"source url\",\"notes\":\"\"}\n\nFor LIKELY events:\n{\"tier\":\"likely\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Likely\",\"reasoning\":\"1 sentence with sourced basis e.g. company attended in 2024 and 2025\",\"reasoning_url\":\"source url\",\"contacts_attending\":[],\"source_post\":\"\",\"url\":\"reasoning_url value\",\"notes\":\"\"}\n\nIf nothing qualifies for either tier, output [].",
       2500
     ) : Promise.resolve("[]"),
   ]);
@@ -371,23 +371,27 @@ async function runAnalysis(company, onStep, keys) {
     if (evtStr.startsWith("[")) {
       p1.upcoming_events = JSON.parse(evtStr)
         .filter(function(e) {
-          // Drop any event without a direct quote confirming attendance
+          var tier = e.tier || (e.relevance === "Likely" ? "likely" : "confirmed");
+          if (tier === "likely") return !!(e.reasoning && e.reasoning.trim());
+          // confirmed: need at least a source quote or per-contact evidence
           return (e.source_post && e.source_post.trim()) ||
             (e.contacts_attending && e.contacts_attending.some(function(ca) { return ca.evidence_quote && ca.evidence_quote.trim(); }));
         })
-        .slice(0, 8)
+        .slice(0, 10)
         .map(function(e, i) {
-          // Normalize contacts_attending — accept both old string format and new object format
+          var tier = e.tier || (e.relevance === "Likely" ? "likely" : "confirmed");
           var cas = (e.contacts_attending || []).map(function(ca) {
             if (typeof ca === "string") return { name: ca, role: "", evidence_quote: "", evidence_url: "", evidence_platform: "" };
             return { name: ca.name||"", role: ca.role||"", evidence_quote: ca.evidence_quote||"", evidence_url: ca.evidence_url||"", evidence_platform: ca.evidence_platform||"" };
           }).filter(function(ca) { return ca.name; });
           return {
             id: "evt_" + Date.now() + "_" + i,
+            tier: tier,
             name: e.name||"", date: e.date||"", location: e.location||"",
-            relevance: e.relevance||"Confirmed Attendee",
+            relevance: e.relevance||(tier==="likely"?"Likely":"Confirmed Attendee"),
             contacts_attending: cas,
             source_post: e.source_post||"",
+            reasoning: e.reasoning||"", reasoning_url: e.reasoning_url||"",
             url: e.url||"", notes: e.notes||"", dismissed: false,
           };
         });
@@ -519,9 +523,9 @@ function ContactCard({ contact, company, onRemove }) {
 }
 
 // ─── Event Card ───────────────────────────────────────────────────────────────
-var RELEVANCE_OPTS = ["Speaker", "Sponsor", "Exhibitor", "Confirmed Attendee"];
-var RELEVANCE_ICON = { "Speaker": "🎤", "Sponsor": "💰", "Exhibitor": "🏢", "Confirmed Attendee": "✅" };
-var RELEVANCE_COLOR = { "Speaker": "green", "Sponsor": "gold", "Exhibitor": "purple", "Confirmed Attendee": "accent" };
+var RELEVANCE_OPTS = ["Speaker", "Sponsor", "Exhibitor", "Confirmed Attendee", "Likely"];
+var RELEVANCE_ICON = { "Speaker": "🎤", "Sponsor": "💰", "Exhibitor": "🏢", "Confirmed Attendee": "✅", "Likely": "🔍" };
+var RELEVANCE_COLOR = { "Speaker": "green", "Sponsor": "gold", "Exhibitor": "purple", "Confirmed Attendee": "accent", "Likely": "muted" };
 
 function EventCard({ event, contactNames, onUpdate, onDismiss }) {
   var s1 = useState(false); var editing = s1[0]; var setEditing = s1[1];
@@ -536,8 +540,10 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
     setEditing(false);
   }
 
-  var rc = RELEVANCE_COLOR[event.relevance] || "accent";
-  var ri = RELEVANCE_ICON[event.relevance] || "👤";
+  var isLikely = (event.tier || (event.relevance === "Likely" ? "likely" : "confirmed")) === "likely";
+  var rc = RELEVANCE_COLOR[event.relevance] || (isLikely ? "muted" : "accent");
+  var ri = RELEVANCE_ICON[event.relevance] || (isLikely ? "🔍" : "✅");
+  var tierBorderColor = isLikely ? C.dim : C.green;
 
   if (editing) {
     return (
@@ -588,7 +594,7 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
   var confirmedContacts = (event.contacts_attending||[]).filter(function(ca){ return ca && ca.name; });
 
   return (
-    <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.border }}>
+    <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.border, borderLeft: "3px solid " + tierBorderColor }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
@@ -601,8 +607,18 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
             {event.url && <a href={event.url} target="_blank" rel="noreferrer" style={{ color: C.accent, fontSize: 10, textDecoration: "none" }}>🔗 Source</a>}
           </div>
 
+          {/* Likely: reasoning row */}
+          {isLikely && event.reasoning && (
+            <div style={{ borderLeft: "2px solid " + C.dim, paddingLeft: 7, marginBottom: 6 }}>
+              <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 2 }}>BASIS</div>
+              <div style={{ color: C.muted, fontSize: 10 }}>{event.reasoning}
+                {event.reasoning_url && <a href={event.reasoning_url} target="_blank" rel="noreferrer" style={{ color: C.accent, marginLeft: 6, textDecoration: "none" }}>↗</a>}
+              </div>
+            </div>
+          )}
+
           {/* Per-contact evidence blockquotes */}
-          {confirmedContacts.length > 0 && (
+          {!isLikely && confirmedContacts.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               <div style={{ color: C.green, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>🎯 Key Contacts Attending</div>
               {confirmedContacts.map(function(ca, i) {
@@ -632,7 +648,7 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
           )}
 
           {/* Company-level confirmation quote when no per-contact quotes */}
-          {confirmedContacts.length === 0 && event.source_post && (
+          {!isLikely && confirmedContacts.length === 0 && event.source_post && (
             <div style={{ borderLeft: "2px solid " + C.muted, paddingLeft: 7, marginBottom: 6 }}>
               <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 2 }}>CONFIRMATION</div>
               <div style={{ color: C.muted, fontSize: 10, fontStyle: "italic" }}>"{event.source_post}"</div>
@@ -688,14 +704,40 @@ function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
     setAddingNew(false);
   }
 
+  var confirmedEvts = events.filter(function(e){ return (e.tier||"confirmed") !== "likely"; });
+  var likelyEvts    = events.filter(function(e){ return (e.tier||"confirmed") === "likely"; });
+  var countLabel = "";
+  if (confirmedEvts.length || likelyEvts.length) {
+    var parts = [];
+    if (confirmedEvts.length) parts.push(confirmedEvts.length + " confirmed");
+    if (likelyEvts.length)    parts.push(likelyEvts.length + " likely");
+    countLabel = " (" + parts.join(", ") + ")";
+  }
+
+  function renderGroup(group) {
+    return group.map(function(evt) {
+      return <EventCard key={evt.id} event={evt} contactNames={contactNames} onUpdate={updateEvent} onDismiss={function(){ dismissEvent(evt.id); }} />;
+    });
+  }
+
   return (
-    <Sec title={"🗓️ Upcoming Industry Events" + (events.length ? " (" + events.length + ")" : "")} accent={C.green} open={false}>
+    <Sec title={"🗓️ Upcoming Industry Events" + countLabel} accent={C.green} open={false}>
       {events.length === 0 && !addingNew && (
         <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: "12px 0" }}>No confirmed event attendance found in the next 90 days.</div>
       )}
-      {events.map(function(evt) {
-        return <EventCard key={evt.id} event={evt} contactNames={contactNames} onUpdate={updateEvent} onDismiss={function(){ dismissEvent(evt.id); }} />;
-      })}
+      {confirmedEvts.length > 0 && (
+        <div>
+          <div style={{ color: C.green, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>✅ Confirmed</div>
+          {renderGroup(confirmedEvts)}
+        </div>
+      )}
+      {likelyEvts.length > 0 && (
+        <div style={{ marginTop: confirmedEvts.length ? 10 : 0 }}>
+          {confirmedEvts.length > 0 && <div style={{ borderTop: "1px solid " + C.border, marginBottom: 10 }}/>}
+          <div style={{ color: C.muted, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>🔍 Likely</div>
+          {renderGroup(likelyEvts)}
+        </div>
+      )}
       {addingNew && (
         <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.accent + "50" }}>
           <div style={{ color: C.accent, fontSize: 10, fontWeight: 700, marginBottom: 8 }}>Add Event</div>
