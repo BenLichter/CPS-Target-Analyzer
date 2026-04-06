@@ -358,8 +358,8 @@ async function runAnalysis(company, onStep, keys) {
     callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
     callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
     evtCtx ? callAPI(
-      "Extract confirmed industry event attendance from search results and social posts. Output ONLY a JSON array, no markdown. STRICT RULES: (1) Only include events where a source EXPLICITLY names " + company + " or a specific person as attending/speaking/sponsoring/exhibiting — do not speculate. (2) Must have specific event name AND specific date AND specific location. (3) No generic industry events where attendance is not confirmed. (4) relevance must be: Speaker, Sponsor, Exhibitor, or Confirmed Attendee — never Likely Attendee.",
-      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSEARCH SOURCES AND SOCIAL POSTS:\n" + evtCtx + "\n\nFor each CONFIRMED event output:\n{\"name\":\"exact event name\",\"date\":\"exact date or Month YYYY\",\"location\":\"exact city and country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[\"Name (role) — confirmation quote from source\"],\"confirmation_source\":\"one sentence describing the evidence\",\"source_post\":\"verbatim quote from post or article confirming attendance (max 120 chars)\",\"url\":\"source URL\",\"notes\":\"\"}\n\nIf no confirmed events exist in the sources, output []. Do not invent events.",
+      "Extract confirmed industry event attendance. Output ONLY a JSON array, no markdown.\n\nABSOLUTE RULES — violating any rule means output []:\n(1) You MUST be able to quote a specific sentence from the provided sources that explicitly names " + company + " or the individual at that event. Generic relevance, business fit, or industry overlap is NOT confirmation.\n(2) Every event must have a specific event name, a specific date, and a specific location — not 'TBD' or 'various'.\n(3) relevance must be exactly one of: Speaker, Sponsor, Exhibitor, Confirmed Attendee. Never use 'Likely Attendee' or any other value.\n(4) For every person listed in contacts_attending, you must provide the verbatim sentence from the source that names them, and the source URL. If you cannot provide this, do not list them.\n(5) If the source text only says the event is 'highly relevant' or 'important for the industry' — that is NOT confirmation. Do not include it.\n(6) If no events meet all rules, output []. Do not pad with speculative entries.",
+      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts to watch for: " + (contactsForEvt || "none") + ".\n\nSOURCES (search results and social posts):\n" + evtCtx + "\n\nFor each event that passes ALL rules, output:\n{\n  \"name\": \"exact official event name\",\n  \"date\": \"exact date e.g. May 12-14, 2026\",\n  \"location\": \"exact city and country\",\n  \"relevance\": \"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\n  \"contacts_attending\": [\n    {\n      \"name\": \"Full Name\",\n      \"role\": \"their job title\",\n      \"evidence_quote\": \"verbatim sentence from the source naming them at this event (max 140 chars)\",\n      \"evidence_url\": \"URL of the source containing this quote\",\n      \"evidence_platform\": \"X|LinkedIn|Official Event Page|Press Release|News Article\"\n    }\n  ],\n  \"source_post\": \"verbatim quote from article or post confirming company/event attendance (max 120 chars)\",\n  \"url\": \"primary source URL\",\n  \"notes\": \"\"\n}\n\nIf no events qualify, output [].",
       2500
     ) : Promise.resolve("[]"),
   ]);
@@ -369,17 +369,28 @@ async function runAnalysis(company, onStep, keys) {
   try {
     var evtStr = p4raw.trim().replace(/^```json\s*/i,"").replace(/^```/,"").replace(/```$/,"").trim();
     if (evtStr.startsWith("[")) {
-      p1.upcoming_events = JSON.parse(evtStr).slice(0, 8).map(function(e, i) {
-        return {
-          id: "evt_" + Date.now() + "_" + i,
-          name: e.name||"", date: e.date||"", location: e.location||"",
-          relevance: e.relevance||"Confirmed Attendee",
-          contacts_attending: e.contacts_attending||[],
-          confirmation_source: e.confirmation_source||"",
-          source_post: e.source_post||"",
-          url: e.url||"", notes: e.notes||"", dismissed: false,
-        };
-      });
+      p1.upcoming_events = JSON.parse(evtStr)
+        .filter(function(e) {
+          // Drop any event without a direct quote confirming attendance
+          return (e.source_post && e.source_post.trim()) ||
+            (e.contacts_attending && e.contacts_attending.some(function(ca) { return ca.evidence_quote && ca.evidence_quote.trim(); }));
+        })
+        .slice(0, 8)
+        .map(function(e, i) {
+          // Normalize contacts_attending — accept both old string format and new object format
+          var cas = (e.contacts_attending || []).map(function(ca) {
+            if (typeof ca === "string") return { name: ca, role: "", evidence_quote: "", evidence_url: "", evidence_platform: "" };
+            return { name: ca.name||"", role: ca.role||"", evidence_quote: ca.evidence_quote||"", evidence_url: ca.evidence_url||"", evidence_platform: ca.evidence_platform||"" };
+          }).filter(function(ca) { return ca.name; });
+          return {
+            id: "evt_" + Date.now() + "_" + i,
+            name: e.name||"", date: e.date||"", location: e.location||"",
+            relevance: e.relevance||"Confirmed Attendee",
+            contacts_attending: cas,
+            source_post: e.source_post||"",
+            url: e.url||"", notes: e.notes||"", dismissed: false,
+          };
+        });
     }
   } catch { p1.upcoming_events = []; }
 
@@ -574,7 +585,7 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
     );
   }
 
-  var hasContacts = (event.contacts_attending||[]).length > 0;
+  var confirmedContacts = (event.contacts_attending||[]).filter(function(ca){ return ca && ca.name; });
 
   return (
     <div style={{ background: C.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + C.border }}>
@@ -589,24 +600,46 @@ function EventCard({ event, contactNames, onUpdate, onDismiss }) {
             {event.location && <span style={{ color: C.muted, fontSize: 10 }}>📍 {event.location}</span>}
             {event.url && <a href={event.url} target="_blank" rel="noreferrer" style={{ color: C.accent, fontSize: 10, textDecoration: "none" }}>🔗 Source</a>}
           </div>
-          {hasContacts && (
-            <div style={{ background: C.green + "12", border: "1px solid " + C.green + "40", borderRadius: 5, padding: "5px 8px", marginBottom: 6 }}>
-              <div style={{ color: C.green, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>🎯 Key Contacts Attending</div>
-              {(event.contacts_attending||[]).map(function(ca, i) {
-                return <div key={i} style={{ color: C.text, fontSize: 10, marginBottom: 2 }}>• {ca}</div>;
+
+          {/* Per-contact evidence blockquotes */}
+          {confirmedContacts.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ color: C.green, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 5 }}>🎯 Key Contacts Attending</div>
+              {confirmedContacts.map(function(ca, i) {
+                return (
+                  <div key={i} style={{ marginBottom: 6 }}>
+                    <div style={{ color: C.text, fontSize: 10, fontWeight: 700, marginBottom: 3 }}>
+                      {ca.name}{ca.role ? <span style={{ color: C.muted, fontWeight: 400 }}> · {ca.role}</span> : null}
+                    </div>
+                    {ca.evidence_quote && (
+                      <div style={{ borderLeft: "2px solid " + C.green + "60", paddingLeft: 7 }}>
+                        <div style={{ color: C.muted, fontSize: 10, fontStyle: "italic", marginBottom: 2 }}>"{ca.evidence_quote}"</div>
+                        <div style={{ color: C.dim, fontSize: 9 }}>
+                          {ca.evidence_platform ? "— " + ca.evidence_platform + (ca.name ? " post by " + ca.name : "") : null}
+                          {ca.evidence_url ? <a href={ca.evidence_url} target="_blank" rel="noreferrer" style={{ color: C.accent, marginLeft: 6, textDecoration: "none" }}>↗</a> : null}
+                        </div>
+                      </div>
+                    )}
+                    {!ca.evidence_quote && ca.evidence_url && (
+                      <div style={{ color: C.dim, fontSize: 9, paddingLeft: 9 }}>
+                        <a href={ca.evidence_url} target="_blank" rel="noreferrer" style={{ color: C.accent, textDecoration: "none" }}>View source ↗</a>
+                      </div>
+                    )}
+                  </div>
+                );
               })}
             </div>
           )}
-          {event.source_post && (
-            <div style={{ background: C.dim + "22", borderLeft: "2px solid " + C.muted, paddingLeft: 7, marginBottom: 6 }}>
+
+          {/* Company-level confirmation quote when no per-contact quotes */}
+          {confirmedContacts.length === 0 && event.source_post && (
+            <div style={{ borderLeft: "2px solid " + C.muted, paddingLeft: 7, marginBottom: 6 }}>
               <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 2 }}>CONFIRMATION</div>
               <div style={{ color: C.muted, fontSize: 10, fontStyle: "italic" }}>"{event.source_post}"</div>
             </div>
           )}
-          {!event.source_post && event.confirmation_source && (
-            <div style={{ color: C.muted, fontSize: 10, marginBottom: 6 }}>📋 {event.confirmation_source}</div>
-          )}
-          {event.notes && <div style={{ color: C.gold, fontSize: 10, marginTop: 2, fontStyle: "italic" }}>"{event.notes}"</div>}
+
+          {event.notes && <div style={{ color: C.gold, fontSize: 10, marginTop: 4, fontStyle: "italic" }}>"{event.notes}"</div>}
           {!event.notes && (
             <div style={{ marginTop: 4 }}>
               <input placeholder="Add notes (e.g. book meeting with Sarah here)..." style={{ background: "transparent", border: "none", borderBottom: "1px solid " + C.dim, color: C.dim, fontSize: 10, outline: "none", fontFamily: "inherit", width: "100%", padding: "2px 0" }}
