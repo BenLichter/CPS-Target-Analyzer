@@ -1787,26 +1787,25 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                           var geoColor = deal.geography==="AMER" ? C.accent : deal.geography==="EMEA" ? C.gold : deal.geography==="APAC" ? C.green : C.dim;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
                           var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
+                          var btnBase = { flex:1, background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 4px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600, color:C.muted, textAlign:"center", minWidth:0, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" };
                           return (
-                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:14, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:14, overflow:"hidden", display:"flex", flexDirection:"column", position:"relative", wordBreak:"break-word" }}>
                             {/* Accent bar */}
                             <div style={{ height:3, background:dealVert.color, flexShrink:0 }}/>
 
-                            {/* Header zone */}
-                            <div style={{ padding:"12px 14px 10px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                              <div style={{ flex:1, minWidth:0 }}>
-                                <div style={{ color:C.text, fontWeight:800, fontSize:15, lineHeight:1.2, marginBottom:6, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{deal.company}</div>
-                                <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
-                                  {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"60", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, letterSpacing:"0.03em" }}>{dt.label}</span>}
-                                  {deal.geography && <span style={{ background:geoColor+"22", border:"1px solid "+geoColor+"60", color:geoColor, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700 }}>{deal.geography}</span>}
-                                </div>
-                              </div>
-                              <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0, marginLeft:8 }}>
+                            {/* ✕ dismiss — absolute top-right */}
+                            <button onClick={function(){ removeDeal(deal.id); }} style={{ position:"absolute", top:10, right:10, background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:12, padding:"2px 4px", lineHeight:1, zIndex:1 }}>✕</button>
+
+                            {/* Header: company + P1/P2 only */}
+                            <div style={{ padding:"10px 36px 8px 14px" }}>
+                              <div style={{ color:C.text, fontWeight:800, fontSize:15, lineHeight:1.2, marginBottom:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{deal.company}</div>
+                              <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
                                 <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
-                                  style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
+                                  style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4, flexShrink:0 }}>
                                   {isPri2?"P2":"P1"}
                                 </button>
-                                <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>✕</button>
+                                {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"60", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, letterSpacing:"0.02em", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%" }}>{dt.label}</span>}
+                                {deal.geography && <span style={{ background:geoColor+"22", border:"1px solid "+geoColor+"60", color:geoColor, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, flexShrink:0 }}>{deal.geography}</span>}
                               </div>
                             </div>
 
@@ -1840,7 +1839,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                               </div>
                             )}
 
-                            {/* Edit form or action bar */}
+                            {/* Edit form or bottom action area */}
                             {isEditing ? (
                               <div style={{ padding:"12px 14px" }}>
                                 <div style={{ display:"grid", gap:6, marginBottom:8 }}>
@@ -1888,40 +1887,31 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
                             ) : (
-                              <div style={{ padding:"10px 14px", marginTop:"auto" }}>
-                                {/* Action bar */}
-                                <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
-                                  {deal.analysisData && !busy && (
-                                    <button onClick={function(){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); }}
-                                      style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>👁 View</button>
-                                  )}
+                              <div style={{ padding:"10px 14px 12px", marginTop:"auto", borderTop:"1px solid "+C.border }}>
+                                {/* 3-button action bar */}
+                                <div style={{ display:"flex", gap:6, marginBottom:8 }}>
+                                  <button onClick={function(){ if(deal.analysisData){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
+                                    style={Object.assign({},btnBase,{ color:deal.analysisData&&!busy?C.accent:C.dim, borderColor:deal.analysisData&&!busy?C.accent+"40":C.border, background:deal.analysisData&&!busy?C.accentDim:C.surface, opacity:(!deal.analysisData||busy)?0.45:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
                                   <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
-                                    style={{ background:"transparent", border:"1px solid "+(busy?C.dim+"40":C.border), color:busy?C.dim:C.muted, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:busy?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:busy?0.5:1 }}>🔄 Rerun</button>
+                                    style={Object.assign({},btnBase,{ opacity:busy?0.45:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
                                   <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
-                                    style={{ background:C.goldDim, border:"1px solid "+C.gold+"50", color:busy?C.dim:C.gold, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:busy?"default":"pointer", fontFamily:"inherit", fontWeight:700, opacity:busy?0.5:1 }}>💰 ARR</button>
-                                  <button onClick={function(){ setEditId(deal.id); }}
-                                    style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>✏ Edit</button>
+                                    style={Object.assign({},btnBase,{ color:busy?C.dim:C.gold, borderColor:C.gold+"40", background:C.goldDim, opacity:busy?0.45:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
                                 </div>
-                                {/* Stage move */}
-                                <div style={{ color:C.dim, fontSize:8, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", marginBottom:5 }}>Move to</div>
-                                <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:8 }}>
-                                  {PIPE_STAGES.filter(function(s){ return s.id!==deal.stage; }).map(function(s) {
-                                    return (
-                                      <button key={s.id} onClick={function(){ updateStage(deal.id,s.id); }}
-                                        style={{ background:"transparent", border:"1px solid "+s.color+"50", color:s.color, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
-                                        {s.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                {/* Sub-vertical / tier */}
+                                {/* Stage dropdown */}
+                                <select value={deal.stage} onChange={function(e){ updateStage(deal.id, e.target.value); }}
+                                  style={Object.assign({},sel,{ marginBottom:6, fontSize:9, padding:"4px 6px" })}>
+                                  {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+                                </select>
+                                {/* Sub-vertical text link + tier picker */}
                                 <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:4 }}>
                                   <button onClick={function(){ setTierPickId(tierPickId===deal.id?null:deal.id); }}
-                                    style={{ background:"transparent", border:"1px solid "+(dt?dt.color+"80":C.border), color:dt?dt.color:C.dim, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
-                                    {dt ? "Change" : "Add"} {deal.vertical==="financial_services"?"Sub-vertical":"Tier"}
+                                    style={{ background:"transparent", border:"none", padding:0, color:dt?dt.color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600, textDecoration:"underline", textUnderlineOffset:2 }}>
+                                    {dt ? "Change" : "+"} {deal.vertical==="financial_services"?"Sub-vertical":"Tier"}
                                   </button>
+                                  <button onClick={function(){ setEditId(deal.id); }}
+                                    style={{ background:"transparent", border:"none", padding:0, color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", textUnderlineOffset:2 }}>✏ Edit</button>
                                   {tierPickId===deal.id && (
-                                    <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                                    <div style={{ width:"100%", display:"flex", gap:4, flexWrap:"wrap", marginTop:4 }}>
                                       {dealBuckets.map(function(t){
                                         var isActive = deal.tier===t.id;
                                         return (
