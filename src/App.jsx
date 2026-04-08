@@ -1766,79 +1766,83 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                 var stageDeals = tierDeals.filter(function(d){ return d.stage===stage.id; });
                 if (stageDeals.length === 0) return null;
                 return (
-                  <div key={stage.id} style={{ marginBottom:14 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6, padding:"0 4px" }}>
-                      <div style={{ width:10, height:10, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
-                      <span style={{ color:stage.color, fontWeight:700, fontSize:11 }}>{stage.label}</span>
-                      <span style={{ color:C.dim, fontSize:10 }}>({stageDeals.length})</span>
-                      {stageDeals.some(function(d){return d.arr;}) && (
-                        <span style={{ color:C.dim, fontSize:10 }}>· {fmtMoney(stageDeals.filter(function(d){return d.arr;}).reduce(function(s,d){return s+parseArr(d.arr);},0))} ARR</span>
+                  <div key={stage.id} style={{ marginBottom:24 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6, padding:"0 2px" }}>
+                      <div style={{ width:8, height:8, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
+                      <span style={{ color:stage.color, fontWeight:800, fontSize:14, letterSpacing:"-0.01em" }}>{stage.label}</span>
+                      <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>({stageDeals.length})</span>
+                      {stageDeals.some(function(d){return d.financials?d.financials.projected_arr:d.arr;}) && (
+                        <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>· {fmtMoney(stageDeals.reduce(function(s,d){ return s+parseArr(d.financials?d.financials.projected_arr:d.arr); },0))} ARR</span>
                       )}
                     </div>
-                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))", gap:8 }}>
+                    <div style={{ borderBottom:"1px solid "+C.border, marginBottom:14 }}/>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:12 }}>
                       {stageDeals.map(function(deal) {
                         var isEditing = editId===deal.id;
                         var dealBuckets = getBuckets(deal.vertical);
                         var dt = dealBuckets.find(function(t){ return t.id===deal.tier; });
                         var isPri2 = deal.priority==="p2";
-                        return (
-                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?activeVert.color+"60":C.border), borderRadius:8, padding:"12px 14px" }}>
-                            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-                              <div>
-                                <div style={{ color:C.text, fontWeight:700, fontSize:13, lineHeight:1.3 }}>{deal.company}</div>
-                                <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:4, flexWrap:"wrap" }}>
-                                  {dt && <span style={{ color:dt.color, fontSize:9, fontWeight:700 }}>{dt.label}</span>}
-                                  <div style={{ display:"flex", gap:2 }}>
-                                    {["AMER","EMEA","APAC"].map(function(g){
-                                      var isGeo = (deal.geography||"") === g;
-                                      var gc = g==="AMER" ? C.accent : g==="EMEA" ? C.gold : C.green;
-                                      return <button key={g} onClick={function(e){ e.stopPropagation(); setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:isGeo?"":g}):x; }); }); }}
-                                        style={{ background:isGeo?gc+"22":"transparent", border:"1px solid "+(isGeo?gc:C.border), color:isGeo?gc:C.dim, borderRadius:4, padding:"2px 5px", fontSize:7, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
-                                        {g}
-                                      </button>;
-                                    })}
-                                  </div>
-                                  <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
-                                    style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:4, padding:"2px 6px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
-                                    {isPri2?"P2":"P1"}
-                                  </button>
+                        return (function() {
+                          var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
+                          var geoColor = deal.geography==="AMER" ? C.accent : deal.geography==="EMEA" ? C.gold : deal.geography==="APAC" ? C.green : C.dim;
+                          var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
+                          var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
+                          return (
+                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:14, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+                            {/* Accent bar */}
+                            <div style={{ height:3, background:dealVert.color, flexShrink:0 }}/>
+
+                            {/* Header zone */}
+                            <div style={{ padding:"12px 14px 10px", display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ color:C.text, fontWeight:800, fontSize:15, lineHeight:1.2, marginBottom:6, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{deal.company}</div>
+                                <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
+                                  {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"60", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, letterSpacing:"0.03em" }}>{dt.label}</span>}
+                                  {deal.geography && <span style={{ background:geoColor+"22", border:"1px solid "+geoColor+"60", color:geoColor, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700 }}>{deal.geography}</span>}
                                 </div>
                               </div>
-                              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-                                {deal.analysisData && !rerunStatus[deal.id] && !updateFinStatus[deal.id] && (
-                                  <button onClick={function(){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); }}
-                                    style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
-                                    View Analysis
-                                  </button>
-                                )}
-                                <button onClick={function(){ rerunAnalysis(deal); }} disabled={!!rerunStatus[deal.id]||!!updateFinStatus[deal.id]}
-                                  style={{ background:"transparent", border:"1px solid "+(rerunStatus[deal.id]?C.dim+"40":C.border), color:rerunStatus[deal.id]?C.dim:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:(rerunStatus[deal.id]||updateFinStatus[deal.id])?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:(rerunStatus[deal.id]||updateFinStatus[deal.id])?0.5:1 }}>
-                                  ↺ Rerun
+                              <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0, marginLeft:8 }}>
+                                <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
+                                  style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
+                                  {isPri2?"P2":"P1"}
                                 </button>
-                                <button onClick={function(){ updateFinancials(deal); }} disabled={!!rerunStatus[deal.id]||!!updateFinStatus[deal.id]}
-                                  style={{ background:C.goldDim, border:"1px solid "+C.gold+"50", color:updateFinStatus[deal.id]?C.dim:C.gold, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:(rerunStatus[deal.id]||updateFinStatus[deal.id])?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:(rerunStatus[deal.id]||updateFinStatus[deal.id])?0.5:1 }}>
-                                  💰 Financials
-                                </button>
-                                <button onClick={function(){ setEditId(isEditing?null:deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
-                                <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
+                                <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>✕</button>
                               </div>
                             </div>
-                            {rerunStatus[deal.id] && (
-                              <div style={{ color:C.accent, fontSize:9, fontWeight:600, padding:"4px 0 2px", lineHeight:1.4 }}>⟳ {rerunStatus[deal.id]}</div>
-                            )}
-                            {updateFinStatus[deal.id] && (
-                              <div style={{ color:C.gold, fontSize:9, fontWeight:600, padding:"4px 0 2px", lineHeight:1.4 }}>💰 {updateFinStatus[deal.id]}</div>
-                            )}
-                            {(deal.financials ? deal.financials.projected_arr : deal.arr) && <div style={{ color:activeVert.color, fontWeight:800, fontSize:14, marginBottom:2 }}>{deal.financials ? deal.financials.projected_arr : deal.arr} ARR</div>}
-                            {deal.financials && (
-                              <div style={{ color:C.dim, fontSize:8, marginBottom:4 }}>
-                                🔒 Financials {deal.financials.setOnAdd ? "set on add" : "updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+
+                            {/* Financials zone */}
+                            {(dispArr || busy) && (
+                              <div style={{ padding:"0 14px 10px", borderBottom:"1px solid "+C.border }}>
+                                {busy ? (
+                                  <div style={{ color:rerunStatus[deal.id]?C.accent:C.gold, fontSize:9, fontWeight:600, lineHeight:1.5 }}>
+                                    {rerunStatus[deal.id] ? "⟳ "+rerunStatus[deal.id] : "💰 "+updateFinStatus[deal.id]}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div style={{ color:C.cyan, fontWeight:800, fontSize:20, lineHeight:1.1, marginBottom:2 }}>{dispArr}</div>
+                                    {deal.financials && deal.financials.arr_calculation && (
+                                      <div style={{ color:C.muted, fontSize:9, lineHeight:1.4, marginBottom:2 }}>{deal.financials.arr_calculation}</div>
+                                    )}
+                                    {deal.financials && (
+                                      <div style={{ color:C.dim, fontSize:8 }}>
+                                        🔒 {deal.financials.setOnAdd ? "Set on add" : "Updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )}
-                            {deal.notes && <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, marginBottom:8 }}>{deal.notes}</div>}
 
+                            {/* Summary zone */}
+                            {deal.notes && (
+                              <div style={{ padding:"8px 14px", borderBottom:"1px solid "+C.border }}>
+                                <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{deal.notes}</div>
+                              </div>
+                            )}
+
+                            {/* Edit form or action bar */}
                             {isEditing ? (
-                              <div style={{ borderTop:"1px solid "+C.border, paddingTop:10, marginTop:6 }}>
+                              <div style={{ padding:"12px 14px" }}>
                                 <div style={{ display:"grid", gap:6, marginBottom:8 }}>
                                   <input defaultValue={deal.arr}     id={"arr_"+deal.id}   placeholder="Projected ARR e.g. $45K" style={inp}/>
                                   <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
@@ -1880,12 +1884,26 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                     vertical: vertEl     ? vertEl.value     : deal.vertical,
                                     geography:geoEl      ? geoEl.value      : (deal.geography||""),
                                   });
-                                }} style={{ background:activeVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
+                                }} style={{ background:dealVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
                             ) : (
-                              <div style={{ borderTop:"1px solid "+C.border, paddingTop:8, marginTop:4 }}>
-                                <div style={{ color:C.dim, fontSize:9, marginBottom:5 }}>MOVE TO STAGE</div>
+                              <div style={{ padding:"10px 14px", marginTop:"auto" }}>
+                                {/* Action bar */}
+                                <div style={{ display:"flex", gap:6, marginBottom:10, flexWrap:"wrap" }}>
+                                  {deal.analysisData && !busy && (
+                                    <button onClick={function(){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); }}
+                                      style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>👁 View</button>
+                                  )}
+                                  <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
+                                    style={{ background:"transparent", border:"1px solid "+(busy?C.dim+"40":C.border), color:busy?C.dim:C.muted, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:busy?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:busy?0.5:1 }}>🔄 Rerun</button>
+                                  <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
+                                    style={{ background:C.goldDim, border:"1px solid "+C.gold+"50", color:busy?C.dim:C.gold, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:busy?"default":"pointer", fontFamily:"inherit", fontWeight:700, opacity:busy?0.5:1 }}>💰 ARR</button>
+                                  <button onClick={function(){ setEditId(deal.id); }}
+                                    style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>✏ Edit</button>
+                                </div>
+                                {/* Stage move */}
+                                <div style={{ color:C.dim, fontSize:8, fontWeight:700, letterSpacing:"0.06em", textTransform:"uppercase", marginBottom:5 }}>Move to</div>
                                 <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:8 }}>
                                   {PIPE_STAGES.filter(function(s){ return s.id!==deal.stage; }).map(function(s) {
                                     return (
@@ -1896,6 +1914,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                     );
                                   })}
                                 </div>
+                                {/* Sub-vertical / tier */}
                                 <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:4 }}>
                                   <button onClick={function(){ setTierPickId(tierPickId===deal.id?null:deal.id); }}
                                     style={{ background:"transparent", border:"1px solid "+(dt?dt.color+"80":C.border), color:dt?dt.color:C.dim, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
@@ -1924,7 +1943,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                               </div>
                             )}
                           </div>
-                        );
+                          );
+                        })();
                       })}
                     </div>
                   </div>
