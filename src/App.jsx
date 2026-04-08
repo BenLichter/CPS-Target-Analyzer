@@ -402,6 +402,34 @@ async function runAnalysis(company, onStep, keys) {
   return p1;
 }
 
+// Fast financial-only recalculation (Phase 0a + Phase 1 TAM/SOM/ARR only)
+async function runFinancialCalc(company, onStep, keys) {
+  const { tavily: tKey } = keys;
+  const todayStr = new Date().toDateString();
+  var ctx = "";
+  if (tKey) {
+    onStep("🌐 Fetching scale metrics...");
+    var scaleResults = await Promise.all([
+      tavilyRaw(company + " active users monthly transactions payment volume AUM 2025 2026", tKey, 6, 180),
+      tavilyRaw(company + " revenue annual report 2024 2025", tKey, 4, 180),
+    ]);
+    var seenU = new Set();
+    var items = [];
+    for (var batch of scaleResults) {
+      for (var r of batch) {
+        if (!r.url || seenU.has(r.url)) continue;
+        seenU.add(r.url);
+        items.push(r.title + ": " + (r.content || "").slice(0, 200));
+      }
+    }
+    if (items.length) ctx = "=== SCALE DATA for " + company + " ===\n" + items.slice(0, 8).join("\n") + "\n=== END ===\n\n";
+  }
+  onStep("💰 Recalculating financials...");
+  const FIN_SYS = 'Output ONLY valid JSON. No markdown. Start with { end with }.\n\nARR METHODOLOGY:\nStep 1: Find real scale metric (active users OR payment volume OR AUM) from context.\nStep 2: Apply vertical crypto penetration (Remittance 12-18%, Neobanks 4-8%, Brokerage 8-15%, Luxury Travel 3-6%, Luxury Goods 2-5%, Gaming 15-25%).\nStep 3: SOM = addressable base × $450/user/year.\nStep 4: projected_arr = SOM × 1.5% (1% early-stage, 2% if exploring crypto). upside_arr = SOM × 3%.\nAlways show full math inline in som_calculation.';
+  var raw = await callAPI(FIN_SYS, sanitize(ctx) + "Calculate TAM/SOM/ARR for " + company + ". Today: " + todayStr + ".\nOutput ONLY: {\"tam_som_arr\":{\"tam_usd\":\"$X\",\"scale_metric\":\"X\",\"penetration_rate\":\"X%\",\"addressable_base\":\"X\",\"avg_transaction_value\":\"$450/user/year\",\"som\":\"$X\",\"capture_rate\":\"1.5%\",\"projected_arr\":\"$X\",\"upside_arr\":\"$X\",\"som_calculation\":\"full math string\",\"assumptions\":[]}}", 1200);
+  return parseJSON(raw);
+}
+
 // ─── UI Primitives ────────────────────────────────────────────────────────────
 function Badge({ color, children, sm }) {
   var colors = { accent: [C.accentDim, C.accent], gold: [C.goldDim, C.gold], green: [C.greenDim, C.green], purple: ["#8B5CF612", C.purple], red: [C.redDim, C.red], muted: [C.dim + "33", C.muted], cyan: ["#06B6D412", C.cyan] };
@@ -1103,6 +1131,20 @@ function fmtMoney(n) {
   return "$"+Math.round(n);
 }
 
+// Snapshot financials from analysis data — frozen at add time, only updated explicitly
+function buildFinancials(tam_som_arr, arr_str, setOnAdd) {
+  var t = tam_som_arr || {};
+  return {
+    tam:           t.tam_usd || "",
+    som:           t.som || t.som_usd || "",
+    projected_arr: t.projected_arr || t.likely_arr_usd || arr_str || "",
+    upside_arr:    t.upside_arr || t.upside_arr_usd || "",
+    arr_calculation: t.som_calculation || "",
+    lockedAt:      new Date().toISOString(),
+    setOnAdd:      setOnAdd !== false,
+  };
+}
+
 // ─── City coords for world map ────────────────────────────────────────────────
 var CITY_COORDS = {
   "new york":[-74.006,40.714],"new york city":[-74.006,40.714],"nyc":[-74.006,40.714],
@@ -1318,13 +1360,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s10 = useState("all"); var stageFilter  = s10[0]; var setStageFilter  = s10[1];
   var s11 = useState("all"); var arrFilter    = s11[0]; var setArrFilter    = s11[1];
   var s12 = useState("all"); var geoFilter    = s12[0]; var setGeoFilter    = s12[1];
-  var s13 = useState(null);  var overlayDealId = s13[0]; var setOverlayDealId = s13[1];
+  var s13 = useState(null);  var overlayDealId   = s13[0]; var setOverlayDealId   = s13[1];
+  var s14 = useState({});    var updateFinStatus = s14[0]; var setUpdateFinStatus = s14[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
   function addDeal() {
     if (!form.company.trim()) return;
-    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", geography:form.geography||"", notes:form.notes.trim(), addedAt:new Date().toISOString() };
+    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", geography:form.geography||"", notes:form.notes.trim(), addedAt:new Date().toISOString(), financials:buildFinancials(null, form.arr.trim(), true) };
     setDeals(function(prev){ return prev.concat([d]); });
     setForm(function(f){ return Object.assign({},f,{company:"",arr:"",notes:""}); });
     setShowAdd(false);
@@ -1337,17 +1380,36 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     runAnalysis(deal.company, function(step){
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
-      var freshArr = (data.tam_som_arr&&(data.tam_som_arr.projected_arr||data.tam_som_arr.likely_arr_usd))||deal.arr;
-      var freshTam = (data.tam_som_arr&&data.tam_som_arr.tam_usd)||"";
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
+      // Financials are frozen — preserve deal.financials and deal.arr unchanged
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, arr:freshArr, tam:freshTam, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120) });
+        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120) });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
     }).catch(function(err) {
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
       setTimeout(function(){ setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
+    });
+  }
+  function updateFinancials(deal) {
+    if (!window.confirm("This will update the frozen ARR, SOM and TAM figures for " + deal.company + ". Are you sure?")) return;
+    setUpdateFinStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Fetching..."}); });
+    runFinancialCalc(deal.company, function(step){
+      setUpdateFinStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
+    }, { tavily:tKey||"" }).then(function(data) {
+      var t = (data && data.tam_som_arr) || {};
+      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshTam = t.tam_usd || deal.tam || "";
+      var newFin = buildFinancials(t, freshArr, false);
+      setDeals(function(prev){ return prev.map(function(d){
+        if (d.id!==deal.id) return d;
+        return Object.assign({},d,{ financials:newFin, arr:freshArr, tam:freshTam });
+      }); });
+      setUpdateFinStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
+    }).catch(function(err) {
+      setUpdateFinStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
+      setTimeout(function(){ setUpdateFinStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
     });
   }
 
@@ -1363,7 +1425,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var tam = (h.data.tam_som_arr&&h.data.tam_som_arr.tam_usd)||"";
     var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
-    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt };
+    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, financials:buildFinancials(h.data.tam_som_arr, arr, true) };
     setDeals(function(prev){ return prev.concat([d]); });
   }
 
@@ -1743,15 +1805,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                 </div>
                               </div>
                               <div style={{ display:"flex", gap:4, alignItems:"center" }}>
-                                {deal.analysisData && !rerunStatus[deal.id] && (
+                                {deal.analysisData && !rerunStatus[deal.id] && !updateFinStatus[deal.id] && (
                                   <button onClick={function(){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); }}
                                     style={{ background:C.accentDim, border:"1px solid "+C.accent+"50", color:C.accent, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
                                     View Analysis
                                   </button>
                                 )}
-                                <button onClick={function(){ rerunAnalysis(deal); }} disabled={!!rerunStatus[deal.id]}
-                                  style={{ background:"transparent", border:"1px solid "+(rerunStatus[deal.id]?C.dim+"40":C.border), color:rerunStatus[deal.id]?C.dim:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:rerunStatus[deal.id]?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:rerunStatus[deal.id]?0.5:1 }}>
+                                <button onClick={function(){ rerunAnalysis(deal); }} disabled={!!rerunStatus[deal.id]||!!updateFinStatus[deal.id]}
+                                  style={{ background:"transparent", border:"1px solid "+(rerunStatus[deal.id]?C.dim+"40":C.border), color:rerunStatus[deal.id]?C.dim:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:(rerunStatus[deal.id]||updateFinStatus[deal.id])?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:(rerunStatus[deal.id]||updateFinStatus[deal.id])?0.5:1 }}>
                                   ↺ Rerun
+                                </button>
+                                <button onClick={function(){ updateFinancials(deal); }} disabled={!!rerunStatus[deal.id]||!!updateFinStatus[deal.id]}
+                                  style={{ background:C.goldDim, border:"1px solid "+C.gold+"50", color:updateFinStatus[deal.id]?C.dim:C.gold, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:(rerunStatus[deal.id]||updateFinStatus[deal.id])?"default":"pointer", fontFamily:"inherit", fontWeight:600, opacity:(rerunStatus[deal.id]||updateFinStatus[deal.id])?0.5:1 }}>
+                                  💰 Financials
                                 </button>
                                 <button onClick={function(){ setEditId(isEditing?null:deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✏</button>
                                 <button onClick={function(){ removeDeal(deal.id); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:11, padding:"0 2px" }}>✕</button>
@@ -1760,7 +1826,15 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             {rerunStatus[deal.id] && (
                               <div style={{ color:C.accent, fontSize:9, fontWeight:600, padding:"4px 0 2px", lineHeight:1.4 }}>⟳ {rerunStatus[deal.id]}</div>
                             )}
-                            {deal.arr && <div style={{ color:activeVert.color, fontWeight:800, fontSize:14, marginBottom:4 }}>{deal.arr} ARR</div>}
+                            {updateFinStatus[deal.id] && (
+                              <div style={{ color:C.gold, fontSize:9, fontWeight:600, padding:"4px 0 2px", lineHeight:1.4 }}>💰 {updateFinStatus[deal.id]}</div>
+                            )}
+                            {(deal.financials ? deal.financials.projected_arr : deal.arr) && <div style={{ color:activeVert.color, fontWeight:800, fontSize:14, marginBottom:2 }}>{deal.financials ? deal.financials.projected_arr : deal.arr} ARR</div>}
+                            {deal.financials && (
+                              <div style={{ color:C.dim, fontSize:8, marginBottom:4 }}>
+                                🔒 Financials {deal.financials.setOnAdd ? "set on add" : "updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
+                              </div>
+                            )}
                             {deal.notes && <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, marginBottom:8 }}>{deal.notes}</div>}
 
                             {isEditing ? (
@@ -2026,7 +2100,7 @@ export default function App() {
                     setPipelineDeals(function(prev){
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString() }]);
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true) }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
