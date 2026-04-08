@@ -1845,7 +1845,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             {isEditing ? (
                               <div style={{ padding:"12px" }}>
                                 <div style={{ display:"grid", gap:6, marginBottom:8 }}>
-                                  <input defaultValue={deal.arr}     id={"arr_"+deal.id}   placeholder="Projected ARR e.g. $45K" style={inp}/>
+                                  <input defaultValue={deal.financials?deal.financials.projected_arr:deal.arr} id={"arr_"+deal.id} placeholder="Projected ARR e.g. $45K" style={inp}/>
                                   <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
                                   <select defaultValue={deal.tier||""} id={"tier_"+deal.id} style={sel}>
                                     <option value="">Unassigned</option>
@@ -1870,7 +1870,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                 </div>
                                 <button onClick={function(){
                                   var arrEl=document.getElementById("arr_"+deal.id), notesEl=document.getElementById("notes_"+deal.id), tierEl=document.getElementById("tier_"+deal.id), priorityEl=document.getElementById("priority_"+deal.id), stageEl=document.getElementById("stage_"+deal.id), vertEl=document.getElementById("vert_"+deal.id), geoEl=document.getElementById("geo_"+deal.id);
-                                  updateDeal(deal.id,{ arr:arrEl?arrEl.value:deal.arr, notes:notesEl?notesEl.value:deal.notes, tier:tierEl?tierEl.value:(deal.tier||""), priority:priorityEl?priorityEl.value:(deal.priority||"p1"), stage:stageEl?stageEl.value:deal.stage, vertical:vertEl?vertEl.value:deal.vertical, geography:geoEl?geoEl.value:(deal.geography||"") });
+                                  var newArr=arrEl?arrEl.value:(deal.financials?deal.financials.projected_arr:deal.arr);
+                                  var finPatch=deal.financials?{financials:Object.assign({},deal.financials,{projected_arr:newArr})}:{};
+                                  updateDeal(deal.id,Object.assign({arr:newArr,notes:notesEl?notesEl.value:deal.notes,tier:tierEl?tierEl.value:(deal.tier||""),priority:priorityEl?priorityEl.value:(deal.priority||"p1"),stage:stageEl?stageEl.value:deal.stage,vertical:vertEl?vertEl.value:deal.vertical,geography:geoEl?geoEl.value:(deal.geography||"")},finPatch));
                                 }} style={{ background:dealVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
