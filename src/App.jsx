@@ -1784,64 +1784,66 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         var isPri2 = deal.priority==="p2";
                         return (function() {
                           var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
-                          var geoColor = deal.geography==="AMER" ? C.accent : deal.geography==="EMEA" ? C.gold : deal.geography==="APAC" ? C.green : C.dim;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
                           var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
-                          var btnBase = { flex:1, background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 4px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600, color:C.muted, textAlign:"center", minWidth:0, overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" };
+                          var cardStyle = { width:"100%", boxSizing:"border-box", overflow:"hidden", background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:12, display:"flex", flexDirection:"column" };
+                          var actionBtn = { flex:"1 1 0", minWidth:0, boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 2px", fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:"inherit", color:C.muted, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap" };
                           return (
-                          <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:14, overflow:"hidden", display:"flex", flexDirection:"column", position:"relative", wordBreak:"break-word" }}>
-                            {/* Accent bar */}
-                            <div style={{ height:3, background:dealVert.color, flexShrink:0 }}/>
+                          <div key={deal.id} style={cardStyle}>
 
-                            {/* ✕ dismiss — absolute top-right */}
-                            <button onClick={function(){ removeDeal(deal.id); }} style={{ position:"absolute", top:10, right:10, background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:12, padding:"2px 4px", lineHeight:1, zIndex:1 }}>✕</button>
+                            {/* 1. Top accent strip */}
+                            <div style={{ height:4, background:dealVert.color, width:"100%", flexShrink:0 }}/>
 
-                            {/* Header: company + P1/P2 only */}
-                            <div style={{ padding:"10px 36px 8px 14px" }}>
-                              <div style={{ color:C.text, fontWeight:800, fontSize:15, lineHeight:1.2, marginBottom:6, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{deal.company}</div>
-                              <div style={{ display:"flex", gap:5, alignItems:"center", flexWrap:"wrap" }}>
-                                <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
-                                  style={{ background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4, flexShrink:0 }}>
-                                  {isPri2?"P2":"P1"}
-                                </button>
-                                {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"60", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, letterSpacing:"0.02em", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%" }}>{dt.label}</span>}
-                                {deal.geography && <span style={{ background:geoColor+"22", border:"1px solid "+geoColor+"60", color:geoColor, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, flexShrink:0 }}>{deal.geography}</span>}
-                              </div>
+                            {/* 2. Header row: company name (left) + P1/P2 + × (right) */}
+                            <div style={{ display:"flex", alignItems:"center", padding:"10px 12px 6px", gap:8, minWidth:0 }}>
+                              <div style={{ flex:"1 1 0", minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:C.text, fontWeight:800, fontSize:14, lineHeight:1.2 }}>{deal.company}</div>
+                              <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
+                                style={{ flexShrink:0, background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
+                                {isPri2?"P2":"P1"}
+                              </button>
+                              <button onClick={function(){ removeDeal(deal.id); }}
+                                style={{ flexShrink:0, background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>✕</button>
                             </div>
 
-                            {/* Financials zone */}
+                            {/* 3. Tags row: sub-vertical + geo toggles */}
+                            <div style={{ display:"flex", flexWrap:"wrap", gap:4, padding:"0 12px 8px", minWidth:0 }}>
+                              {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"50", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700 }}>{dt.label}</span>}
+                              {["AMER","EMEA","APAC"].map(function(g){
+                                var isGeo = deal.geography===g;
+                                var gc = g==="AMER"?C.accent:g==="EMEA"?C.gold:C.green;
+                                return <button key={g} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:isGeo?"":g}):x; }); }); }}
+                                  style={{ background:isGeo?gc+"22":"transparent", border:"1px solid "+(isGeo?gc:C.border), color:isGeo?gc:C.dim, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>{g}</button>;
+                              })}
+                            </div>
+
+                            {/* 4. ARR block */}
                             {(dispArr || busy) && (
-                              <div style={{ padding:"0 14px 10px", borderBottom:"1px solid "+C.border }}>
+                              <div style={{ padding:"0 12px 10px", borderBottom:"1px solid "+C.border }}>
                                 {busy ? (
                                   <div style={{ color:rerunStatus[deal.id]?C.accent:C.gold, fontSize:9, fontWeight:600, lineHeight:1.5 }}>
                                     {rerunStatus[deal.id] ? "⟳ "+rerunStatus[deal.id] : "💰 "+updateFinStatus[deal.id]}
                                   </div>
                                 ) : (
                                   <div>
-                                    <div style={{ color:C.cyan, fontWeight:800, fontSize:20, lineHeight:1.1, marginBottom:2 }}>{dispArr}</div>
-                                    {deal.financials && deal.financials.arr_calculation && (
-                                      <div style={{ color:C.muted, fontSize:9, lineHeight:1.4, marginBottom:2 }}>{deal.financials.arr_calculation}</div>
-                                    )}
+                                    <div style={{ color:C.cyan, fontWeight:800, fontSize:22, lineHeight:1.1, marginBottom:2 }}>{dispArr}</div>
                                     {deal.financials && (
-                                      <div style={{ color:C.dim, fontSize:8 }}>
-                                        🔒 {deal.financials.setOnAdd ? "Set on add" : "Updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
-                                      </div>
+                                      <div style={{ color:C.dim, fontSize:8 }}>🔒 {deal.financials.setOnAdd?"Set on add":"Updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
                                     )}
                                   </div>
                                 )}
                               </div>
                             )}
 
-                            {/* Summary zone */}
+                            {/* 5. Summary text */}
                             {deal.notes && (
-                              <div style={{ padding:"8px 14px", borderBottom:"1px solid "+C.border }}>
-                                <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{deal.notes}</div>
+                              <div style={{ padding:"8px 12px", borderBottom:"1px solid "+C.border }}>
+                                <div style={{ color:C.muted, fontSize:10, lineHeight:1.5, display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{deal.notes}</div>
                               </div>
                             )}
 
-                            {/* Edit form or bottom action area */}
+                            {/* Edit form replaces bottom sections when active */}
                             {isEditing ? (
-                              <div style={{ padding:"12px 14px" }}>
+                              <div style={{ padding:"12px" }}>
                                 <div style={{ display:"grid", gap:6, marginBottom:8 }}>
                                   <input defaultValue={deal.arr}     id={"arr_"+deal.id}   placeholder="Projected ARR e.g. $45K" style={inp}/>
                                   <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
@@ -1867,69 +1869,51 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   </select>
                                 </div>
                                 <button onClick={function(){
-                                  var arrEl      = document.getElementById("arr_"+deal.id);
-                                  var notesEl    = document.getElementById("notes_"+deal.id);
-                                  var tierEl     = document.getElementById("tier_"+deal.id);
-                                  var priorityEl = document.getElementById("priority_"+deal.id);
-                                  var stageEl    = document.getElementById("stage_"+deal.id);
-                                  var vertEl     = document.getElementById("vert_"+deal.id);
-                                  var geoEl      = document.getElementById("geo_"+deal.id);
-                                  updateDeal(deal.id, {
-                                    arr:      arrEl      ? arrEl.value      : deal.arr,
-                                    notes:    notesEl    ? notesEl.value    : deal.notes,
-                                    tier:     tierEl     ? tierEl.value     : (deal.tier||""),
-                                    priority: priorityEl ? priorityEl.value : (deal.priority||"p1"),
-                                    stage:    stageEl    ? stageEl.value    : deal.stage,
-                                    vertical: vertEl     ? vertEl.value     : deal.vertical,
-                                    geography:geoEl      ? geoEl.value      : (deal.geography||""),
-                                  });
+                                  var arrEl=document.getElementById("arr_"+deal.id), notesEl=document.getElementById("notes_"+deal.id), tierEl=document.getElementById("tier_"+deal.id), priorityEl=document.getElementById("priority_"+deal.id), stageEl=document.getElementById("stage_"+deal.id), vertEl=document.getElementById("vert_"+deal.id), geoEl=document.getElementById("geo_"+deal.id);
+                                  updateDeal(deal.id,{ arr:arrEl?arrEl.value:deal.arr, notes:notesEl?notesEl.value:deal.notes, tier:tierEl?tierEl.value:(deal.tier||""), priority:priorityEl?priorityEl.value:(deal.priority||"p1"), stage:stageEl?stageEl.value:deal.stage, vertical:vertEl?vertEl.value:deal.vertical, geography:geoEl?geoEl.value:(deal.geography||"") });
                                 }} style={{ background:dealVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
                             ) : (
-                              <div style={{ padding:"10px 14px 12px", marginTop:"auto", borderTop:"1px solid "+C.border }}>
-                                {/* 3-button action bar */}
-                                <div style={{ display:"flex", gap:6, marginBottom:8 }}>
-                                  <button onClick={function(){ if(deal.analysisData){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
-                                    style={Object.assign({},btnBase,{ color:deal.analysisData&&!busy?C.accent:C.dim, borderColor:deal.analysisData&&!busy?C.accent+"40":C.border, background:deal.analysisData&&!busy?C.accentDim:C.surface, opacity:(!deal.analysisData||busy)?0.45:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
-                                  <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
-                                    style={Object.assign({},btnBase,{ opacity:busy?0.45:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
-                                  <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
-                                    style={Object.assign({},btnBase,{ color:busy?C.dim:C.gold, borderColor:C.gold+"40", background:C.goldDim, opacity:busy?0.45:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
+                              <div>
+                                {/* 6. Stage dropdown */}
+                                <div style={{ padding:"8px 12px", borderBottom:"1px solid "+C.border }}>
+                                  <select value={deal.stage} onChange={function(e){ updateStage(deal.id, e.target.value); }}
+                                    style={{ width:"100%", boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 8px", color:C.muted, fontSize:10, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+                                    {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
+                                  </select>
                                 </div>
-                                {/* Stage dropdown */}
-                                <select value={deal.stage} onChange={function(e){ updateStage(deal.id, e.target.value); }}
-                                  style={Object.assign({},sel,{ marginBottom:6, fontSize:9, padding:"4px 6px" })}>
-                                  {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
-                                </select>
-                                {/* Sub-vertical text link + tier picker */}
-                                <div style={{ display:"flex", alignItems:"center", flexWrap:"wrap", gap:4 }}>
+
+                                {/* 7. Action row: 3 equal buttons */}
+                                <div style={{ display:"flex", gap:6, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box", width:"100%" }}>
+                                  <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
+                                    style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
+                                  <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
+                                    style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
+                                  <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
+                                    style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
+                                </div>
+
+                                {/* 8. Sub-vertical link + edit link */}
+                                <div style={{ padding:"6px 12px 8px", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
                                   <button onClick={function(){ setTierPickId(tierPickId===deal.id?null:deal.id); }}
                                     style={{ background:"transparent", border:"none", padding:0, color:dt?dt.color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600, textDecoration:"underline", textUnderlineOffset:2 }}>
-                                    {dt ? "Change" : "+"} {deal.vertical==="financial_services"?"Sub-vertical":"Tier"}
+                                    {dt?"Change":"+"} {deal.vertical==="financial_services"?"Sub-vertical":"Tier"}
                                   </button>
                                   <button onClick={function(){ setEditId(deal.id); }}
                                     style={{ background:"transparent", border:"none", padding:0, color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", textUnderlineOffset:2 }}>✏ Edit</button>
-                                  {tierPickId===deal.id && (
-                                    <div style={{ width:"100%", display:"flex", gap:4, flexWrap:"wrap", marginTop:4 }}>
-                                      {dealBuckets.map(function(t){
-                                        var isActive = deal.tier===t.id;
-                                        return (
-                                          <button key={t.id} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:t.id}):x; }); }); setTierPickId(null); }}
-                                            style={{ background:isActive?t.color:t.color+"25", border:"1px solid "+t.color, color:isActive?"#000":t.color, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>
-                                            {t.label}
-                                          </button>
-                                        );
-                                      })}
-                                      {dt && (
-                                        <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:""}):x; }); }); setTierPickId(null); }}
-                                          style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>
-                                          Unassign
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
                                 </div>
+                                {tierPickId===deal.id && (
+                                  <div style={{ display:"flex", gap:4, flexWrap:"wrap", padding:"0 12px 10px" }}>
+                                    {dealBuckets.map(function(t){
+                                      var isActive=deal.tier===t.id;
+                                      return <button key={t.id} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:t.id}):x; }); }); setTierPickId(null); }}
+                                        style={{ background:isActive?t.color:t.color+"25", border:"1px solid "+t.color, color:isActive?"#000":t.color, borderRadius:5, padding:"3px 8px", fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:700 }}>{t.label}</button>;
+                                    })}
+                                    {dt && <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{tier:""}):x; }); }); setTierPickId(null); }}
+                                      style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>Unassign</button>}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
