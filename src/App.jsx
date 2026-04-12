@@ -1481,7 +1481,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "Slide 8: GTM Attack Plan — first 90 days, key contacts to engage\n" +
         "Slide 9: Key Contacts — names, roles, LinkedIn links\n" +
         "Slide 10: Next Steps — proposed meeting agenda, call to action\n\n" +
-        "For each slide provide: title, 3-5 bullet points with specific data, and 1 talking point. Be specific and use the provided data.",
+        "For each slide provide: title, 3-5 bullet points with specific data, and 1 talking point. Be specific and use the provided data.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Avoid decorative language; keep all copy concise and data-driven.",
         4000, false, grokKey
       );
 
@@ -2193,7 +2193,7 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
     try {
       var outline = await callGrok(
         "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
-        "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.",
+        "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
         3000, false, grokKey
       );
       setStatus("🚀 Starting Gamma generation...");

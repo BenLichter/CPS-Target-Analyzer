@@ -19,6 +19,17 @@ export default async function handler(req, res) {
   let submitStatus, submitBody, submitData;
 
   try {
+    // Fetch available themes first
+    let themesData = null;
+    try {
+      const tr = await fetch(`${GAMMA_BASE}/themes`, { headers: { 'X-API-KEY': key } });
+      const tt = await tr.text();
+      console.log('[Gamma test] themes status:', tr.status, '| body:', tt.slice(0, 1000));
+      try { themesData = JSON.parse(tt); } catch { themesData = tt.slice(0, 500); }
+    } catch (te) {
+      themesData = 'fetch error: ' + te.message;
+    }
+
     const payload = {
       inputText: 'Create a 3-slide test presentation about CoinPayments crypto payment infrastructure.',
       textMode: 'generate',
@@ -82,6 +93,7 @@ export default async function handler(req, res) {
       generation_status: pollResult?.status || submitData?.status,
       gammaUrl: pollResult?.gammaUrl || submitData?.gammaUrl || null,
       credits_remaining: pollResult?.credits?.remaining || submitData?.credits?.remaining || null,
+      themes: themesData,
       submit_raw: submitData,
       poll_raw: pollResult,
       key_prefix: key.slice(0, 10) + '...',
