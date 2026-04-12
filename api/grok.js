@@ -13,14 +13,28 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   try {
-    // Deep-clean the body: walk every string value and strip bad Unicode
+    // Deep-clean the body: strip bad Unicode AND replace non-Latin-1 chars
     function cleanValue(v) {
       if (typeof v === 'string') {
         let out = '';
         for (let i = 0; i < v.length; i++) {
           const code = v.charCodeAt(i);
+          // Skip lone surrogates (D800-DFFF)
           if (code >= 0xD800 && code <= 0xDFFF) continue;
+          // Skip control chars except tab, newline, carriage return
           if (code < 0x20 && code !== 0x09 && code !== 0x0A && code !== 0x0D) continue;
+          // Replace common typographic chars that break Latin-1 encoding
+          if (code === 0x2014 || code === 0x2013) { out += '-'; continue; }   // em/en dash → -
+          if (code === 0x2018 || code === 0x2019) { out += "'"; continue; }   // curly single quotes → '
+          if (code === 0x201C || code === 0x201D) { out += '"'; continue; }   // curly double quotes → "
+          if (code === 0x2026) { out += '...'; continue; }                    // ellipsis → ...
+          if (code === 0x00A0) { out += ' '; continue; }                      // non-breaking space → space
+          if (code === 0x2022) { out += '*'; continue; }                      // bullet → *
+          if (code === 0x00B7) { out += '*'; continue; }                      // middle dot → *
+          if (code === 0x2192) { out += '->'; continue; }                     // → arrow
+          if (code === 0x00D7) { out += 'x'; continue; }                      // × multiply sign → x
+          // Drop any remaining non-Latin-1 characters (code > 255)
+          if (code > 255) continue;
           out += v[i];
         }
         return out;
