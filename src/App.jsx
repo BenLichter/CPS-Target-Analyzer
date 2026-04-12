@@ -2335,26 +2335,88 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
 }
 
 // ─── DeckBuilder ──────────────────────────────────────────────────────────────
-function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
+function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }) {
   var s1 = useState(""); var prompt = s1[0]; var setPrompt = s1[1];
   var s2 = useState(""); var deckTitle = s2[0]; var setDeckTitle = s2[1];
   var s3 = useState(""); var status = s3[0]; var setStatus = s3[1];
   var s4 = useState(null); var deckUrl = s4[0]; var setDeckUrl = s4[1];
   var s5 = useState(false); var busy = s5[0]; var setBusy = s5[1];
+  var s6 = useState("free"); var slideType = s6[0]; var setSlideType = s6[1];
+
+  var DECK_SLIDE_TYPES = [
+    { id:"free",           label:"✍️ Custom Deck",                desc:"Describe any presentation — Grok builds the outline" },
+    { id:"pipeline_brief", label:"📋 Pipeline Intelligence Brief", desc:"Synthesize your full pipeline into an executive summary" },
+  ];
+
+  function getSubVertLabel(tierId) {
+    var sv = FS_SUBVERTS.find(function(s){ return s.id===tierId; });
+    if (sv) return sv.label;
+    var t = TIERS.find(function(t){ return t.id===tierId; });
+    return t ? t.label : (tierId || "Unknown");
+  }
+
+  function serializePipeline(dealList) {
+    if (!dealList || !dealList.length) return "No pipeline deals available.";
+    var lines = ["=== PIPELINE DEALS (" + dealList.length + " accounts) ===\n"];
+    dealList.forEach(function(d) {
+      var proj = (d.financials && d.financials.projected_arr) || d.arr || "N/A";
+      var som  = (d.financials && d.financials.som) || "N/A";
+      var partners = [];
+      if (d.analysisData && Array.isArray(d.analysisData.partnerships)) {
+        partners = d.analysisData.partnerships.filter(function(p){ return p && p.partner; }).map(function(p){ return p.partner + " (" + (p.type||"partnership") + ")"; });
+      }
+      var signals = [];
+      if (d.analysisData && Array.isArray(d.analysisData.intent_data)) {
+        signals = d.analysisData.intent_data.slice(0,3).map(function(s){ return s.signal; });
+      }
+      lines.push("ACCOUNT: " + d.company);
+      lines.push("  Sub-vertical: " + getSubVertLabel(d.tier));
+      lines.push("  Priority: " + (d.priority||"p1").toUpperCase());
+      lines.push("  Geography: " + (d.geography||"Unknown"));
+      lines.push("  Stage: " + (d.stage||"prospecting"));
+      lines.push("  Projected ARR: " + proj);
+      lines.push("  SOM: " + som);
+      lines.push("  Crypto partnerships: " + (partners.length ? partners.join("; ") : "None confirmed"));
+      if (signals.length) lines.push("  Intent signals: " + signals.join(" | "));
+      if (d.analysisData && d.analysisData.executive_summary) lines.push("  Summary: " + (d.analysisData.executive_summary||"").slice(0,200));
+      lines.push("");
+    });
+    return lines.join("\n");
+  }
 
   async function generate() {
-    if (!prompt.trim() || busy) return;
-    if (!grokKey) { setStatus("⚠️ Grok API key required — add it in Settings"); return; }
+    if (busy) return;
+    if (slideType==="free" && !prompt.trim()) return;
+    if (slideType==="pipeline_brief" && (!deals || !deals.length)) { setStatus("⚠️ No pipeline deals to analyze — add accounts in the Pipeline tab first"); return; }
+    if (!grokKey)  { setStatus("⚠️ Grok API key required — add it in Settings"); return; }
     if (!gammaKey) { setStatus("⚠️ Gamma API key required — add it in Settings"); return; }
-    setBusy(true); setDeckUrl(null); setStatus("🤖 Grok is building your outline...");
+    setBusy(true); setDeckUrl(null);
+
+    var outline; var finalTitle;
     try {
-      var outline = await callGrok(
-        "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
-        "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
-        3000, false, grokKey
-      );
+      if (slideType === "pipeline_brief") {
+        var pipelineData = serializePipeline(deals);
+        var svMap = {};
+        deals.forEach(function(d){ svMap[d.tier||"unknown"]=(svMap[d.tier||"unknown"]||0)+1; });
+        var svCount = Object.keys(svMap).length;
+        setStatus("🧠 Grok synthesizing " + deals.length + " accounts across " + svCount + " sub-vertical" + (svCount!==1?"s":"") + "...");
+        var briefPrompt = CP_CAPABILITIES + "\n\nHere is the full pipeline deal data you must analyze:\n\n" + pipelineData + "\n\nUsing only the pipeline deal data provided above, generate a Pipeline Intelligence Brief with the following structure. Every item must reference specific named accounts from the pipeline data — no generalization without examples:\n\n1. Sub-Vertical Breakdown:\nFor each sub-vertical present in the pipeline data:\n- Sub-vertical name\n- Account count and total projected ARR\n- Top 3 example accounts by ARR with their projected ARR figure\n- One sentence on the common crypto opportunity theme across this sub-vertical based on the analysis data\n\n2. Priority Segmentation:\n- P1 accounts: count, total ARR, list all P1 account names with their sub-vertical and projected ARR\n- P2 accounts: count, total ARR, list all P2 account names with their sub-vertical and projected ARR\n- Insight: what distinguishes the P1 accounts from P2 in terms of crypto readiness, intent signals, or opportunity size — based only on the analysis data provided\n\n3. Existing Crypto Partnership Penetration:\n- Accounts with confirmed crypto infrastructure partnerships (Fireblocks, Anchorage, Zero Hash, Paxos, BitGo, Coinbase Prime, Bakkt etc): list them by name with their known partner\n- Accounts with no confirmed crypto infrastructure partnerships: list them — these are greenfield opportunities\n- Penetration rate: X of Y accounts already have crypto infrastructure partners\n- Insight: what the partnership landscape tells us about the pipeline's overall crypto maturity\n\n4. Projected ARR Summary:\n- Total projected ARR across all accounts\n- ARR by sub-vertical (ranked highest to lowest)\n- ARR by geography (AMER / EMEA / APAC)\n- ARR by priority (P1 vs P2)\n- Top 5 accounts by projected ARR — name, sub-vertical, ARR figure, current stage\n- ARR at each pipeline stage — how much is in Prospecting vs Discovery vs Proposal etc\n\n5. CoinPayments Value Proposition — Applied to This Pipeline:\nUsing the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above, explain concisely how CoinPayments addresses the specific needs of this pipeline segment. Do not write a generic value prop — tailor it to what the pipeline data reveals about this group of accounts:\n- Which CoinPayments capability is most relevant to the majority of accounts and why — reference specific accounts as examples\n- Which capability addresses the most common gap identified across the partnership penetration analysis\n- Which capability is most relevant to the P1 accounts specifically\n- Write 3-4 sentences maximum — boardroom concise, grounded in the pipeline data\n\nFormat this as a structured executive briefing — clear headings, bullet points, specific account names and ARR figures throughout. This will be rendered as a professional presentation.";
+        outline = await callGrok(
+          "You are a senior revenue intelligence analyst producing a boardroom-ready pipeline brief. Be specific, data-driven, and reference named accounts throughout. Use only the pipeline data provided — never generalize without examples.",
+          briefPrompt, 4000, false, grokKey
+        );
+        finalTitle = deckTitle.trim() || "Pipeline Intelligence Brief — CoinPayments";
+      } else {
+        setStatus("🤖 Grok is building your outline...");
+        outline = await callGrok(
+          "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
+          "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
+          3000, false, grokKey
+        );
+        finalTitle = deckTitle.trim() || prompt.slice(0, 80);
+      }
+
       setStatus("🚀 Starting Gamma generation...");
-      var finalTitle = deckTitle.trim() || prompt.slice(0, 80);
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: outline, title: finalTitle, key: gammaKey }),
@@ -2364,9 +2426,7 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
       var generationId = startData.generationId;
       if (!generationId) throw new Error("Gamma did not return a generation ID. Response: " + JSON.stringify(startData).slice(0, 200));
 
-      // Poll from client every 5s — no Vercel timeout risk
-      var capturedKey = gammaKey;
-      var resolved = false;
+      var capturedKey = gammaKey; var resolved = false;
       for (var attempt = 1; attempt <= 30; attempt++) {
         setStatus("🎨 Generating presentation... " + (attempt * 5) + "s elapsed (Gamma takes ~60-90s)");
         await new Promise(function(r){ setTimeout(r, 5000); });
@@ -2374,12 +2434,10 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
         var pd = await pr.json();
         if (!pr.ok) throw new Error(pd.error || "Poll failed " + pr.status);
         if (pd.status === "completed" && pd.url) {
-          setDeckUrl(pd.url);
-          setStatus("");
-          var entry = { id: Date.now(), title: finalTitle, url: pd.url, createdAt: new Date().toISOString() };
+          setDeckUrl(pd.url); setStatus("");
+          var entry = { id:Date.now(), title:finalTitle, url:pd.url, createdAt:new Date().toISOString() };
           setGammaHistory(function(h){ return [entry].concat(h.slice(0, 19)); });
-          resolved = true;
-          break;
+          resolved = true; break;
         }
         if (pd.status === "failed") throw new Error("Gamma generation failed: " + (pd.error || "unknown error"));
       }
@@ -2390,6 +2448,8 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
     setBusy(false);
   }
 
+  var canGenerate = slideType==="pipeline_brief" ? (deals && deals.length > 0) : !!prompt.trim();
+
   return (
     <div>
       <div style={{ marginBottom:24 }}>
@@ -2397,24 +2457,85 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
         <div style={{ color:C.muted, fontSize:12 }}>Grok builds the outline — Gamma renders the presentation.</div>
       </div>
 
+      {/* Slide type selector */}
+      <div style={{ marginBottom:20 }}>
+        <div style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Deck Type</div>
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+          {DECK_SLIDE_TYPES.map(function(st) {
+            var active = slideType===st.id;
+            return (
+              <div key={st.id} onClick={function(){ setSlideType(st.id); }}
+                style={{ flex:1, minWidth:200, background:active?C.accentDim:C.card, border:"1px solid "+(active?C.accent:C.border), borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s,background 0.15s" }}>
+                <div style={{ color:active?C.accent:C.text, fontWeight:800, fontSize:13, marginBottom:4 }}>{st.label}</div>
+                <div style={{ color:C.muted, fontSize:11, lineHeight:1.4 }}>{st.desc}</div>
+                {st.id==="pipeline_brief" && (
+                  <div style={{ color:C.dim, fontSize:10, marginTop:6 }}>
+                    {deals && deals.length ? deals.length + " account" + (deals.length!==1?"s":"") + " in pipeline" : "No pipeline data"}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"20px", marginBottom:20 }}>
-        <div style={{ marginBottom:12 }}>
-          <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Presentation Title (optional)</label>
-          <input value={deckTitle} onChange={function(e){ setDeckTitle(e.target.value); }}
-            placeholder="e.g. CoinPayments × Stripe — Partnership Opportunity"
-            style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none" }}/>
-        </div>
-        <div style={{ marginBottom:14 }}>
-          <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Describe your presentation</label>
-          <textarea value={prompt} onChange={function(e){ setPrompt(e.target.value); }}
-            placeholder="e.g. A 10-slide investor pitch for CoinPayments targeting remittance fintechs in Southeast Asia. Include TAM/SOM analysis, competitive landscape, and go-to-market strategy."
-            rows={4}
-            style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none", resize:"vertical", lineHeight:1.5 }}/>
-        </div>
-        <button onClick={generate} disabled={busy || !prompt.trim()}
-          style={{ background:busy||!prompt.trim()?"#334155":C.purple, color:"#fff", border:"none", borderRadius:7, padding:"10px 22px", fontWeight:800, fontSize:12, cursor:busy||!prompt.trim()?"default":"pointer", fontFamily:"inherit", transition:"background 0.15s" }}>
-          {busy ? "Generating..." : "✨ Generate with Grok + Gamma"}
-        </button>
+        {slideType==="pipeline_brief" ? (
+          <div>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Presentation Title (optional)</label>
+              <input value={deckTitle} onChange={function(e){ setDeckTitle(e.target.value); }}
+                placeholder="Pipeline Intelligence Brief — CoinPayments"
+                style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none" }}/>
+            </div>
+            {deals && deals.length ? (function() {
+              var p1 = deals.filter(function(d){ return (d.priority||"p1")==="p1"; }).length;
+              var p2 = deals.filter(function(d){ return d.priority==="p2"; }).length;
+              var svMap = {}; deals.forEach(function(d){ svMap[d.tier||"unknown"]=(svMap[d.tier||"unknown"]||0)+1; });
+              var withPartners = deals.filter(function(d){ return d.analysisData && Array.isArray(d.analysisData.partnerships) && d.analysisData.partnerships.length>0; }).length;
+              return (
+                <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"14px 16px", marginBottom:16 }}>
+                  <div style={{ color:C.muted, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:10 }}>Pipeline snapshot</div>
+                  <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
+                    <div><div style={{ color:C.accent,  fontSize:20, fontWeight:900 }}>{deals.length}</div><div style={{ color:C.dim, fontSize:10 }}>Total accounts</div></div>
+                    <div><div style={{ color:C.gold,    fontSize:20, fontWeight:900 }}>{p1}</div><div style={{ color:C.dim, fontSize:10 }}>P1 priority</div></div>
+                    <div><div style={{ color:C.muted,   fontSize:20, fontWeight:900 }}>{p2}</div><div style={{ color:C.dim, fontSize:10 }}>P2 priority</div></div>
+                    <div><div style={{ color:C.green,   fontSize:20, fontWeight:900 }}>{Object.keys(svMap).length}</div><div style={{ color:C.dim, fontSize:10 }}>Sub-verticals</div></div>
+                    <div><div style={{ color:C.purple,  fontSize:20, fontWeight:900 }}>{withPartners}</div><div style={{ color:C.dim, fontSize:10 }}>w/ crypto partners</div></div>
+                  </div>
+                </div>
+              );
+            })() : (
+              <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"14px 16px", marginBottom:16, color:C.dim, fontSize:12 }}>
+                No pipeline deals found — add accounts in the Pipeline tab first.
+              </div>
+            )}
+            <button onClick={generate} disabled={busy||!canGenerate}
+              style={{ background:busy||!canGenerate?"#334155":C.purple, color:"#fff", border:"none", borderRadius:7, padding:"10px 22px", fontWeight:800, fontSize:12, cursor:busy||!canGenerate?"default":"pointer", fontFamily:"inherit", transition:"background 0.15s" }}>
+              {busy ? "Generating..." : "✨ Generate Pipeline Brief"}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Presentation Title (optional)</label>
+              <input value={deckTitle} onChange={function(e){ setDeckTitle(e.target.value); }}
+                placeholder="e.g. CoinPayments × Stripe — Partnership Opportunity"
+                style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none" }}/>
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Describe your presentation</label>
+              <textarea value={prompt} onChange={function(e){ setPrompt(e.target.value); }}
+                placeholder="e.g. A 10-slide investor pitch for CoinPayments targeting remittance fintechs in Southeast Asia. Include TAM/SOM analysis, competitive landscape, and go-to-market strategy."
+                rows={4}
+                style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none", resize:"vertical", lineHeight:1.5 }}/>
+            </div>
+            <button onClick={generate} disabled={busy||!canGenerate}
+              style={{ background:busy||!canGenerate?"#334155":C.purple, color:"#fff", border:"none", borderRadius:7, padding:"10px 22px", fontWeight:800, fontSize:12, cursor:busy||!canGenerate?"default":"pointer", fontFamily:"inherit", transition:"background 0.15s" }}>
+              {busy ? "Generating..." : "✨ Generate with Grok + Gamma"}
+            </button>
+          </div>
+        )}
       </div>
 
       {status && (
@@ -2428,7 +2549,7 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
       {deckUrl && (
         <div style={{ background:"#10B98120", border:"1px solid "+C.green, borderRadius:10, padding:"20px", marginBottom:20, textAlign:"center" }}>
           <div style={{ color:C.green, fontSize:16, fontWeight:900, marginBottom:8 }}>✅ Your presentation is ready</div>
-          <div style={{ color:C.muted, fontSize:11, marginBottom:16 }}>{deckTitle || prompt.slice(0, 60)}</div>
+          <div style={{ color:C.muted, fontSize:11, marginBottom:16 }}>{deckTitle || (slideType==="pipeline_brief" ? "Pipeline Intelligence Brief" : prompt.slice(0,60))}</div>
           <a href={deckUrl} target="_blank" rel="noreferrer"
             style={{ display:"inline-block", background:C.green, color:"#000", borderRadius:8, padding:"12px 28px", fontWeight:800, fontSize:13, textDecoration:"none" }}>
             Open in Gamma →
@@ -2660,7 +2781,7 @@ export default function App() {
         {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} grokKey={grokKey} gammaKey={gammaKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
 
         {/* Deck Builder */}
-        {page==="deck" && <DeckBuilder grokKey={grokKey} gammaKey={gammaKey} gammaHistory={gammaHistory} setGammaHistory={setGammaHistory}/>}
+        {page==="deck" && <DeckBuilder grokKey={grokKey} gammaKey={gammaKey} gammaHistory={gammaHistory} setGammaHistory={setGammaHistory} deals={pipelineDeals}/>}
 
         {/* History */}
         {page==="history" && (
