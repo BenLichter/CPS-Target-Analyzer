@@ -40,11 +40,15 @@ export default async function handler(req, res) {
 
   try {
     const payload = {
-      text: prompt,
+      inputText: prompt,
       textMode: 'generate',
-      mode: 'presentation',
-      title: title || prompt.slice(0, 80),
-      language: 'en',
+      format: 'presentation',
+      numCards: 10,
+      textOptions: { language: 'en' },
+      additionalInstructions: title
+        ? 'Title: ' + title + '. Create a professional B2B sales presentation.'
+        : 'Create a professional B2B sales presentation.',
+      cardOptions: { dimensions: '16x9' },
     };
 
     console.log('[Gamma proxy] Submitting generation | key prefix:', apiKey.slice(0, 10) + '...');

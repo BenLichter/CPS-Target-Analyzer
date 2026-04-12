@@ -20,11 +20,13 @@ export default async function handler(req, res) {
 
   try {
     const payload = {
-      text: 'Create a 3-slide test presentation about CoinPayments crypto payment infrastructure.',
+      inputText: 'Create a 3-slide test presentation about CoinPayments crypto payment infrastructure.',
       textMode: 'generate',
-      mode: 'presentation',
-      title: 'CoinPayments Test',
-      language: 'en',
+      format: 'presentation',
+      numCards: 3,
+      textOptions: { language: 'en' },
+      additionalInstructions: 'Title: CoinPayments Test. Keep it brief.',
+      cardOptions: { dimensions: '16x9' },
     };
 
     console.log('[Gamma test] Submitting | key prefix:', key.slice(0, 10) + '...');
