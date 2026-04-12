@@ -1532,25 +1532,37 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "- What does [Competitor]'s crypto feature cost " + co + " in retention and new customer acquisition?\n" +
         "- Frame as revenue already being lost, not hypothetical future revenue\n\n" +
         "Slide 3 \u2014 How " + co + " Closes the Gap With CoinPayments\n" +
-        "CoinPayments delivers one API-driven infrastructure stack with four capabilities that eliminate the need for " + co + " to build or maintain their own blockchain infrastructure. Structure this slide around exactly these four capabilities \u2014 use these exact names and descriptions as the foundation, then add one tailored sentence specific to " + co + "'s situation for each:\n\n" +
-        "CAPABILITY 1 \u2014 Stablecoin + Blockchain Rails\n" +
-        "Foundation: 24/7 instant settlement that bypasses correspondent banks entirely. Automated FX conversions with zero pre-funding requirements and fractions of a cent per transaction.\n" +
-        "For " + co + " specifically: [tailor to their exact pain point from the competitive gap and business model \u2014 e.g. for remittance/FX: eliminating 2-5 day SWIFT delays and 3-7% corridor fees; for FX & Brokerage: instant crypto settlement without T+2 clearing delays; for neobanks: real-time cross-border payments at near-zero cost. Reference their geography or volume scale.]\n\n" +
-        "CAPABILITY 2 \u2014 Fiat On/Off Ramps\n" +
-        "Foundation: White-label fiat on/off ramp tooling enabling local fiat \u21d4 stablecoin/crypto \u21d4 local fiat in a single UX with no intermediated conversion. Bank, card, and cash integration via regulated partners.\n" +
-        "For " + co + " specifically: [tailor \u2014 e.g. for neobanks: customers convert fiat to crypto and back without leaving the " + co + " app; for luxury goods/travel: accept crypto payments and auto-settle in local fiat; for brokers: enable crypto funding of trading accounts directly from fiat rails.]\n\n" +
-        "CAPABILITY 3 \u2014 Third-Party Wallet Hosting\n" +
-        "Foundation: White-label, compliant MPC custody with insured cold/hot storage, automated reconciliation, and audit-ready reporting \u2014 fully outsourced key management. 40+ digital assets supported.\n" +
-        "For " + co + " specifically: [tailor \u2014 e.g. zero crypto infrastructure build cost, no custody liability on " + co + "'s balance sheet, instant audit readiness for regulators; reference their existing tech stack or regulatory environment from the analysis.]\n\n" +
-        "CAPABILITY 4 \u2014 Compliance-as-a-Service\n" +
-        "Foundation: Turnkey jurisdictional expansion across 180+ licensed jurisdictions and 40+ digital assets. AML/KYC, audit trails, and policy engines included.\n" +
-        "For " + co + " specifically: [tailor \u2014 reference their geography and any expansion goals from the analysis \u2014 e.g. enter new crypto markets in [their region] without hiring compliance teams in each jurisdiction; or: meet [specific regulator] requirements without building in-house policy infrastructure.]\n\n" +
-        "IMPORTANT for Slide 3: Write every capability as a " + co + " outcome, NOT a CoinPayments feature. Write '" + co + " gains X' or '" + co + " can now Y' \u2014 never 'CoinPayments provides X'. CoinPayments appears once per capability as the infrastructure partner enabling the outcome. Every tailored sentence must reference something specific about " + co + " from the data above \u2014 their business model, geography, scale, existing infrastructure, or competitive gap.\n\n" +
+        "Do NOT list CoinPayments' capabilities generically. Instead, conduct a nuanced analysis of how CoinPayments' infrastructure stack specifically solves " + co + "'s unique situation. Work through this in three steps:\n\n" +
+        "STEP 1 \u2014 Diagnose " + co + "'s specific infrastructure gaps:\n" +
+        "Based on the intelligence and analysis data above, think carefully about:\n" +
+        "- What does " + co + "'s current payment and settlement infrastructure actually look like?\n" +
+        "- Where are their specific friction points \u2014 settlement speed, FX costs, custody complexity, compliance overhead, cross-border reach, or customer-facing crypto UX?\n" +
+        "- Which of their business lines or geographies are most constrained by current infrastructure?\n" +
+        "- What are their customers asking for that they cannot currently deliver?\n\n" +
+        "STEP 2 \u2014 Select 2-3 of these four CoinPayments capabilities that are most relevant to " + co + "'s specific situation (do not include all four if they are not all relevant):\n" +
+        "  A. Stablecoin + Blockchain Rails: 24/7 instant settlement bypassing correspondent banks, automated FX with zero pre-funding, fractions of a cent per transaction\n" +
+        "  B. Fiat On/Off Ramps: white-label local fiat \u2194 stablecoin/crypto \u2194 local fiat in a single UX, bank/card/cash integration via regulated partners\n" +
+        "  C. Third-Party Wallet Hosting: white-label MPC custody, insured cold/hot storage, automated reconciliation, audit-ready reporting, fully outsourced key management, 40+ digital assets\n" +
+        "  D. Compliance-as-a-Service: turnkey expansion across 180+ licensed jurisdictions, 40+ digital assets, AML/KYC, audit trails, policy engines included\n\n" +
+        "For each selected capability, write a bespoke application paragraph that:\n" +
+        "- Names the specific pain point at " + co + " it solves\n" +
+        "- Explains mechanically how CoinPayments solves it for their specific business model\n" +
+        "- Quantifies the impact where possible (cost reduction, speed improvement, market expansion)\n" +
+        "- References their specific scale, geography, customer base, or competitive context\n\n" +
+        "Example of what NOT to write: 'CoinPayments offers 24/7 instant settlement bypassing correspondent banks.'\n" +
+        "Example of what TO write: 'For " + co + "'s [specific corridor or business line], stablecoin rails eliminate the [X]-day SWIFT delays and [Y]% FX spread that currently erode margins on [their specific transaction type]. Settlement becomes instant and the cost drops to fractions of a cent \u2014 without changing " + co + "'s customer-facing UX or requiring new banking relationships.'\n\n" +
+        "STEP 3 \u2014 Write the capability section as a narrative, not a bullet list:\n" +
+        "Frame the selected capabilities as a coherent story of transformation for " + co + ":\n" +
+        "- What does " + co + "'s world look like before CoinPayments?\n" +
+        "- What changes immediately after integration?\n" +
+        "- What becomes possible in 12-24 months that is not possible today?\n" +
+        "- What competitive position does " + co + " hold after deployment?\n\n" +
+        "The output for Slide 3 should read like it was written by a senior solutions architect who spent a week studying " + co + "'s business \u2014 not a sales template with the company name swapped in. Every sentence must be defensible in a boardroom. If you are not confident about a specific claim, write 'based on " + co + "'s reported [X]' rather than fabricating precision.\n\n" +
         "Slide 4 \u2014 " + co + "'s Path to Implementation\n" +
         co + " gets access to CoinPayments' entire API-driven infrastructure stack without building or maintaining any blockchain infrastructure. Make implementation feel fast, low-risk, and within " + co + "'s control:\n" +
-        "- Phase 1: [specific first capability for their business model \u2014 e.g. Stablecoin + Blockchain Rails or Fiat On/Off Ramps] \u2014 live in 4-8 weeks\n" +
+        "- Phase 1: [the highest-priority capability from your Slide 3 analysis] \u2014 live in 4-8 weeks\n" +
         "- Phase 2: [second capability expansion tied to their platform] \u2014 weeks 9-16\n" +
-        "- Phase 3: [full stack including Third-Party Wallet Hosting + Compliance-as-a-Service] \u2014 month 4 onward\n" +
+        "- Phase 3: [full stack deployment including remaining capabilities] \u2014 month 4 onward\n" +
         "- '" + co + " starts with one capability and expands on their own timeline \u2014 no big-bang migration, no blockchain infrastructure investment'\n" +
         "- '" + co + " operates across 180+ licensed jurisdictions from day one \u2014 zero compliance build required'\n" +
         "Close with a direct CTA to the specific named contacts from the analysis:\n" +
@@ -1558,7 +1570,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
           ? "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Let\u2019s schedule a 30-minute technical walkthrough with " + contacts.split("\n").slice(0,2).map(function(c){ return c.split("(")[0].trim(); }).join(" and ") + " and the engineering team.'\n"
           : "- 'Ready to close the gap? Let\u2019s schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n") +
         "\n" +
-        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above and " + co + "'s specific situation \u2014 no generic crypto talking points. 4 slides \u2014 no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
+        "TONE GUIDANCE FOR THE ENTIRE DECK:\n" +
+        "- Speak to " + co + "'s executives as peers, not as prospects \u2014 they are sophisticated operators who have built something real\n" +
+        "- Acknowledge what they have already built \u2014 position crypto infrastructure as the next logical evolution of what they are doing, not a radical departure\n" +
+        "- CoinPayments is a partner in their growth, not a vendor selling a product\n" +
+        "- " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above \u2014 no generic crypto talking points\n" +
+        "- The deck should feel like it came from someone who deeply respects " + co + "'s business and genuinely wants them to win\n" +
+        "- 4 slides \u2014 no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
         8000, false, grokKey
       );
 
