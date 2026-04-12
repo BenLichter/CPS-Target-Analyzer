@@ -1463,7 +1463,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "You are an expert B2B competitive intelligence analyst. Respond with a single JSON object only — no markdown, no explanation, just the raw JSON.",
         "Research " + co + " and return this exact JSON object:\n" +
         "{\n" +
-        "  \"formal_name\": \"the company's correct full formal brand name as it would appear on a boardroom presentation — proper capitalization, correct legal/brand name, no abbreviations unless that is how they brand themselves. Examples: 'Interactive Brokers LLC' not 'interactive brokers', 'SoFi Technologies' not 'sofi invest', 'Webull Financial LLC' not 'webull'. Return the name exactly as it should appear on a slide.\",\n" +
+        "  \"brand_name\": \"the company's commonly used brand or trade name — how they appear in marketing, on their website, and how customers and industry peers refer to them. Do NOT use the full legal entity name. Examples: 'Webull' not 'Webull Financial LLC', 'SoFi' not 'SoFi Technologies Inc', 'Interactive Brokers' not 'Interactive Brokers LLC', 'Trade Republic' not 'Trade Republic Bank GmbH', 'Chime' not 'Chime Financial Inc'. Concise, recognizable, no legal suffixes (LLC, Inc, Ltd, GmbH, Corp, plc). Use this brand_name exclusively throughout the entire deck — title slide, all body slides, and the call to action.\",\n" +
         "  \"business_model\": \"2-3 sentence description of business model, revenue scale, and customer base\",\n" +
         "  \"primary_competitors\": [\"competitor1\", \"competitor2\", \"competitor3\"],\n" +
         "  \"competitor_crypto_status\": \"what their 2-3 primary competitors are doing with crypto payments right now — be specific with names and product names\",\n" +
@@ -1483,7 +1483,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       } catch(parseErr) { intelData = { raw: typeof grokIntel === "string" ? grokIntel : "" }; }
 
       // Use Grok's formally-researched company name for all deck-facing content
-      co = intelData.formal_name || intelData.full_name || co;
+      co = intelData.brand_name || intelData.formal_name || intelData.full_name || co;
 
       // Phase 2 — Combine Grok intel + app analysis → final deck narrative
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"building"}); });
