@@ -1496,9 +1496,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       var competitorNames = Array.isArray(intelData.primary_competitors) ? intelData.primary_competitors.join(", ") : "";
 
       var deckPrompt = await callGrok(
-        "You are a senior B2B sales strategist writing boardroom-ready pitch decks. Every word is from the prospect's perspective — they are the hero, CoinPayments is the enabler. Name competitors explicitly. Every claim is backed by a specific number.",
-        "Write a 4-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes and competitive position. CoinPayments is mentioned only as the enabling partner. Do not include ROI calculations, fee structures, or financial projections anywhere in the deck.\n\n" +
-        "TITLE SLIDE: \"" + co + " × CoinPayments — A Crypto Partnership Opportunity\"\n\n" +
+        "You are a senior B2B sales strategist writing boardroom-ready pitch decks. Every word is from the prospect's perspective — they are the hero, CoinPayments eliminates the need for them to build or maintain their own blockchain infrastructure. Name competitors explicitly. Every claim is backed by a specific number or fact. Never use generic crypto talking points — every sentence must be grounded in this company's specific situation.",
+        "Write a 4-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes and competitive position. CoinPayments is the enabling partner that eliminates the need for " + co + " to build or maintain their own blockchain infrastructure. Do not include ROI calculations, fee structures, or financial projections anywhere in the deck.\n\n" +
+        "TITLE SLIDE: \"" + co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity\"\n\n" +
         "=== INDEPENDENT INTELLIGENCE (fresh Grok research) ===\n" +
         "Company formal name: " + co + "\n" +
         "Business model: " + (intelData.business_model || "") + "\n" +
@@ -1512,46 +1512,53 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "Segment: " + (ad.segment||deal.vertical||"") + "\n" +
         "HQ: " + (ad.hq||deal.geography||"") + "\n" +
         "Executive Summary: " + (ad.executive_summary||"") + "\n" +
-        "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
+        "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " \u2014 " + ad.incumbent.weaknesses : "none identified") + "\n" +
         "Intent Signals:\n" + (intentions||"none") + "\n" +
         "Key Contacts:\n" + (contacts||"none") + "\n" +
         (partnerList ? "Partnerships: " + partnerList + "\n" : "") +
         "Positioning: " + (ad.positioning_statement||"") + "\n\n" +
         "=== 4-SLIDE NARRATIVE ARC ===\n\n" +
-        "Slide 1 — The Competitive Gap\n" +
+        "Slide 1 \u2014 The Competitive Gap\n" +
         "Open with the specific crypto moves competitors are making right now. Name them explicitly.\n" +
         "- Name the 2-3 primary competitors (" + (competitorNames||"their main rivals") + ") and exactly what crypto capabilities they have launched or announced\n" +
         "- Show " + co + "'s current position relative to those moves\n" +
         "- Frame the gap precisely: '" + co + " is [timeframe] behind [Competitor] in crypto payment capability'\n" +
         "- What customer segments are competitors capturing that " + co + " cannot serve today?\n" +
         "Make the competitive threat visceral with real names and specific product moves.\n\n" +
-        "Slide 2 — " + co + "'s Crypto Opportunity Cost\n" +
+        "Slide 2 \u2014 " + co + "'s Crypto Opportunity Cost\n" +
         "Translate the competitive gap into real revenue " + co + " is losing right now.\n" +
-        "- Use the actual SOM context: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact — today that goes to [named competitor]'\n" +
+        "- Use the actual SOM context: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact \u2014 today that goes to [named competitor]'\n" +
         "- Quantify customer churn risk: what % of their customer base is actively seeking crypto capabilities from competitors?\n" +
         "- What does [Competitor]'s crypto feature cost " + co + " in retention and new customer acquisition?\n" +
         "- Frame as revenue already being lost, not hypothetical future revenue\n\n" +
-        "Slide 3 — How " + co + " Closes the Gap With CoinPayments\n" +
-        "Frame CoinPayments entirely as " + co + "'s competitive weapon. Every bullet is a " + co + " outcome:\n" +
-        "- '" + co + " matches [Competitor]'s crypto capability in 4-8 weeks'\n" +
-        "- '" + co + " adds 100+ digital assets to their existing platform without replacing current infrastructure'\n" +
-        "- '" + co + " launches crypto under their own brand — customers never leave their experience'\n" +
-        "- '" + co + "'s engineering team integrates via a single API'\n" +
-        "- Reference their actual business model or tech stack from the analysis data\n" +
-        "CoinPayments appears once as the technology partner enabling these outcomes.\n\n" +
-        "Slide 4 — " + co + "'s Path to Implementation\n" +
-        "Make implementation feel fast, low-risk, and within " + co + "'s control:\n" +
-        "- Phase 1: [specific first use case for their business model] — live in 4-8 weeks\n" +
-        "- Phase 2: [expansion tied to their platform] — weeks 9-16\n" +
-        "- Phase 3: [full deployment at their scale] — month 4 onward\n" +
-        "- '" + co + " starts with one use case and expands on their own timeline — no big-bang migration'\n" +
-        "- '" + co + " retains full brand control with white-label deployment'\n" +
+        "Slide 3 \u2014 How " + co + " Closes the Gap With CoinPayments\n" +
+        "CoinPayments delivers one API-driven infrastructure stack with four capabilities that eliminate the need for " + co + " to build or maintain their own blockchain infrastructure. Structure this slide around exactly these four capabilities \u2014 use these exact names and descriptions as the foundation, then add one tailored sentence specific to " + co + "'s situation for each:\n\n" +
+        "CAPABILITY 1 \u2014 Stablecoin + Blockchain Rails\n" +
+        "Foundation: 24/7 instant settlement that bypasses correspondent banks entirely. Automated FX conversions with zero pre-funding requirements and fractions of a cent per transaction.\n" +
+        "For " + co + " specifically: [tailor to their exact pain point from the competitive gap and business model \u2014 e.g. for remittance/FX: eliminating 2-5 day SWIFT delays and 3-7% corridor fees; for FX & Brokerage: instant crypto settlement without T+2 clearing delays; for neobanks: real-time cross-border payments at near-zero cost. Reference their geography or volume scale.]\n\n" +
+        "CAPABILITY 2 \u2014 Fiat On/Off Ramps\n" +
+        "Foundation: White-label fiat on/off ramp tooling enabling local fiat \u21d4 stablecoin/crypto \u21d4 local fiat in a single UX with no intermediated conversion. Bank, card, and cash integration via regulated partners.\n" +
+        "For " + co + " specifically: [tailor \u2014 e.g. for neobanks: customers convert fiat to crypto and back without leaving the " + co + " app; for luxury goods/travel: accept crypto payments and auto-settle in local fiat; for brokers: enable crypto funding of trading accounts directly from fiat rails.]\n\n" +
+        "CAPABILITY 3 \u2014 Third-Party Wallet Hosting\n" +
+        "Foundation: White-label, compliant MPC custody with insured cold/hot storage, automated reconciliation, and audit-ready reporting \u2014 fully outsourced key management. 40+ digital assets supported.\n" +
+        "For " + co + " specifically: [tailor \u2014 e.g. zero crypto infrastructure build cost, no custody liability on " + co + "'s balance sheet, instant audit readiness for regulators; reference their existing tech stack or regulatory environment from the analysis.]\n\n" +
+        "CAPABILITY 4 \u2014 Compliance-as-a-Service\n" +
+        "Foundation: Turnkey jurisdictional expansion across 180+ licensed jurisdictions and 40+ digital assets. AML/KYC, audit trails, and policy engines included.\n" +
+        "For " + co + " specifically: [tailor \u2014 reference their geography and any expansion goals from the analysis \u2014 e.g. enter new crypto markets in [their region] without hiring compliance teams in each jurisdiction; or: meet [specific regulator] requirements without building in-house policy infrastructure.]\n\n" +
+        "IMPORTANT for Slide 3: Write every capability as a " + co + " outcome, NOT a CoinPayments feature. Write '" + co + " gains X' or '" + co + " can now Y' \u2014 never 'CoinPayments provides X'. CoinPayments appears once per capability as the infrastructure partner enabling the outcome. Every tailored sentence must reference something specific about " + co + " from the data above \u2014 their business model, geography, scale, existing infrastructure, or competitive gap.\n\n" +
+        "Slide 4 \u2014 " + co + "'s Path to Implementation\n" +
+        co + " gets access to CoinPayments' entire API-driven infrastructure stack without building or maintaining any blockchain infrastructure. Make implementation feel fast, low-risk, and within " + co + "'s control:\n" +
+        "- Phase 1: [specific first capability for their business model \u2014 e.g. Stablecoin + Blockchain Rails or Fiat On/Off Ramps] \u2014 live in 4-8 weeks\n" +
+        "- Phase 2: [second capability expansion tied to their platform] \u2014 weeks 9-16\n" +
+        "- Phase 3: [full stack including Third-Party Wallet Hosting + Compliance-as-a-Service] \u2014 month 4 onward\n" +
+        "- '" + co + " starts with one capability and expands on their own timeline \u2014 no big-bang migration, no blockchain infrastructure investment'\n" +
+        "- '" + co + " operates across 180+ licensed jurisdictions from day one \u2014 zero compliance build required'\n" +
         "Close with a direct CTA to the specific named contacts from the analysis:\n" +
         (contacts
-          ? "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Let's schedule a 30-minute technical walkthrough with " + contacts.split("\n").slice(0,2).map(function(c){ return c.split("(")[0].trim(); }).join(" and ") + " and the engineering team.'\n"
-          : "- 'Ready to close the gap? Let's schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n") +
+          ? "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Let\u2019s schedule a 30-minute technical walkthrough with " + contacts.split("\n").slice(0,2).map(function(c){ return c.split("(")[0].trim(); }).join(" and ") + " and the engineering team.'\n"
+          : "- 'Ready to close the gap? Let\u2019s schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n") +
         "\n" +
-        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every claim from the data above. 4 slides — no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme — minimal, high-contrast.",
+        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above and " + co + "'s specific situation \u2014 no generic crypto talking points. 4 slides \u2014 no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
         8000, false, grokKey
       );
 
