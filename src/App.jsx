@@ -1463,7 +1463,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "You are an expert B2B competitive intelligence analyst. Respond with a single JSON object only — no markdown, no explanation, just the raw JSON.",
         "Research " + co + " and return this exact JSON object:\n" +
         "{\n" +
-        "  \"full_name\": \"exact legal or primary brand name of the company\",\n" +
+        "  \"formal_name\": \"the company's correct full formal brand name as it would appear on a boardroom presentation — proper capitalization, correct legal/brand name, no abbreviations unless that is how they brand themselves. Examples: 'Interactive Brokers LLC' not 'interactive brokers', 'SoFi Technologies' not 'sofi invest', 'Webull Financial LLC' not 'webull'. Return the name exactly as it should appear on a slide.\",\n" +
         "  \"business_model\": \"2-3 sentence description of business model, revenue scale, and customer base\",\n" +
         "  \"primary_competitors\": [\"competitor1\", \"competitor2\", \"competitor3\"],\n" +
         "  \"competitor_crypto_status\": \"what their 2-3 primary competitors are doing with crypto payments right now — be specific with names and product names\",\n" +
@@ -1482,6 +1482,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         if (jsonMatch) intelData = JSON.parse(jsonMatch[0]);
       } catch(parseErr) { intelData = { raw: typeof grokIntel === "string" ? grokIntel : "" }; }
 
+      // Use Grok's formally-researched company name for all deck-facing content
+      co = intelData.formal_name || intelData.full_name || co;
+
       // Phase 2 — Combine Grok intel + app analysis → final deck narrative
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"building"}); });
 
@@ -1495,8 +1498,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       var deckPrompt = await callGrok(
         "You are a senior B2B sales strategist writing boardroom-ready pitch decks. Every word is from the prospect's perspective — they are the hero, CoinPayments is the enabler. Name competitors explicitly. Every claim is backed by a specific number.",
         "Write a 4-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes and competitive position. CoinPayments is mentioned only as the enabling partner. Do not include ROI calculations, fee structures, or financial projections anywhere in the deck.\n\n" +
+        "TITLE SLIDE: \"" + co + " × CoinPayments — A Crypto Partnership Opportunity\"\n\n" +
         "=== INDEPENDENT INTELLIGENCE (fresh Grok research) ===\n" +
-        "Company full name: " + (intelData.full_name || co) + "\n" +
+        "Company formal name: " + co + "\n" +
         "Business model: " + (intelData.business_model || "") + "\n" +
         "Primary competitors: " + competitorNames + "\n" +
         "Competitor crypto status: " + (intelData.competitor_crypto_status || "") + "\n" +
@@ -1555,7 +1559,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: deckPrompt, title: co + " — Close the Competitive Gap", key: capturedGammaKey }),
+        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity", key: capturedGammaKey }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
