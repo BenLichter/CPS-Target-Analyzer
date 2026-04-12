@@ -1961,7 +1961,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
                           var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
                           var cardStyle = { width:"100%", boxSizing:"border-box", overflow:"hidden", background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:12, display:"flex", flexDirection:"column" };
-                          var actionBtn = { flex:"1 1 0", minWidth:0, boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 2px", fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:"inherit", color:C.muted, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap" };
+                          var actionBtn = { boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 4px", fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:"inherit", color:C.muted, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" };
                           return (
                           <div key={deal.id} style={cardStyle}>
 
@@ -2060,7 +2060,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                   </select>
                                 </div>
 
-                                {/* 7. Action row: 4 equal buttons */}
+                                {/* 7. Action 2×2 grid */}
                                 {(function(){
                                   var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
                                   var deckLoading = ds === "loading";
@@ -2068,7 +2068,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                   var deckErr = ds.startsWith("error:");
                                   return (
                                     <div>
-                                      <div style={{ display:"flex", gap:6, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box", width:"100%" }}>
+                                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
                                         <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
                                           style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
                                         <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
@@ -2076,16 +2076,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                         <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
                                           style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
                                         {deckDone && deal.gammaDeckUrl
-                                          ? <div style={{ display:"flex", flex:"1 1 0", gap:3 }}>
+                                          ? <div style={{ display:"flex", gap:3, minWidth:0 }}>
                                               <a href={deal.gammaDeckUrl} target="_blank" rel="noreferrer"
-                                                style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", flex:"1 1 0" })}>📊 Deck</a>
+                                                style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", flex:"1 1 0", minWidth:0 })}>📊 Deck</a>
                                               <button onClick={function(){ buildGammaDeck(deal); }} disabled={deckLoading}
                                                 title="Regenerate deck"
-                                                style={Object.assign({},actionBtn,{ flex:"0 0 auto", padding:"7px 7px", color:C.dim })}>↺</button>
+                                                style={Object.assign({},actionBtn,{ flex:"0 0 auto", padding:"7px 8px", color:C.dim })}>↺</button>
                                             </div>
                                           : <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
                                               style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
-                                              {deckLoading ? "⏳..." : "🎨 Deck"}
+                                              {deckLoading ? "⏳ Building..." : "🎨 Deck"}
                                             </button>
                                         }
                                       </div>
