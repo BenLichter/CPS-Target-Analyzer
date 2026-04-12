@@ -352,7 +352,7 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 1 — Core intelligence (Grok primary, Claude fallback)
   onStep("🧠 Grok core analysis...");
-  var P1_USER = sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nIMPORTANT: Ground all financial estimates, scale metrics, and key facts in the Tavily news, NinjaPear enrichment, and scraped web content provided above. When you cite a specific number (users, revenue, volume), name which source it came from. If sources conflict, prefer the most specific and recent data point over generic industry stats.\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\", \"source_url\": \"direct URL to the X post, news article, press release, or profile page — required\", \"source_type\": \"X Post|News|LinkedIn|Press Release|Web\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
+  var P1_USER = sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nIMPORTANT: Ground all financial estimates, scale metrics, and key facts in the Tavily news, NinjaPear enrichment, and scraped web content provided above. When you cite a specific number (users, revenue, volume), name which source it came from. If sources conflict, prefer the most specific and recent data point over generic industry stats.\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array. For each intent signal, provide a source URL if you have one. IMPORTANT source URL rules: (1) only include a URL if it points to a specific article, post, or press release — never a homepage or search results page; (2) if you cannot provide a specific verified URL, set source_url to null and set source_type to 'Grok real-time knowledge'; (3) never fabricate URLs — a null with an honest source_type is far better than a made-up link. Set verified: true only if you have a specific URL, false if based on your knowledge without a specific URL.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\", \"source_url\": \"specific URL to the exact article, post, or press release — or null if you cannot provide a verified specific URL (never use homepage URLs like reuters.com or linkedin.com; never fabricate)\", \"source_type\": \"X Post|News Article|LinkedIn Post|Press Release|Grok real-time knowledge\", \"verified\": false }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
   var p1raw;
   var p1GrokError = null;
   if (gKey) {
@@ -377,6 +377,39 @@ async function runAnalysis(company, onStep, keys) {
   const p1 = parseJSON(p1raw);
   p1.model_used = p1UsedGrok ? 'grok-3' : 'claude';
   if (p1GrokError) p1.grok_error = p1GrokError;
+
+  // Phase 1c — Tavily verification of unverified intent signals
+  if (tKey && Array.isArray(p1.intent_data) && p1.intent_data.length > 0) {
+    const needsVerify = p1.intent_data.filter(function(s) {
+      var url = s.source_url;
+      if (!url || !url.startsWith('http')) return true;
+      // reject homepage-only URLs (no meaningful path)
+      var path = url.replace(/https?:\/\/(www\.)?[^/]+/, '').replace(/\/$/, '');
+      return path.length < 3;
+    });
+    if (needsVerify.length > 0) {
+      onStep("🔍 Verifying " + needsVerify.length + " intent signal source" + (needsVerify.length > 1 ? "s" : "") + "...");
+      const verifySearches = needsVerify.slice(0, 5).map(function(s) {
+        var keyPhrase = s.signal.split(' ').slice(0, 7).join(' ');
+        var yr = (s.date || '').replace(/\D/g, '').slice(0, 4) || '2025';
+        return tavilyRaw(company + ' ' + keyPhrase + ' ' + yr, tKey, 3, 730);
+      });
+      const verifyResults = await Promise.all(verifySearches);
+      needsVerify.forEach(function(s, i) {
+        var hits = verifyResults[i] || [];
+        var best = hits.find(function(h) {
+          if (!h.url || !h.url.startsWith('http')) return false;
+          var path = h.url.replace(/https?:\/\/(www\.)?[^/]+/, '').replace(/\/$/, '');
+          return path.length >= 3;
+        });
+        if (best) {
+          s.source_url = best.url;
+          s.source_type = s.source_type === 'Grok real-time knowledge' ? 'News Article' : (s.source_type || 'News Article');
+          s.verified = true;
+        }
+      });
+    }
+  }
 
   // Merge contacts
   p1.key_contacts = contacts.length > 0 ? contacts : (p1.key_contacts || []);
@@ -1016,18 +1049,24 @@ function AnalysisView({ data, onEventsUpdate }) {
         <Sec title="📡 Intent Signals" accent={C.cyan} open={false}>
           {(data.intent_data || []).map(function(s, i) {
             var srcType = s.source_type || (s.type === "X_Signal" ? "X Post" : "Web");
-            var srcColor = srcType === "X Post" ? C.text : srcType === "News" ? C.accent : srcType === "LinkedIn" ? "#0A66C2" : srcType === "Press Release" ? C.green : C.muted;
-            var hasUrl = s.source_url && s.source_url.startsWith("http");
+            var srcColor = srcType === "X Post" ? C.text : srcType.startsWith("News") ? C.accent : srcType.startsWith("LinkedIn") ? "#0A66C2" : srcType === "Press Release" ? C.green : C.muted;
+            var rawUrl = s.source_url;
+            var urlPath = rawUrl ? rawUrl.replace(/https?:\/\/(www\.)?[^/]+/, '').replace(/\/$/, '') : '';
+            var hasUrl = rawUrl && rawUrl.startsWith("http") && urlPath.length >= 3;
+            var isVerified = hasUrl && s.verified !== false;
+            var isGrokKnowledge = !hasUrl || srcType === "Grok real-time knowledge";
             return (
-              <div key={i} style={{ padding: "10px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + C.border }}>
+              <div key={i} style={{ padding: "10px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + (isVerified ? C.cyan + "40" : C.border) }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
                   <Badge color="cyan" sm>{s.type}</Badge>
                   <span style={{ background: srcColor + "22", border: "1px solid " + srcColor + "50", color: srcColor, borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 700 }}>{srcType}</span>
+                  {isVerified && <span style={{ fontSize: 10, color: C.green }} title="Source URL verified">✅</span>}
+                  {isGrokKnowledge && <span style={{ fontSize: 10, color: C.muted }} title="Based on Grok real-time knowledge — no specific URL available">🧠</span>}
                   {s.date && <span style={{ color: C.dim, fontSize: 10 }}>{s.date}</span>}
                 </div>
                 <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5, marginBottom: 4 }}>{s.signal}</div>
                 {s.implication && <div style={{ color: C.accent, fontSize: 10, marginBottom: 5 }}>→ {s.implication}</div>}
-                {hasUrl
+                {isVerified
                   ? <a href={s.source_url} target="_blank" rel="noopener noreferrer" style={{ color: C.cyan, fontSize: 10, textDecoration: "none", fontWeight: 600 }}>→ View Source</a>
                   : <span style={{ color: C.dim, fontSize: 10 }}>Source: Grok real-time knowledge</span>}
               </div>
