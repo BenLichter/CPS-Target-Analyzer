@@ -127,7 +127,7 @@ async function runAnalysis(company, onStep, keys) {
   const { tavily: tKey, ninjapear: njKey, grok: gKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
-  const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow this exact structure:\n\nStep 1 — Find the volume driver. Identify the most appropriate volume metric based on business model:\n  Brokers/Investment Firms: AUM or annual trading volume\n  Neobanks: annual payment volume or total transaction volume\n  Remittance Fintechs: annual remittance volume\n  Regional/Middle Market Banks: total payment volume or deposit base\n  Escrow: annual escrow transaction volume\n  Luxury Travel: annual booking volume or GMV\n  Luxury Goods: annual GMV or revenue\n  Gaming & Casinos: annual GGR or wagering volume\nUse the actual figure from the provided research data. If not found, make an informed estimate based on company size, funding, and comparable companies — state clearly that it is an estimate.\n\nStep 2 — Calculate crypto adoption volume. Apply a rate based on this company\'s current crypto maturity:\n  Already offering crypto: 15-25% of volume\n  Actively exploring crypto: 8-15% of volume\n  Early stage / no crypto yet: 3-8% of volume\nCrypto adoption volume = Total volume x adoption rate.\n\nStep 3 — Calculate SOM. SOM = Crypto adoption volume x 0.5% CoinPayments fee rate. This is the serviceable obtainable market — what CoinPayments can realistically earn from this company\'s crypto volume.\n\nStep 4 — Calculate projected ARR. projected_arr = SOM x capture rate:\n  1% for no existing crypto infrastructure or early exploration\n  1.5% for actively piloting or exploring crypto payments\n  2% for already partially deployed or strong crypto affinity\nupside_arr = SOM x 3% capture rate.\n\nStep 5 — Sanity check. Does projected_arr make sense relative to the company\'s overall scale? Flag and adjust if the number seems too low or too high — explain why.\n\nAlways show full inline math in som_calculation in this format:\n"[Volume driver] x [adoption %] = [crypto volume] x 0.5% fee = [SOM] x [capture %] = [Projected ARR]"\nExample: "$500B AUM x 10% crypto adoption = $50B crypto volume x 0.5% fee = $250M SOM x 1.5% = $3.75M ARR"\n\nOutput fields: tam = broad industry TAM for reference only (not used in calculation), som = crypto adoption volume x 0.5% fee, projected_arr = SOM x capture rate, upside_arr = SOM x 3%.';
+  const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow this exact structure:\n\nStep 1 — Find the volume driver. Identify the most appropriate volume metric based on business model:\n  FX & Brokerage: AUM or annual trading volume\n  Neobanks: annual payment volume or total transaction volume\n  Remittance Fintechs: annual remittance volume\n  Regional/Middle Market Banks: total payment volume or deposit base\n  Escrow: annual escrow transaction volume\n  Luxury Travel: annual booking volume or GMV\n  Luxury Goods: annual GMV or revenue\n  Gaming & Casinos: annual GGR or wagering volume\nUse the actual figure from the provided research data. If not found, make an informed estimate based on company size, funding, and comparable companies — state clearly that it is an estimate.\n\nStep 2 — Calculate crypto adoption volume. Apply a rate based on this company\'s current crypto maturity:\n  Already offering crypto: 15-25% of volume\n  Actively exploring crypto: 8-15% of volume\n  Early stage / no crypto yet: 3-8% of volume\nCrypto adoption volume = Total volume x adoption rate.\n\nStep 3 — Calculate SOM. SOM = Crypto adoption volume x 0.5% CoinPayments fee rate. This is the serviceable obtainable market — what CoinPayments can realistically earn from this company\'s crypto volume.\n\nStep 4 — Calculate projected ARR. projected_arr = SOM x capture rate:\n  1% for no existing crypto infrastructure or early exploration\n  1.5% for actively piloting or exploring crypto payments\n  2% for already partially deployed or strong crypto affinity\nupside_arr = SOM x 3% capture rate.\n\nStep 5 — Sanity check. Does projected_arr make sense relative to the company\'s overall scale? Flag and adjust if the number seems too low or too high — explain why.\n\nAlways show full inline math in som_calculation in this format:\n"[Volume driver] x [adoption %] = [crypto volume] x 0.5% fee = [SOM] x [capture %] = [Projected ARR]"\nExample: "$500B AUM x 10% crypto adoption = $50B crypto volume x 0.5% fee = $250M SOM x 1.5% = $3.75M ARR"\n\nOutput fields: tam = broad industry TAM for reference only (not used in calculation), som = crypto adoption volume x 0.5% fee, projected_arr = SOM x capture rate, upside_arr = SOM x 3%.';
 
   // Phase 0a — News
   let ctx = "";
@@ -491,7 +491,7 @@ async function runFinancialCalc(company, onStep, keys) {
     if (items.length) ctx = "=== SCALE DATA for " + company + " ===\n" + items.slice(0, 8).join("\n") + "\n=== END ===\n\n";
   }
   onStep("💰 Recalculating financials...");
-  const FIN_SYS = 'Output ONLY valid JSON. No markdown. Start with { end with }.\n\nARR METHODOLOGY:\nStep 1: Find real scale metric (active users OR payment volume OR AUM) from context.\nStep 2: Apply vertical crypto penetration (Remittance 12-18%, Neobanks 4-8%, Brokerage 8-15%, Luxury Travel 3-6%, Luxury Goods 2-5%, Gaming 15-25%).\nStep 3: SOM = addressable base × $450/user/year.\nStep 4: projected_arr = SOM × 1.5% (1% early-stage, 2% if exploring crypto). upside_arr = SOM × 3%.\nAlways show full math inline in som_calculation.';
+  const FIN_SYS = 'Output ONLY valid JSON. No markdown. Start with { end with }.\n\nARR METHODOLOGY:\nStep 1: Find real scale metric (active users OR payment volume OR AUM) from context.\nStep 2: Apply vertical crypto penetration (Remittance 12-18%, Neobanks 4-8%, FX & Brokerage 8-15%, Luxury Travel 3-6%, Luxury Goods 2-5%, Gaming 15-25%).\nStep 3: SOM = addressable base × $450/user/year.\nStep 4: projected_arr = SOM × 1.5% (1% early-stage, 2% if exploring crypto). upside_arr = SOM × 3%.\nAlways show full math inline in som_calculation.';
   var raw = await callAPI(FIN_SYS, sanitize(ctx) + "Calculate TAM/SOM/ARR for " + company + ". Today: " + todayStr + ".\nOutput ONLY: {\"tam_som_arr\":{\"tam_usd\":\"$X\",\"scale_metric\":\"X\",\"penetration_rate\":\"X%\",\"addressable_base\":\"X\",\"avg_transaction_value\":\"$450/user/year\",\"som\":\"$X\",\"capture_rate\":\"1.5%\",\"projected_arr\":\"$X\",\"upside_arr\":\"$X\",\"som_calculation\":\"full math string\",\"assumptions\":[]}}", 1200);
   return parseJSON(raw);
 }
@@ -1183,7 +1183,7 @@ var TIERS = [
 ];
 var FS_SUBVERTS = [
   { id:"remittance",   label:"Remittance Fintechs",          color:"#00C2FF" },
-  { id:"brokerage",    label:"Brokerage & Investment",        color:"#F59E0B" },
+  { id:"brokerage",    label:"FX & Brokerage",                color:"#F59E0B" },
   { id:"neobanks",     label:"Neobanks",                      color:"#8B5CF6" },
   { id:"regional_bank",label:"Regional / Middle Market Banks",color:"#10B981" },
   { id:"escrow",       label:"Escrow",                        color:"#EC4899" },
@@ -1302,7 +1302,7 @@ function geoFallbackCoords(geography) {
 var MAP_BUCKET_OPTS = [
   { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
   { id:"remittance",    label:"Remittance Fintechs",           filterType:"tier"     },
-  { id:"brokerage",     label:"Brokerage & Investment Firms",  filterType:"tier"     },
+  { id:"brokerage",     label:"FX & Brokerage",                filterType:"tier"     },
   { id:"neobanks",      label:"Neobanks",                      filterType:"tier"     },
   { id:"regional_bank", label:"Regional / Middle Market Banks",filterType:"tier"     },
   { id:"escrow",        label:"Escrow",                        filterType:"tier"     },
@@ -2404,7 +2404,16 @@ export default function App() {
   // Load pipeline from server on mount — server is source of truth for cross-device sync
   useEffect(function() {
     fetch("/api/pipeline").then(function(r){ return r.json(); }).then(function(d) {
-      if (Array.isArray(d.pipeline) && d.pipeline.length > 0) setPipelineDeals(d.pipeline.filter(function(d){ return d && d.company; }));
+      if (Array.isArray(d.pipeline) && d.pipeline.length > 0) {
+        // Migrate any deals where the old label was stored as the tier value
+        var migrated = d.pipeline.filter(function(d){ return d && d.company; }).map(function(d) {
+          if (d.tier === "Brokerage & Investment" || d.tier === "Brokerage & Investment Firms") {
+            return Object.assign({}, d, { tier: "brokerage" });
+          }
+          return d;
+        });
+        setPipelineDeals(migrated);
+      }
       setPipeLoaded(true);
     }).catch(function(){ setPipeLoaded(true); });
   }, []);
