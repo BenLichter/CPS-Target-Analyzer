@@ -2089,7 +2089,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                             </button>
                                         }
                                       </div>
-                                      {deckErr && <div style={{ padding:"3px 12px 0", color:C.red, fontSize:9 }}>{ds.slice(6)}</div>}
+                                      {deckErr && (
+                                        <div style={{ padding:"5px 12px 4px", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                                          <span style={{ color:C.gold, fontSize:9 }}>⚠️ {ds.slice(6).includes("404") || ds.slice(6).toLowerCase().includes("not found") ? "Gamma key invalid or API unavailable" : ds.slice(6).slice(0, 70)}</span>
+                                          <button onClick={function(){ buildGammaDeck(deal); }}
+                                            style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"2px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>Retry</button>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })()}
@@ -2200,8 +2206,10 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
       </div>
 
       {status && (
-        <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"14px 18px", marginBottom:16, color:status.startsWith("❌")?C.red:C.accent, fontSize:12, fontWeight:600 }}>
-          {status}
+        <div style={{ background:C.card, border:"1px solid "+(status.startsWith("❌")?C.gold+"80":C.border), borderRadius:8, padding:"14px 18px", marginBottom:16, color:status.startsWith("❌")?C.gold:C.accent, fontSize:12, fontWeight:600 }}>
+          {status.startsWith("❌") && (status.includes("404") || status.toLowerCase().includes("not found"))
+            ? "❌ Gamma API key invalid or endpoint unavailable — check your key in Settings"
+            : status}
         </div>
       )}
 
