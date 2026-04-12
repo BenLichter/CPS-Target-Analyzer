@@ -1693,10 +1693,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"", ninjapear:njKey||"", grok:grokKey||"" }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
-      // Financials are frozen — preserve deal.financials and deal.arr unchanged
+      var t = (data && data.tam_som_arr) || {};
+      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshFin = buildFinancials(t, freshArr, false);
+      freshFin.updatedByRerun = true;
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120) });
+        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
     }).catch(function(err) {
@@ -2175,7 +2178,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                   <div>
                                     <div style={{ color:C.cyan, fontWeight:800, fontSize:22, lineHeight:1.1, marginBottom:2 }}>{dispArr}</div>
                                     {deal.financials && (
-                                      <div style={{ color:C.dim, fontSize:8 }}>🔒 {deal.financials.setOnAdd?"Set on add":"Updated"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                                      <div style={{ color:C.dim, fontSize:8 }}>{deal.financials.updatedByRerun?"✏️ Financials updated":"🔒 Financials locked"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
                                     )}
                                   </div>
                                 )}
