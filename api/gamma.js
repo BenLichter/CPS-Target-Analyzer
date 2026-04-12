@@ -40,13 +40,15 @@ export default async function handler(req, res) {
 
   try {
     const payload = {
-      inputText: prompt,
-      format: 'presentation',
-      numCards: 10,
-      additionalInstructions: title ? 'Title: ' + title : undefined,
+      text: prompt,
+      textMode: 'generate',
+      mode: 'presentation',
+      title: title || prompt.slice(0, 80),
+      language: 'en',
     };
 
     console.log('[Gamma proxy] Submitting generation | key prefix:', apiKey.slice(0, 10) + '...');
+    console.log('[Gamma proxy] Request body:', JSON.stringify(payload));
 
     const response = await fetch(`${GAMMA_BASE}/generations`, {
       method: 'POST',

@@ -20,12 +20,15 @@ export default async function handler(req, res) {
 
   try {
     const payload = {
-      inputText: 'Create a 3-slide test presentation about CoinPayments crypto payment infrastructure.',
-      format: 'presentation',
-      numCards: 3,
+      text: 'Create a 3-slide test presentation about CoinPayments crypto payment infrastructure.',
+      textMode: 'generate',
+      mode: 'presentation',
+      title: 'CoinPayments Test',
+      language: 'en',
     };
 
     console.log('[Gamma test] Submitting | key prefix:', key.slice(0, 10) + '...');
+    console.log('[Gamma test] Request body:', JSON.stringify(payload));
 
     const r = await fetch(`${GAMMA_BASE}/generations`, {
       method: 'POST',
