@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 const MODEL    = "claude-sonnet-4-20250514";
 const TKEY_LS  = "cp_tavily_key";
 const NJKEY_LS = "cp_ninjapear_key";
+const GROK_KEY_LS = "cp_grok_key";
 const HIST_LS  = "cp_history";
 const PIPE_LS  = "cp_pipeline";
 
@@ -50,6 +51,20 @@ async function callAPI(system, user, maxTokens) {
   const blocks = (j.content || []).filter(b => b.type === "text");
   if (!blocks.length) throw new Error("Empty response from Claude");
   return blocks.map(b => b.text).join("\n");
+}
+
+async function callGrok(system, user, maxTokens, fast, gKey) {
+  const model = fast ? "grok-3-fast" : "grok-3";
+  const res = await fetch("/api/grok", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, max_tokens: maxTokens || 8000, system, messages: [{ role: "user", content: user }], key: gKey }),
+  });
+  if (!res.ok) { const t = await res.text().catch(() => ""); throw new Error("Grok " + res.status + (t ? " - " + t.slice(0, 120) : "")); }
+  const j = await res.json();
+  if (j.error) throw new Error(typeof j.error === "string" ? j.error : (j.error.message || JSON.stringify(j.error)));
+  const choice = (j.choices || [])[0];
+  if (!choice) throw new Error("Empty response from Grok");
+  return (choice.message && choice.message.content) || choice.text || "";
 }
 
 function parseJSON(raw) {
@@ -102,7 +117,7 @@ function profileToContact(p, source) {
 }
 
 async function runAnalysis(company, onStep, keys) {
-  const { tavily: tKey, ninjapear: njKey } = keys;
+  const { tavily: tKey, ninjapear: njKey, grok: gKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
   const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow exactly:\nStep 1: Find the company real scale metric from scraped data: active users OR monthly transaction volume OR annual payment volume OR AUM. Use the most specific number from search results, not industry estimates.\nStep 2: Apply vertical-specific crypto penetration rate to get addressable base:\n  Remittance Fintechs: 12-18% | Neobanks: 4-8% | Brokerage & Investment: 8-15% | Luxury Travel: 3-6% | Luxury Goods: 2-5% | Gaming & Casinos: 15-25%\nStep 3: SOM = addressable base × $450 per user per year (default if transaction value unavailable).\nStep 4: projected_arr = SOM × 1.5% capture rate (use 1% early-stage, 2% if already exploring crypto). upside_arr = SOM × 3%.\nStep 5: Output fields: tam = broad industry market size (reference only), som = bottoms-up per above, projected_arr = SOM × capture rate, upside_arr = SOM × 3%. Always show math inline e.g. "15M users × 6% = 900K users × $450 = $405M SOM × 1.5% = $6.1M ARR".';
@@ -321,20 +336,36 @@ async function runAnalysis(company, onStep, keys) {
     }
   }
 
-  // Phase 1 — Core intelligence
-  onStep("🧠 Claude core analysis...");
-  const p1raw = await callAPI(SYS, sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}", 7000);
+  // Phase 1 — Core intelligence (Grok primary, Claude fallback)
+  onStep("🧠 Grok core analysis...");
+  var P1_USER = sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
+  var p1raw;
+  if (gKey) {
+    try { p1raw = await callGrok(SYS, P1_USER, 8000, false, gKey); }
+    catch (grokErr) {
+      onStep("⚠️ Grok unavailable, falling back to Claude...");
+      p1raw = await callAPI(SYS, P1_USER, 7000);
+    }
+  } else {
+    p1raw = await callAPI(SYS, P1_USER, 7000);
+  }
   const p1 = parseJSON(p1raw);
 
   // Merge contacts
   p1.key_contacts = contacts.length > 0 ? contacts : (p1.key_contacts || []);
 
-  // Phase 1b — News categories
+  // Phase 1b — News categories (Grok-fast primary, Claude fallback)
   if (rawNews.length > 0) {
     onStep("📰 Categorizing news...");
     try {
       const articleList = rawNews.slice(0, 10).map((r, i) => (i + 1) + ". " + r.title + " (" + (r.published_date || "") + ")\n   " + (r.content || "").slice(0, 180)).join("\n\n");
-      const catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000);
+      var catRaw;
+      if (gKey) {
+        try { catRaw = await callGrok("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000, true, gKey); }
+        catch { catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000); }
+      } else {
+        catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000);
+      }
       let cs = catRaw.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
       const cats = cs.startsWith("[") ? JSON.parse(cs) : [];
       p1.recent_news = rawNews.slice(0, 10).map((r, i) => {
@@ -354,14 +385,22 @@ async function runAnalysis(company, onStep, keys) {
 
   var contactsForEvt = contacts.slice(0,5).map(function(c){return c.name+" ("+c.title+")";}).join(", ");
 
+  // Phase 2 & 3 use Grok for competitive + GTM (real-time X knowledge); Claude fallback
+  var P2_SYS = SYS;
+  var P2_USER = "Use your real-time knowledge of " + company + "'s current payment infrastructure and any recent X posts or announcements to compare CoinPayments vs what " + company + " currently has.\nCompare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}";
+  var P3_USER = "Build GTM attack plan for CoinPayments to win " + company + ". Use your real-time knowledge of " + company + "'s strategic direction and any X signals from their leadership.\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}";
+  var P4_SYS = "Extract industry event attendance in TWO tiers. Output ONLY a JSON array, no markdown.\n\nTIER 1 — CONFIRMED (tier: \"confirmed\"): Source explicitly names " + company + " or a specific individual as Speaker/Sponsor/Exhibitor/Confirmed Attendee. You must be able to quote the exact sentence. No inference allowed.\n\nTIER 2 — LIKELY (tier: \"likely\"): Company or individual has historical attendance record at this event, OR the event is the primary industry event for their specific vertical, AND you have a Tavily source supporting this — e.g. '[Company] attended Money20/20 2024' or 'CMO-level executives from remittance fintechs typically present at...'. Still requires a source sentence. Pure inference with no source = exclude.\n\nFor ALL events (both tiers): must have specific event name, specific date, specific location.\nFor CONFIRMED: relevance = Speaker|Sponsor|Exhibitor|Confirmed Attendee. Must include source_post (verbatim quote, max 120 chars) and/or contacts_attending with evidence_quote.\nFor LIKELY: relevance = Likely. Must include reasoning (1 sentence with the sourced basis) and reasoning_url.";
+  var P4_USER = "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSOURCES:\n" + evtCtx + "\n\nOutput array of event objects. For CONFIRMED events:\n{\"tier\":\"confirmed\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[{\"name\":\"Full Name\",\"role\":\"title\",\"evidence_quote\":\"verbatim sentence (max 140 chars)\",\"evidence_url\":\"url\",\"evidence_platform\":\"X|LinkedIn|Official Event Page|Press Release|News Article\"}],\"source_post\":\"verbatim confirmation quote (max 120 chars)\",\"url\":\"source url\",\"notes\":\"\"}\n\nFor LIKELY events:\n{\"tier\":\"likely\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Likely\",\"reasoning\":\"1 sentence with sourced basis e.g. company attended in 2024 and 2025\",\"reasoning_url\":\"source url\",\"contacts_attending\":[],\"source_post\":\"\",\"url\":\"reasoning_url value\",\"notes\":\"\"}\n\nIf nothing qualifies for either tier, output [].";
+
+  function grokOrClaude(sys, user, tokens, fast) {
+    if (gKey) return callGrok(sys, user, tokens, fast, gKey).catch(function() { return callAPI(sys, user, tokens); });
+    return callAPI(sys, user, tokens);
+  }
+
   const [p2raw, p3raw, p4raw] = await Promise.all([
-    callAPI(SYS, "Compare CoinPayments capabilities vs what " + company + " currently has or offers in payments and crypto. The two columns are CoinPayments and " + company + " itself (not an incumbent provider).\nFor each dimension, rate and explain what CoinPayments brings vs what " + company + " already has in-house or via existing providers.\nOutput ONLY: {\"competitive_comparison\":{\"coinpayments\":{" + COMPARE_ROWS.map(([, k]) => "\"" + k + "\":\"CoinPayments capability in 1 sentence\"").join(",") + "},\"target\":{\"name\":\"" + company + "\",\"" + COMPARE_ROWS.map(([, k]) => k + "\":\"what " + company + " currently has in 1 sentence\"").join(",\"") + "\"}},\"positioning_statement\":\"2-sentence statement on what CoinPayments uniquely adds to " + company + "'s existing stack\"}", 3000),
-    callAPI(SYS, "Build GTM attack plan for CoinPayments to win " + company + ".\nOutput ONLY: {\"attack_plan\":{\"icp_profile\":{\"primary_buyer\":\"title\",\"champion\":\"who advocates\",\"blocker\":\"who blocks\",\"trigger_event\":\"what makes them act\"},\"sequenced_timeline\":[{\"week\":\"Week 1-2\",\"action\":\"specific action\",\"goal\":\"what to achieve\"}],\"objection_handling\":[{\"objection\":\"likely objection\",\"response\":\"how to handle\"}],\"motions\":{\"abm\":{\"tactic\":\"specific ABM tactic\"},\"outbound\":{\"hook\":\"opening line\",\"cta\":\"call to action\"},\"events\":{\"events\":\"which conferences\",\"play\":\"engagement strategy\"}}}}", 3000),
-    evtCtx ? callAPI(
-      "Extract industry event attendance in TWO tiers. Output ONLY a JSON array, no markdown.\n\nTIER 1 — CONFIRMED (tier: \"confirmed\"): Source explicitly names " + company + " or a specific individual as Speaker/Sponsor/Exhibitor/Confirmed Attendee. You must be able to quote the exact sentence. No inference allowed.\n\nTIER 2 — LIKELY (tier: \"likely\"): Company or individual has historical attendance record at this event, OR the event is the primary industry event for their specific vertical, AND you have a Tavily source supporting this — e.g. '[Company] attended Money20/20 2024' or 'CMO-level executives from remittance fintechs typically present at...'. Still requires a source sentence. Pure inference with no source = exclude.\n\nFor ALL events (both tiers): must have specific event name, specific date, specific location.\nFor CONFIRMED: relevance = Speaker|Sponsor|Exhibitor|Confirmed Attendee. Must include source_post (verbatim quote, max 120 chars) and/or contacts_attending with evidence_quote.\nFor LIKELY: relevance = Likely. Must include reasoning (1 sentence with the sourced basis) and reasoning_url.",
-      "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSOURCES:\n" + evtCtx + "\n\nOutput array of event objects. For CONFIRMED events:\n{\"tier\":\"confirmed\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[{\"name\":\"Full Name\",\"role\":\"title\",\"evidence_quote\":\"verbatim sentence (max 140 chars)\",\"evidence_url\":\"url\",\"evidence_platform\":\"X|LinkedIn|Official Event Page|Press Release|News Article\"}],\"source_post\":\"verbatim confirmation quote (max 120 chars)\",\"url\":\"source url\",\"notes\":\"\"}\n\nFor LIKELY events:\n{\"tier\":\"likely\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Likely\",\"reasoning\":\"1 sentence with sourced basis e.g. company attended in 2024 and 2025\",\"reasoning_url\":\"source url\",\"contacts_attending\":[],\"source_post\":\"\",\"url\":\"reasoning_url value\",\"notes\":\"\"}\n\nIf nothing qualifies for either tier, output [].",
-      2500
-    ) : Promise.resolve("[]"),
+    grokOrClaude(P2_SYS, P2_USER, 3000, false),
+    grokOrClaude(P2_SYS, P3_USER, 3000, false),
+    evtCtx ? callAPI(P4_SYS, P4_USER, 2500) : Promise.resolve("[]"),
   ]);
 
   try { const p2 = parseJSON(p2raw); p1.competitive_comparison = p2.competitive_comparison; p1.positioning_statement = p2.positioning_statement; } catch {}
@@ -1349,7 +1388,7 @@ function WorldMap({ deals }) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
+function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grokKey }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
@@ -1383,7 +1422,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Starting..."}); });
     runAnalysis(deal.company, function(step){
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
-    }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
+    }, { tavily:tKey||"", ninjapear:njKey||"", grok:grokKey||"" }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       // Financials are frozen — preserve deal.financials and deal.arr unchanged
       setDeals(function(prev){ return prev.map(function(d){
@@ -1948,8 +1987,9 @@ export default function App() {
   var s5  = useState(null);      var result  = s5[0];  var setResult  = s5[1];
   var s6  = useState("");        var error   = s6[0];  var setError   = s6[1];
   var s7  = useState(false);     var showKeys= s7[0];  var setShowKeys= s7[1];
-  var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; }); var tKey  = s8[0]; var setTKey  = s8[1];
-  var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; }); var njKey = s9[0]; var setNjKey = s9[1];
+  var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; });      var tKey    = s8[0];  var setTKey    = s8[1];
+  var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; });     var njKey   = s9[0];  var setNjKey   = s9[1];
+  var sGk = useState(function(){ return localStorage.getItem(GROK_KEY_LS)||""; }); var grokKey = sGk[0]; var setGrokKey = sGk[1];
   var s10 = useState(function(){ try { return JSON.parse(localStorage.getItem(HIST_LS)||"[]"); } catch { return []; } });
   var history      = s10[0]; var setHistory      = s10[1];
   var s11 = useState(function(){ try { return (JSON.parse(localStorage.getItem(PIPE_LS)||"[]")).filter(function(d){ return d && d.company; }); } catch { return []; } });
@@ -1984,7 +2024,7 @@ export default function App() {
     if (!company.trim() || loading) return;
     setLoading(true); setError(""); setResult(null); setStep("Starting analysis...");
     try {
-      var data = await runAnalysis(company.trim(), setStep, { tavily:tKey, ninjapear:njKey });
+      var data = await runAnalysis(company.trim(), setStep, { tavily:tKey, ninjapear:njKey, grok:grokKey });
       setResult(data);
       setHistory(function(h){ return [{ company:data.company, analyzedAt:data.analyzedAt, data:data }].concat(h.slice(0,9)); });
       setPage("result");
@@ -1992,8 +2032,8 @@ export default function App() {
     setLoading(false); setStep("");
   }
 
-  var keyColor = (tKey&&njKey)?C.green:(tKey||njKey)?C.gold:C.red;
-  var keyLabel = (tKey&&njKey)?"🟢 Full Intel":(tKey||njKey)?"🟡 Partial":"🔑 Add Keys";
+  var keyColor = (grokKey&&tKey&&njKey)?C.green:(grokKey||tKey||njKey)?C.gold:C.red;
+  var keyLabel = (grokKey&&tKey&&njKey)?"🟢 Full Intel":(grokKey||tKey||njKey)?"🟡 Partial":"🔑 Add Keys";
 
   var pipeCount = history.length; // pipeline uses history-imported deals, no separate count needed in nav
   var NAV = [
@@ -2034,22 +2074,25 @@ export default function App() {
             <button onClick={function(){setShowKeys(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11 }}>Done</button>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:12 }}>
-            {[{ label:"🌐 Tavily Search", desc:"Live news · app.tavily.com ($35/mo Starter)", lsk:TKEY_LS, val:tKey, fn:function(v){saveKey(TKEY_LS,v,setTKey);}, ph:"tvly-xxxx" },
-              { label:"🎯 NinjaPear",     desc:"Executive profiles · nubela.co/dashboard",    lsk:NJKEY_LS,val:njKey,fn:function(v){saveKey(NJKEY_LS,v,setNjKey);},ph:"api key from nubela.co" }
+            {[{ label:"⚡ xAI / Grok",      desc:"Primary intelligence · console.x.ai",          lsk:GROK_KEY_LS, val:grokKey, fn:function(v){saveKey(GROK_KEY_LS,v,setGrokKey);}, ph:"xai-xxxx", warn:!grokKey },
+              { label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,     val:tKey,    fn:function(v){saveKey(TKEY_LS,v,setTKey);},         ph:"tvly-xxxx" },
+              { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS,    val:njKey,   fn:function(v){saveKey(NJKEY_LS,v,setNjKey);},        ph:"api key from nubela.co" }
             ].map(function(k){
               return (
-                <div key={k.label} style={{ background:C.card, borderRadius:8, padding:"12px 14px", border:"1px solid "+(k.val?C.green+"40":C.border) }}>
+                <div key={k.label} style={{ background:C.card, borderRadius:8, padding:"12px 14px", border:"1px solid "+(k.val?C.green+"40":k.warn?C.red+"50":C.border) }}>
                   <div style={{ display:"flex", gap:6, alignItems:"center", marginBottom:4 }}>
                     <span style={{ color:C.text, fontWeight:700, fontSize:11 }}>{k.label}</span>
                     {k.val && <Badge color="green" sm>CONNECTED</Badge>}
+                    {k.warn && <Badge color="red" sm>REQUIRED</Badge>}
                   </div>
-                  <div style={{ color:C.dim, fontSize:10, marginBottom:8 }}>{k.desc}</div>
+                  <div style={{ color:C.dim, fontSize:10, marginBottom:k.warn?4:8 }}>{k.desc}</div>
+                  {k.warn && <div style={{ color:C.red, fontSize:9, marginBottom:6, lineHeight:1.4 }}>⚠️ Grok key required for primary analysis. Add your xAI API key from console.x.ai</div>}
                   <input type="password" value={k.val} onChange={function(e){k.fn(e.target.value);}} placeholder={k.ph} style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none" }}/>
                 </div>
               );
             })}
           </div>
-          <div style={{ marginTop:10, color:C.dim, fontSize:10 }}>Keys are saved to this browser only. NinjaPear finds executives: CEO, CMO, CPO, CTO, COO, CFO + VPs.</div>
+          <div style={{ marginTop:10, color:C.dim, fontSize:10 }}>Keys are saved to this browser only. Grok = primary analysis + X signals. NinjaPear finds executives: CEO, CMO, CPO, CTO, COO, CFO + VPs.</div>
         </div>
       )}
 
@@ -2117,7 +2160,7 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} grokKey={grokKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
 
         {/* History */}
         {page==="history" && (
