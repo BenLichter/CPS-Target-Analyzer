@@ -25,7 +25,6 @@ export default async function handler(req, res) {
     textMode: 'generate',
     format: 'presentation',
     numCards: 10,
-    theme: 'midnight',
     textOptions: { language: 'en' },
     additionalInstructions: title
       ? 'Title: ' + title + '. Create a professional B2B sales presentation with a dark, minimal design.'
