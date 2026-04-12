@@ -1457,39 +1457,68 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       var fin = deal.financials || {};
       var contacts = (ad.key_contacts||[]).slice(0,5).map(function(c){ return c.name + " (" + c.title + ")" + (c.linkedin?" — "+c.linkedin:""); }).join("\n");
       var intentions = (ad.intent_data||[]).slice(0,4).map(function(s){ return "- " + s.signal + " (" + (s.date||"") + ")"; }).join("\n");
+      var co = deal.company;
       var outline = await callGrok(
-        "You are a senior B2B sales expert at CoinPayments. Create a detailed, specific pitch deck outline using the provided company data.",
-        "Create a 10-slide pitch deck outline for CoinPayments targeting " + deal.company + ".\n\nCOMPANY DATA:\n" +
+        "You are a senior B2B sales strategist. You write executive pitch decks that speak directly to the prospect's business outcomes. Every word is written from the prospect's perspective — they are the hero, your client is the enabler.",
+        "Create a concise 3-5 slide executive pitch deck presented TO " + co + "'s leadership team on behalf of CoinPayments. The entire deck is written FOR " + co + " — every slide speaks to their business outcomes, their ROI, their competitive position. CoinPayments is the enabler, not the hero. " + co + " is the hero.\n\n" +
+        "COMPANY DATA:\n" +
         "Segment: " + (ad.segment||deal.vertical||"") + "\n" +
         "HQ: " + (ad.hq||deal.geography||"") + "\n" +
         "Employees: " + (ad.employees||"") + "\n" +
         "Executive Summary: " + (ad.executive_summary||"") + "\n" +
-        "Projected ARR: " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
+        "Projected ARR (CoinPayments fee revenue): " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
         "SOM Calculation: " + (fin.som_calculation||"") + "\n" +
-        "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
-        "Key Contacts:\n" + (contacts||"none identified") + "\n" +
+        "Incumbent provider: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
         "Intent Signals:\n" + (intentions||"none") + "\n" +
         "Positioning: " + (ad.positioning_statement||"") + "\n\n" +
-        "REQUIRED SLIDES:\n" +
-        "Slide 1: Title — [" + deal.company + "] x CoinPayments Partnership Opportunity\n" +
-        "Slide 2: Executive Summary — why this target, key opportunity statement\n" +
-        "Slide 3: Company Overview — HQ, employees, segment, recent news highlights\n" +
-        "Slide 4: The Opportunity — TAM, SOM, projected ARR with bottoms-up calc\n" +
-        "Slide 5: Why Now — intent signals, recent crypto activity, market timing\n" +
-        "Slide 6: CoinPayments Solution Fit — how 100+ digital assets, white-label infra, fiat on/off ramps, API-first maps to their needs\n" +
-        "Slide 7: Competitive Advantage — CP vs their existing stack\n" +
-        "Slide 8: GTM Attack Plan — first 90 days, key contacts to engage\n" +
-        "Slide 9: Key Contacts — names, roles, LinkedIn links\n" +
-        "Slide 10: Next Steps — proposed meeting agenda, call to action\n\n" +
-        "For each slide provide: title, 3-5 bullet points with specific data, and 1 talking point. Be specific and use the provided data.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Avoid decorative language; keep all copy concise and data-driven.",
-        4000, false, grokKey
+        "REQUIRED SLIDES — write every bullet as a " + co + " outcome:\n\n" +
+        "Slide 1 — The Industry Is Moving Without You\n" +
+        "Open with the macro shift happening in " + co + "'s specific industry. Frame as urgency FOR THEM:\n" +
+        "- What are their peers and competitors doing with crypto right now?\n" +
+        "- What customer expectations are shifting in their segment?\n" +
+        "- What revenue is being captured by crypto-native competitors that " + co + " is not capturing?\n" +
+        "- What regulatory and market tailwinds make now the right moment?\n" +
+        "Use their industry language. Make them feel the competitive pressure.\n\n" +
+        "Slide 2 — Where " + co + " Stands Today\n" +
+        "Show you understand their business deeply. Be specific:\n" +
+        "- Their current payment infrastructure and where the gaps are\n" +
+        "- Their crypto signals to date — what have they announced, piloted, or explored?\n" +
+        "- The specific revenue opportunity they are not yet capturing: '" + co + " processes $X in [payment/trading/remittance] volume annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact — today that goes to competitors'\n" +
+        "- Frame the gap as their lost opportunity, not CoinPayments' opportunity\n\n" +
+        "Slide 3 — What " + co + " Unlocks\n" +
+        "Frame CoinPayments' capabilities entirely as " + co + "'s gains. Every bullet is a " + co + " outcome:\n" +
+        "- '" + co + " adds 100+ digital assets to their platform' — NOT 'CoinPayments offers 100+ assets'\n" +
+        "- '" + co + " launches crypto acceptance under their own brand in weeks' — NOT 'CoinPayments has white-label infrastructure'\n" +
+        "- '" + co + " bridges their existing fiat rails to crypto with zero customer disruption'\n" +
+        "- '" + co + "'s engineering team integrates via a single API without replacing existing infrastructure'\n" +
+        "CoinPayments is mentioned only as the technology partner making it possible.\n\n" +
+        "Slide 4 — How " + co + " Gets There\n" +
+        "Make implementation feel fast, low-risk, and within their control:\n" +
+        "- '" + co + " can be live in 4-8 weeks with a modular API integration'\n" +
+        "- Phase 1: [specific first use case tailored to their business model and crypto maturity]\n" +
+        "- Phase 2: [expansion use case based on their platform]\n" +
+        "- Phase 3: [full deployment scenario specific to their scale]\n" +
+        "- '" + co + " starts with one use case and expands on their own timeline — no big bang migration'\n" +
+        "- '" + co + " retains full brand control with white-label deployment'\n" +
+        "Every phase is " + co + "'s decision and " + co + "'s milestone.\n\n" +
+        "Slide 5 — " + co + "'s ROI\n" +
+        "Make the financial case entirely about " + co + "'s return. Use the actual numbers from the SOM calculation above:\n" +
+        "- '" + co + "'s crypto opportunity: $[volume] x [adoption]% = $[crypto volume] in addressable crypto payment volume'\n" +
+        "- '" + co + "'s new revenue potential: $[crypto volume] x [monetization rate] = $[new revenue for " + co + "] annually'\n" +
+        "- '" + co + "'s cost to unlock this: $[crypto volume] x 0.5% CoinPayments fee = $[annual fee] — less than [X]% of the new revenue generated'\n" +
+        "- Net ROI: 'For every $1 spent on CoinPayments infrastructure, " + co + " unlocks $[X] in new crypto payment revenue'\n" +
+        "- Competitive framing: '" + co + " moves ahead of [competitor] and captures the $[Z] in volume currently going to crypto-native alternatives'\n" +
+        "- Call to action: 'Ready to capture your crypto opportunity? Let's schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n\n" +
+        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero of every slide. CoinPayments is their enabling partner. 3-5 slides maximum. Every number comes from the actual analysis data. The prospect should feel this deck was built exclusively for them by someone who deeply understands their business and genuinely wants them to win.\n\n" +
+        "Design note: Format for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
+        6000, false, grokKey
       );
 
       // Step 2 — Start Gamma generation (returns immediately with generationId)
       setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"starting"}); });
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: outline, title: deal.company + " x CoinPayments — Partnership Opportunity", key: gammaKey }),
+        body: JSON.stringify({ prompt: outline, title: deal.company + " — Your Crypto Payment Opportunity", key: gammaKey }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
