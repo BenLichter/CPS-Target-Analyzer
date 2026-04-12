@@ -1494,7 +1494,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
 
       var deckPrompt = await callGrok(
         "You are a senior B2B sales strategist writing boardroom-ready pitch decks. Every word is from the prospect's perspective — they are the hero, CoinPayments is the enabler. Name competitors explicitly. Every claim is backed by a specific number.",
-        "Write a 5-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes, their ROI, their competitive position. CoinPayments is mentioned only as the enabling partner.\n\n" +
+        "Write a 4-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes and competitive position. CoinPayments is mentioned only as the enabling partner. Do not include ROI calculations, fee structures, or financial projections anywhere in the deck.\n\n" +
         "=== INDEPENDENT INTELLIGENCE (fresh Grok research) ===\n" +
         "Company full name: " + (intelData.full_name || co) + "\n" +
         "Business model: " + (intelData.business_model || "") + "\n" +
@@ -1508,14 +1508,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "Segment: " + (ad.segment||deal.vertical||"") + "\n" +
         "HQ: " + (ad.hq||deal.geography||"") + "\n" +
         "Executive Summary: " + (ad.executive_summary||"") + "\n" +
-        "Projected ARR (CoinPayments fee): " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
-        "SOM Calculation: " + (fin.som_calculation||"") + "\n" +
         "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
         "Intent Signals:\n" + (intentions||"none") + "\n" +
         "Key Contacts:\n" + (contacts||"none") + "\n" +
         (partnerList ? "Partnerships: " + partnerList + "\n" : "") +
         "Positioning: " + (ad.positioning_statement||"") + "\n\n" +
-        "=== 5-SLIDE NARRATIVE ARC ===\n\n" +
+        "=== 4-SLIDE NARRATIVE ARC ===\n\n" +
         "Slide 1 — The Competitive Gap\n" +
         "Open with the specific crypto moves competitors are making right now. Name them explicitly.\n" +
         "- Name the 2-3 primary competitors (" + (competitorNames||"their main rivals") + ") and exactly what crypto capabilities they have launched or announced\n" +
@@ -1523,13 +1521,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "- Frame the gap precisely: '" + co + " is [timeframe] behind [Competitor] in crypto payment capability'\n" +
         "- What customer segments are competitors capturing that " + co + " cannot serve today?\n" +
         "Make the competitive threat visceral with real names and specific product moves.\n\n" +
-        "Slide 2 — The Opportunity Cost\n" +
-        "Translate the competitive gap into real money " + co + " is leaving on the table right now.\n" +
-        "- Use the actual SOM calculation: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption = $Z in crypto volume your customers want — today that goes to [named competitor]'\n" +
+        "Slide 2 — " + co + "'s Crypto Opportunity Cost\n" +
+        "Translate the competitive gap into real revenue " + co + " is losing right now.\n" +
+        "- Use the actual SOM context: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact — today that goes to [named competitor]'\n" +
         "- Quantify customer churn risk: what % of their customer base is actively seeking crypto capabilities from competitors?\n" +
         "- What does [Competitor]'s crypto feature cost " + co + " in retention and new customer acquisition?\n" +
         "- Frame as revenue already being lost, not hypothetical future revenue\n\n" +
-        "Slide 3 — How " + co + " Closes the Gap\n" +
+        "Slide 3 — How " + co + " Closes the Gap With CoinPayments\n" +
         "Frame CoinPayments entirely as " + co + "'s competitive weapon. Every bullet is a " + co + " outcome:\n" +
         "- '" + co + " matches [Competitor]'s crypto capability in 4-8 weeks'\n" +
         "- '" + co + " adds 100+ digital assets to their existing platform without replacing current infrastructure'\n" +
@@ -1537,25 +1535,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "- '" + co + "'s engineering team integrates via a single API'\n" +
         "- Reference their actual business model or tech stack from the analysis data\n" +
         "CoinPayments appears once as the technology partner enabling these outcomes.\n\n" +
-        "Slide 4 — Path and ROI\n" +
-        "Show the exact path to deployment and make the ROI irrefutable:\n" +
+        "Slide 4 — " + co + "'s Path to Implementation\n" +
+        "Make implementation feel fast, low-risk, and within " + co + "'s control:\n" +
         "- Phase 1: [specific first use case for their business model] — live in 4-8 weeks\n" +
         "- Phase 2: [expansion tied to their platform] — weeks 9-16\n" +
         "- Phase 3: [full deployment at their scale] — month 4 onward\n" +
-        "- ROI calc: '" + co + "'s crypto opportunity: $[SOM] x capture rate = $[projected_arr] in new annual revenue for " + co + "'\n" +
-        "- 'CoinPayments fee: 0.5% of crypto volume processed = $[annual fee] — [X]x ROI in year 1'\n" +
-        "- 'For every $1 spent on CoinPayments infrastructure, " + co + " recovers $[X] in new crypto revenue'\n" +
-        (contacts ? "- Address named contacts: 'Built for [lead contact name]'s team to deploy in [their functional area]'\n" : "") +
+        "- '" + co + " starts with one use case and expands on their own timeline — no big-bang migration'\n" +
+        "- '" + co + " retains full brand control with white-label deployment'\n" +
+        "Close with a direct CTA to the specific named contacts from the analysis:\n" +
+        (contacts
+          ? "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Let's schedule a 30-minute technical walkthrough with " + contacts.split("\n").slice(0,2).map(function(c){ return c.split("(")[0].trim(); }).join(" and ") + " and the engineering team.'\n"
+          : "- 'Ready to close the gap? Let's schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n") +
         "\n" +
-        "Slide 5 — Let's Build This Together\n" +
-        "Close with a direct, time-bound CTA addressed to the specific people in the room:\n" +
-        "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Here's the 30-day plan'\n" +
-        "- Week 1: Technical discovery call" + (contacts ? " with " + contacts.split("\n")[0].split("(")[0].trim() : "") + "\n" +
-        "- Week 2-3: API integration scoping with engineering team\n" +
-        "- Week 4-8: Phase 1 go-live\n" +
-        "- '" + co + " goes live before " + (competitorNames.split(",")[0]||"the competition") + "'s next product release'\n" +
-        "- CTA: 'Schedule a 30-minute technical walkthrough — " + co + "'s payments and engineering teams'\n\n" +
-        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every number pulled from the data above. 5 slides maximum. Format for dark professional theme — minimal, high-contrast, data-driven.",
+        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every claim from the data above. 4 slides — no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme — minimal, high-contrast.",
         8000, false, grokKey
       );
 
