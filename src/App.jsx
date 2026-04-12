@@ -338,18 +338,27 @@ async function runAnalysis(company, onStep, keys) {
 
   // Phase 1 — Core intelligence (Grok primary, Claude fallback)
   onStep("🧠 Grok core analysis...");
-  var P1_USER = sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
+  var P1_USER = sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\", \"source_url\": \"direct URL to the X post, news article, press release, or profile page — required\", \"source_type\": \"X Post|News|LinkedIn|Press Release|Web\" }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
   var p1raw;
   if (gKey) {
-    try { p1raw = await callGrok(SYS, P1_USER, 8000, false, gKey); }
-    catch (grokErr) {
+    try {
+      console.log('[Phase 1] Using: grok-3');
+      p1raw = await callGrok(SYS, P1_USER, 8000, false, gKey);
+    } catch (grokErr) {
+      console.log('[Phase 1] Fallback: claude (Grok error:', grokErr.message, ')');
       onStep("⚠️ Grok unavailable, falling back to Claude...");
       p1raw = await callAPI(SYS, P1_USER, 7000);
+      p1raw = '__CLAUDE_FALLBACK__' + p1raw;
     }
   } else {
+    console.log('[Phase 1] Fallback: claude (no Grok key)');
     p1raw = await callAPI(SYS, P1_USER, 7000);
+    p1raw = '__CLAUDE_FALLBACK__' + p1raw;
   }
+  var p1UsedGrok = !p1raw.startsWith('__CLAUDE_FALLBACK__');
+  if (!p1UsedGrok) p1raw = p1raw.slice('__CLAUDE_FALLBACK__'.length);
   const p1 = parseJSON(p1raw);
+  p1.model_used = p1UsedGrok ? 'grok-3' : 'claude';
 
   // Merge contacts
   p1.key_contacts = contacts.length > 0 ? contacts : (p1.key_contacts || []);
@@ -896,6 +905,11 @@ function AnalysisView({ data, onEventsUpdate }) {
           {data.employees && <Badge color="muted">👥 {data.employees}</Badge>}
           {data.website && <Badge color="cyan">🌐 {data.website}</Badge>}
           {inc.name && <Badge color="gold">⚔ vs {inc.name}</Badge>}
+          {data.model_used === 'grok-3'
+            ? <span style={{ background:"#06B6D422", border:"1px solid #06B6D460", color:"#06B6D4", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700 }}>⚡ Powered by Grok</span>
+            : data.model_used === 'claude'
+              ? <span style={{ background:"#F59E0B22", border:"1px solid #F59E0B60", color:"#F59E0B", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700 }}>🤖 Powered by Claude (Grok unavailable)</span>
+              : null}
         </div>
         {data.executive_summary && <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.7 }}>{data.executive_summary}</div>}
       </div>
@@ -983,14 +997,21 @@ function AnalysisView({ data, onEventsUpdate }) {
       {(data.intent_data || []).length > 0 && (
         <Sec title="📡 Intent Signals" accent={C.cyan} open={false}>
           {(data.intent_data || []).map(function(s, i) {
+            var srcType = s.source_type || (s.type === "X_Signal" ? "X Post" : "Web");
+            var srcColor = srcType === "X Post" ? C.text : srcType === "News" ? C.accent : srcType === "LinkedIn" ? "#0A66C2" : srcType === "Press Release" ? C.green : C.muted;
+            var hasUrl = s.source_url && s.source_url.startsWith("http");
             return (
-              <div key={i} style={{ padding: "8px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + C.border }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+              <div key={i} style={{ padding: "10px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
                   <Badge color="cyan" sm>{s.type}</Badge>
+                  <span style={{ background: srcColor + "22", border: "1px solid " + srcColor + "50", color: srcColor, borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 700 }}>{srcType}</span>
                   {s.date && <span style={{ color: C.dim, fontSize: 10 }}>{s.date}</span>}
                 </div>
-                <div style={{ color: C.muted, fontSize: 11 }}>{s.signal}</div>
-                {s.implication && <div style={{ color: C.accent, fontSize: 10, marginTop: 3 }}>→ {s.implication}</div>}
+                <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5, marginBottom: 4 }}>{s.signal}</div>
+                {s.implication && <div style={{ color: C.accent, fontSize: 10, marginBottom: 5 }}>→ {s.implication}</div>}
+                {hasUrl
+                  ? <a href={s.source_url} target="_blank" rel="noopener noreferrer" style={{ color: C.cyan, fontSize: 10, textDecoration: "none", fontWeight: 600 }}>→ View Source</a>
+                  : <span style={{ color: C.dim, fontSize: 10 }}>Source: Grok real-time knowledge</span>}
               </div>
             );
           })}
