@@ -1451,87 +1451,129 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   async function buildGammaDeck(deal) {
     if (!grokKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Grok key required"}); }); return; }
     if (!gammaKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Gamma key required"}); }); return; }
-    setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"loading"}); });
+
+    var dealId = deal.id;
+    var capturedGammaKey = gammaKey;
+    var co = deal.company;
+
+    // Phase 1 — Grok independent intelligence (fresh research, no app data bias)
+    setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"researching"}); });
     try {
+      var grokIntel = await callGrok(
+        "You are an expert B2B competitive intelligence analyst. Respond with a single JSON object only — no markdown, no explanation, just the raw JSON.",
+        "Research " + co + " and return this exact JSON object:\n" +
+        "{\n" +
+        "  \"full_name\": \"exact legal or primary brand name of the company\",\n" +
+        "  \"business_model\": \"2-3 sentence description of business model, revenue scale, and customer base\",\n" +
+        "  \"primary_competitors\": [\"competitor1\", \"competitor2\", \"competitor3\"],\n" +
+        "  \"competitor_crypto_status\": \"what their 2-3 primary competitors are doing with crypto payments right now — be specific with names and product names\",\n" +
+        "  \"company_crypto_status\": \"where " + co + " currently stands on crypto relative to peers — behind/at parity/ahead and specifically why\",\n" +
+        "  \"competitive_gap\": \"the specific gap between " + co + " and where competitors are heading with crypto in the next 12-24 months\",\n" +
+        "  \"urgency_reason\": \"the single most compelling reason " + co + " needs to act now — market shift, regulatory deadline, or competitor move\",\n" +
+        "  \"cost_of_inaction\": \"specific cost of falling behind — estimated market share lost, customer churn risk, revenue at risk, name which competitors will capture it\"\n" +
+        "}\n\nUse your full knowledge of " + co + ". Be specific with real names, products, and figures.",
+        2000, true, grokKey
+      );
+
+      var intelData = {};
+      try {
+        var intelText = typeof grokIntel === "string" ? grokIntel : JSON.stringify(grokIntel);
+        var jsonMatch = intelText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) intelData = JSON.parse(jsonMatch[0]);
+      } catch(parseErr) { intelData = { raw: typeof grokIntel === "string" ? grokIntel : "" }; }
+
+      // Phase 2 — Combine Grok intel + app analysis → final deck narrative
+      setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"building"}); });
+
       var ad = deal.analysisData || {};
       var fin = deal.financials || {};
       var contacts = (ad.key_contacts||[]).slice(0,5).map(function(c){ return c.name + " (" + c.title + ")" + (c.linkedin?" — "+c.linkedin:""); }).join("\n");
       var intentions = (ad.intent_data||[]).slice(0,4).map(function(s){ return "- " + s.signal + " (" + (s.date||"") + ")"; }).join("\n");
-      var co = deal.company;
-      var outline = await callGrok(
-        "You are a senior B2B sales strategist. You write executive pitch decks that speak directly to the prospect's business outcomes. Every word is written from the prospect's perspective — they are the hero, your client is the enabler.",
-        "Create a concise 3-5 slide executive pitch deck presented TO " + co + "'s leadership team on behalf of CoinPayments. The entire deck is written FOR " + co + " — every slide speaks to their business outcomes, their ROI, their competitive position. CoinPayments is the enabler, not the hero. " + co + " is the hero.\n\n" +
-        "COMPANY DATA:\n" +
+      var partnerList = (ad.partnerships||[]).slice(0,3).join(", ");
+      var competitorNames = Array.isArray(intelData.primary_competitors) ? intelData.primary_competitors.join(", ") : "";
+
+      var deckPrompt = await callGrok(
+        "You are a senior B2B sales strategist writing boardroom-ready pitch decks. Every word is from the prospect's perspective — they are the hero, CoinPayments is the enabler. Name competitors explicitly. Every claim is backed by a specific number.",
+        "Write a 5-slide executive pitch deck presented TO " + co + "'s leadership. " + co + " is the hero — every slide speaks to their outcomes, their ROI, their competitive position. CoinPayments is mentioned only as the enabling partner.\n\n" +
+        "=== INDEPENDENT INTELLIGENCE (fresh Grok research) ===\n" +
+        "Company full name: " + (intelData.full_name || co) + "\n" +
+        "Business model: " + (intelData.business_model || "") + "\n" +
+        "Primary competitors: " + competitorNames + "\n" +
+        "Competitor crypto status: " + (intelData.competitor_crypto_status || "") + "\n" +
+        co + "'s crypto status vs peers: " + (intelData.company_crypto_status || "") + "\n" +
+        "Competitive gap: " + (intelData.competitive_gap || "") + "\n" +
+        "Urgency: " + (intelData.urgency_reason || "") + "\n" +
+        "Cost of inaction: " + (intelData.cost_of_inaction || "") + "\n\n" +
+        "=== APP ANALYSIS DATA ===\n" +
         "Segment: " + (ad.segment||deal.vertical||"") + "\n" +
         "HQ: " + (ad.hq||deal.geography||"") + "\n" +
-        "Employees: " + (ad.employees||"") + "\n" +
         "Executive Summary: " + (ad.executive_summary||"") + "\n" +
-        "Projected ARR (CoinPayments fee revenue): " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
+        "Projected ARR (CoinPayments fee): " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
         "SOM Calculation: " + (fin.som_calculation||"") + "\n" +
-        "Incumbent provider: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
+        "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
         "Intent Signals:\n" + (intentions||"none") + "\n" +
+        "Key Contacts:\n" + (contacts||"none") + "\n" +
+        (partnerList ? "Partnerships: " + partnerList + "\n" : "") +
         "Positioning: " + (ad.positioning_statement||"") + "\n\n" +
-        "REQUIRED SLIDES — write every bullet as a " + co + " outcome:\n\n" +
-        "Slide 1 — The Industry Is Moving Without You\n" +
-        "Open with the macro shift happening in " + co + "'s specific industry. Frame as urgency FOR THEM:\n" +
-        "- What are their peers and competitors doing with crypto right now?\n" +
-        "- What customer expectations are shifting in their segment?\n" +
-        "- What revenue is being captured by crypto-native competitors that " + co + " is not capturing?\n" +
-        "- What regulatory and market tailwinds make now the right moment?\n" +
-        "Use their industry language. Make them feel the competitive pressure.\n\n" +
-        "Slide 2 — Where " + co + " Stands Today\n" +
-        "Show you understand their business deeply. Be specific:\n" +
-        "- Their current payment infrastructure and where the gaps are\n" +
-        "- Their crypto signals to date — what have they announced, piloted, or explored?\n" +
-        "- The specific revenue opportunity they are not yet capturing: '" + co + " processes $X in [payment/trading/remittance] volume annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact — today that goes to competitors'\n" +
-        "- Frame the gap as their lost opportunity, not CoinPayments' opportunity\n\n" +
-        "Slide 3 — What " + co + " Unlocks\n" +
-        "Frame CoinPayments' capabilities entirely as " + co + "'s gains. Every bullet is a " + co + " outcome:\n" +
-        "- '" + co + " adds 100+ digital assets to their platform' — NOT 'CoinPayments offers 100+ assets'\n" +
-        "- '" + co + " launches crypto acceptance under their own brand in weeks' — NOT 'CoinPayments has white-label infrastructure'\n" +
-        "- '" + co + " bridges their existing fiat rails to crypto with zero customer disruption'\n" +
-        "- '" + co + "'s engineering team integrates via a single API without replacing existing infrastructure'\n" +
-        "CoinPayments is mentioned only as the technology partner making it possible.\n\n" +
-        "Slide 4 — How " + co + " Gets There\n" +
-        "Make implementation feel fast, low-risk, and within their control:\n" +
-        "- '" + co + " can be live in 4-8 weeks with a modular API integration'\n" +
-        "- Phase 1: [specific first use case tailored to their business model and crypto maturity]\n" +
-        "- Phase 2: [expansion use case based on their platform]\n" +
-        "- Phase 3: [full deployment scenario specific to their scale]\n" +
-        "- '" + co + " starts with one use case and expands on their own timeline — no big bang migration'\n" +
-        "- '" + co + " retains full brand control with white-label deployment'\n" +
-        "Every phase is " + co + "'s decision and " + co + "'s milestone.\n\n" +
-        "Slide 5 — " + co + "'s ROI\n" +
-        "Make the financial case entirely about " + co + "'s return. Use the actual numbers from the SOM calculation above:\n" +
-        "- '" + co + "'s crypto opportunity: $[volume] x [adoption]% = $[crypto volume] in addressable crypto payment volume'\n" +
-        "- '" + co + "'s new revenue potential: $[crypto volume] x [monetization rate] = $[new revenue for " + co + "] annually'\n" +
-        "- '" + co + "'s cost to unlock this: $[crypto volume] x 0.5% CoinPayments fee = $[annual fee] — less than [X]% of the new revenue generated'\n" +
-        "- Net ROI: 'For every $1 spent on CoinPayments infrastructure, " + co + " unlocks $[X] in new crypto payment revenue'\n" +
-        "- Competitive framing: '" + co + " moves ahead of [competitor] and captures the $[Z] in volume currently going to crypto-native alternatives'\n" +
-        "- Call to action: 'Ready to capture your crypto opportunity? Let's schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n\n" +
-        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero of every slide. CoinPayments is their enabling partner. 3-5 slides maximum. Every number comes from the actual analysis data. The prospect should feel this deck was built exclusively for them by someone who deeply understands their business and genuinely wants them to win.\n\n" +
-        "Design note: Format for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
-        6000, false, grokKey
+        "=== 5-SLIDE NARRATIVE ARC ===\n\n" +
+        "Slide 1 — The Competitive Gap\n" +
+        "Open with the specific crypto moves competitors are making right now. Name them explicitly.\n" +
+        "- Name the 2-3 primary competitors (" + (competitorNames||"their main rivals") + ") and exactly what crypto capabilities they have launched or announced\n" +
+        "- Show " + co + "'s current position relative to those moves\n" +
+        "- Frame the gap precisely: '" + co + " is [timeframe] behind [Competitor] in crypto payment capability'\n" +
+        "- What customer segments are competitors capturing that " + co + " cannot serve today?\n" +
+        "Make the competitive threat visceral with real names and specific product moves.\n\n" +
+        "Slide 2 — The Opportunity Cost\n" +
+        "Translate the competitive gap into real money " + co + " is leaving on the table right now.\n" +
+        "- Use the actual SOM calculation: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption = $Z in crypto volume your customers want — today that goes to [named competitor]'\n" +
+        "- Quantify customer churn risk: what % of their customer base is actively seeking crypto capabilities from competitors?\n" +
+        "- What does [Competitor]'s crypto feature cost " + co + " in retention and new customer acquisition?\n" +
+        "- Frame as revenue already being lost, not hypothetical future revenue\n\n" +
+        "Slide 3 — How " + co + " Closes the Gap\n" +
+        "Frame CoinPayments entirely as " + co + "'s competitive weapon. Every bullet is a " + co + " outcome:\n" +
+        "- '" + co + " matches [Competitor]'s crypto capability in 4-8 weeks'\n" +
+        "- '" + co + " adds 100+ digital assets to their existing platform without replacing current infrastructure'\n" +
+        "- '" + co + " launches crypto under their own brand — customers never leave their experience'\n" +
+        "- '" + co + "'s engineering team integrates via a single API'\n" +
+        "- Reference their actual business model or tech stack from the analysis data\n" +
+        "CoinPayments appears once as the technology partner enabling these outcomes.\n\n" +
+        "Slide 4 — Path and ROI\n" +
+        "Show the exact path to deployment and make the ROI irrefutable:\n" +
+        "- Phase 1: [specific first use case for their business model] — live in 4-8 weeks\n" +
+        "- Phase 2: [expansion tied to their platform] — weeks 9-16\n" +
+        "- Phase 3: [full deployment at their scale] — month 4 onward\n" +
+        "- ROI calc: '" + co + "'s crypto opportunity: $[SOM] x capture rate = $[projected_arr] in new annual revenue for " + co + "'\n" +
+        "- 'CoinPayments fee: 0.5% of crypto volume processed = $[annual fee] — [X]x ROI in year 1'\n" +
+        "- 'For every $1 spent on CoinPayments infrastructure, " + co + " recovers $[X] in new crypto revenue'\n" +
+        (contacts ? "- Address named contacts: 'Built for [lead contact name]'s team to deploy in [their functional area]'\n" : "") +
+        "\n" +
+        "Slide 5 — Let's Build This Together\n" +
+        "Close with a direct, time-bound CTA addressed to the specific people in the room:\n" +
+        "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Here's the 30-day plan'\n" +
+        "- Week 1: Technical discovery call" + (contacts ? " with " + contacts.split("\n")[0].split("(")[0].trim() : "") + "\n" +
+        "- Week 2-3: API integration scoping with engineering team\n" +
+        "- Week 4-8: Phase 1 go-live\n" +
+        "- '" + co + " goes live before " + (competitorNames.split(",")[0]||"the competition") + "'s next product release'\n" +
+        "- CTA: 'Schedule a 30-minute technical walkthrough — " + co + "'s payments and engineering teams'\n\n" +
+        "TONE: Boardroom-ready, specific, outcome-focused. " + co + " is the hero. Name competitors explicitly. Every number pulled from the data above. 5 slides maximum. Format for dark professional theme — minimal, high-contrast, data-driven.",
+        8000, false, grokKey
       );
 
-      // Step 2 — Start Gamma generation (returns immediately with generationId)
-      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"starting"}); });
+      // Phase 3 — Start Gamma generation (fire and return generationId immediately)
+      setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: outline, title: deal.company + " — Your Crypto Payment Opportunity", key: gammaKey }),
+        body: JSON.stringify({ prompt: deckPrompt, title: co + " — Close the Competitive Gap", key: capturedGammaKey }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
       var generationId = startData.generationId;
       if (!generationId) throw new Error("Gamma did not return a generation ID. Response: " + JSON.stringify(startData).slice(0, 200));
 
-      // Store generationId on deal so we could resume if needed
-      setDeals(function(prev){ return prev.map(function(d){ return d.id===deal.id ? Object.assign({},d,{gammaGenerationId:generationId}) : d; }); });
-      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"polling:0"}); });
+      setDeals(function(prev){ return prev.map(function(d){ return d.id===dealId ? Object.assign({},d,{gammaGenerationId:generationId}) : d; }); });
+      setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"polling:0"}); });
 
-      // Step 3 — Poll from client every 5s (no Vercel timeout risk)
-      var dealId = deal.id;
-      var capturedKey = gammaKey;
+      // Phase 4 — Client-side poll every 5s (avoids Vercel timeout)
       async function doPoll(attempt) {
         if (attempt > 30) {
           setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"timeout"}); });
@@ -1539,10 +1581,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         }
         await new Promise(function(r){ setTimeout(r, 5000); });
         try {
-          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedKey));
+          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedGammaKey));
           var pd = await pr.json();
           if (!pr.ok) throw new Error(pd.error || "Poll error " + pr.status);
           if (pd.status === "completed" && pd.url) {
+            // Attempt dark theme application (non-fatal if it fails)
+            try {
+              await fetch("/api/gamma-theme", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ generationId: generationId, key: capturedGammaKey }),
+              });
+            } catch(themeErr) { /* non-fatal */ }
             setDeals(function(prev){ return prev.map(function(d){ return d.id===dealId ? Object.assign({},d,{gammaDeckUrl:pd.url,gammaGenerationId:null}) : d; }); });
             setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"done"}); });
           } else if (pd.status === "failed") {
@@ -2123,12 +2172,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                 {(function(){
                                   var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
                                   var deckPolling = ds.startsWith("polling:");
-                                  var deckLoading = ds === "loading" || ds === "starting" || deckPolling;
+                                  var deckLoading = ds === "researching" || ds === "building" || ds === "starting" || deckPolling;
                                   var deckDone = ds === "done" || !!(deal.gammaDeckUrl && !deckLoading && ds !== "timeout");
                                   var deckErr = ds.startsWith("error:");
                                   var deckTimeout = ds === "timeout";
                                   var pollSecs = deckPolling ? parseInt(ds.split(":")[1]||"0",10)*5 : 0;
-                                  var deckBtnLabel = ds === "loading" ? "⏳ Outline..." : ds === "starting" ? "🚀 Starting..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
+                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching..." : ds === "building" ? "🧠 Building..." : ds === "starting" ? "🚀 Starting..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
