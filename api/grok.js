@@ -19,9 +19,7 @@ export default async function handler(req, res) {
         let out = '';
         for (let i = 0; i < v.length; i++) {
           const code = v.charCodeAt(i);
-          // Skip lone surrogates (D800-DFFF)
           if (code >= 0xD800 && code <= 0xDFFF) continue;
-          // Skip control chars except tab, newline, carriage return
           if (code < 0x20 && code !== 0x09 && code !== 0x0A && code !== 0x0D) continue;
           out += v[i];
         }
@@ -58,6 +56,8 @@ export default async function handler(req, res) {
       max_tokens: max_tokens || 8000,
     };
 
+    console.log('[Grok proxy] Calling xAI model:', payload.model, '| key prefix:', apiKey.slice(0, 8) + '...');
+
     const response = await fetch('https://api.x.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -67,10 +67,28 @@ export default async function handler(req, res) {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
-    return res.status(response.status).json(data);
+    const responseText = await response.text();
+    console.log('[Grok proxy] xAI status:', response.status);
+    console.log('[Grok proxy] xAI headers:', JSON.stringify(Object.fromEntries(response.headers.entries())));
+    console.log('[Grok proxy] xAI body (first 500):', responseText.slice(0, 500));
+
+    let data;
+    try { data = JSON.parse(responseText); } catch { data = { error: responseText }; }
+
+    if (!response.ok) {
+      const errMsg = data?.error?.message || data?.error || responseText.slice(0, 200);
+      console.error('[Grok proxy] xAI error', response.status, ':', errMsg);
+      // Pass status + message back so frontend can show human-readable reason
+      return res.status(response.status).json({
+        error: errMsg,
+        xai_status: response.status,
+        xai_status_text: response.statusText,
+      });
+    }
+
+    return res.status(200).json(data);
   } catch (error) {
-    console.error('[Grok proxy] Error:', error.message);
-    return res.status(500).json({ error: error.message });
+    console.error('[Grok proxy] Fetch error:', error.message);
+    return res.status(500).json({ error: error.message, xai_status: 500 });
   }
 }
