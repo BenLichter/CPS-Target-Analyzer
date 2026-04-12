@@ -1484,20 +1484,50 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "For each slide provide: title, 3-5 bullet points with specific data, and 1 talking point. Be specific and use the provided data.",
         4000, false, grokKey
       );
-      var res = await fetch("/api/gamma", {
+
+      // Step 2 — Start Gamma generation (returns immediately with generationId)
+      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"starting"}); });
+      var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: outline,
-          title: deal.company + " x CoinPayments — Partnership Opportunity",
-          key: gammaKey,
-        }),
+        body: JSON.stringify({ prompt: outline, title: deal.company + " x CoinPayments — Partnership Opportunity", key: gammaKey }),
       });
-      var data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Gamma API error " + res.status);
-      var url = data.url || data.presentation_url || data.link || (data.id ? "https://gamma.app/docs/" + data.id : null);
-      if (!url) throw new Error("Gamma did not return a URL");
-      setDeals(function(prev){ return prev.map(function(d){ return d.id===deal.id ? Object.assign({},d,{gammaDeckUrl:url}) : d; }); });
-      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"done"}); });
+      var startData = await startRes.json();
+      if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
+      var generationId = startData.generationId;
+      if (!generationId) throw new Error("Gamma did not return a generation ID. Response: " + JSON.stringify(startData).slice(0, 200));
+
+      // Store generationId on deal so we could resume if needed
+      setDeals(function(prev){ return prev.map(function(d){ return d.id===deal.id ? Object.assign({},d,{gammaGenerationId:generationId}) : d; }); });
+      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"polling:0"}); });
+
+      // Step 3 — Poll from client every 5s (no Vercel timeout risk)
+      var dealId = deal.id;
+      var capturedKey = gammaKey;
+      async function doPoll(attempt) {
+        if (attempt > 30) {
+          setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"timeout"}); });
+          return;
+        }
+        await new Promise(function(r){ setTimeout(r, 5000); });
+        try {
+          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedKey));
+          var pd = await pr.json();
+          if (!pr.ok) throw new Error(pd.error || "Poll error " + pr.status);
+          if (pd.status === "completed" && pd.url) {
+            setDeals(function(prev){ return prev.map(function(d){ return d.id===dealId ? Object.assign({},d,{gammaDeckUrl:pd.url,gammaGenerationId:null}) : d; }); });
+            setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"done"}); });
+          } else if (pd.status === "failed") {
+            setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"error:" + (pd.error||"Gamma generation failed")}); });
+          } else {
+            setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"polling:" + attempt}); });
+            doPoll(attempt + 1);
+          }
+        } catch(pollErr) {
+          setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"error:" + pollErr.message.slice(0,80)}); });
+        }
+      }
+      doPoll(1);
+
     } catch(e) {
       setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:" + e.message.slice(0,80)}); });
     }
@@ -2063,9 +2093,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                 {/* 7. Action 2×2 grid */}
                                 {(function(){
                                   var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
-                                  var deckLoading = ds === "loading";
-                                  var deckDone = ds === "done" || !!(deal.gammaDeckUrl && ds !== "loading");
+                                  var deckPolling = ds.startsWith("polling:");
+                                  var deckLoading = ds === "loading" || ds === "starting" || deckPolling;
+                                  var deckDone = ds === "done" || !!(deal.gammaDeckUrl && !deckLoading && ds !== "timeout");
                                   var deckErr = ds.startsWith("error:");
+                                  var deckTimeout = ds === "timeout";
+                                  var pollSecs = deckPolling ? parseInt(ds.split(":")[1]||"0",10)*5 : 0;
+                                  var deckBtnLabel = ds === "loading" ? "⏳ Outline..." : ds === "starting" ? "🚀 Starting..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
@@ -2085,13 +2119,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                             </div>
                                           : <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
                                               style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
-                                              {deckLoading ? "⏳ Building..." : "🎨 Deck"}
+                                              {deckBtnLabel}
                                             </button>
                                         }
                                       </div>
-                                      {deckErr && (
+                                      {(deckErr || deckTimeout) && (
                                         <div style={{ padding:"5px 12px 4px", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-                                          <span style={{ color:C.gold, fontSize:9 }}>⚠️ {ds.slice(6).includes("404") || ds.slice(6).toLowerCase().includes("not found") ? "Gamma key invalid or API unavailable" : ds.slice(6).slice(0, 70)}</span>
+                                          <span style={{ color:C.gold, fontSize:9 }}>
+                                            {deckTimeout
+                                              ? "⚠️ Taking longer than expected. Retry or check Deck Builder page."
+                                              : "⚠️ " + (ds.slice(6).includes("404") || ds.slice(6).toLowerCase().includes("not found") ? "Gamma key invalid or API unavailable" : ds.slice(6).slice(0,70))}
+                                          </span>
                                           <button onClick={function(){ buildGammaDeck(deal); }}
                                             style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"2px 7px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>Retry</button>
                                         </div>
@@ -2158,20 +2196,37 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
         "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.",
         3000, false, grokKey
       );
-      setStatus("🎨 Sending to Gamma...");
+      setStatus("🚀 Starting Gamma generation...");
       var finalTitle = deckTitle.trim() || prompt.slice(0, 80);
-      var res = await fetch("/api/gamma", {
+      var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: outline, title: finalTitle, key: gammaKey }),
       });
-      var data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Gamma API error " + res.status);
-      var url = data.url || data.presentation_url || data.link || (data.id ? "https://gamma.app/docs/" + data.id : null);
-      if (!url) throw new Error("Gamma did not return a presentation URL. Response: " + JSON.stringify(data).slice(0, 200));
-      setDeckUrl(url);
-      setStatus("");
-      var entry = { id: Date.now(), title: finalTitle, url: url, createdAt: new Date().toISOString() };
-      setGammaHistory(function(h) { return [entry].concat(h.slice(0, 19)); });
+      var startData = await startRes.json();
+      if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
+      var generationId = startData.generationId;
+      if (!generationId) throw new Error("Gamma did not return a generation ID. Response: " + JSON.stringify(startData).slice(0, 200));
+
+      // Poll from client every 5s — no Vercel timeout risk
+      var capturedKey = gammaKey;
+      var resolved = false;
+      for (var attempt = 1; attempt <= 30; attempt++) {
+        setStatus("🎨 Generating presentation... " + (attempt * 5) + "s elapsed (Gamma takes ~60-90s)");
+        await new Promise(function(r){ setTimeout(r, 5000); });
+        var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedKey));
+        var pd = await pr.json();
+        if (!pr.ok) throw new Error(pd.error || "Poll failed " + pr.status);
+        if (pd.status === "completed" && pd.url) {
+          setDeckUrl(pd.url);
+          setStatus("");
+          var entry = { id: Date.now(), title: finalTitle, url: pd.url, createdAt: new Date().toISOString() };
+          setGammaHistory(function(h){ return [entry].concat(h.slice(0, 19)); });
+          resolved = true;
+          break;
+        }
+        if (pd.status === "failed") throw new Error("Gamma generation failed: " + (pd.error || "unknown error"));
+      }
+      if (!resolved) setStatus("⚠️ Generation is taking longer than expected (>2.5 min). Try the Generate button again.");
     } catch(e) {
       setStatus("❌ " + e.message);
     }
