@@ -9,6 +9,8 @@ const NJKEY_LS = "cp_ninjapear_key";
 const GROK_KEY_LS = "cp_grok_key";
 const HIST_LS  = "cp_history";
 const PIPE_LS  = "cp_pipeline";
+const GAMMA_KEY_LS  = "cp_gamma_key";
+const GAMMA_HIST_LS = "cp_gamma_history";
 
 const C = {
   bg:"#07090F", surface:"#0D1117", card:"#111827", border:"#1F2937",
@@ -1425,7 +1427,7 @@ function WorldMap({ deals }) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grokKey }) {
+function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grokKey, gammaKey }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
@@ -1442,8 +1444,64 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   var s12 = useState("all"); var geoFilter    = s12[0]; var setGeoFilter    = s12[1];
   var s13 = useState(null);  var overlayDealId   = s13[0]; var setOverlayDealId   = s13[1];
   var s14 = useState({});    var updateFinStatus = s14[0]; var setUpdateFinStatus = s14[1];
+  var s15 = useState({});    var deckStatus      = s15[0]; var setDeckStatus      = s15[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
+
+  async function buildGammaDeck(deal) {
+    if (!grokKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Grok key required"}); }); return; }
+    if (!gammaKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Gamma key required"}); }); return; }
+    setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"loading"}); });
+    try {
+      var ad = deal.analysisData || {};
+      var fin = deal.financials || {};
+      var contacts = (ad.key_contacts||[]).slice(0,5).map(function(c){ return c.name + " (" + c.title + ")" + (c.linkedin?" — "+c.linkedin:""); }).join("\n");
+      var intentions = (ad.intent_data||[]).slice(0,4).map(function(s){ return "- " + s.signal + " (" + (s.date||"") + ")"; }).join("\n");
+      var outline = await callGrok(
+        "You are a senior B2B sales expert at CoinPayments. Create a detailed, specific pitch deck outline using the provided company data.",
+        "Create a 10-slide pitch deck outline for CoinPayments targeting " + deal.company + ".\n\nCOMPANY DATA:\n" +
+        "Segment: " + (ad.segment||deal.vertical||"") + "\n" +
+        "HQ: " + (ad.hq||deal.geography||"") + "\n" +
+        "Employees: " + (ad.employees||"") + "\n" +
+        "Executive Summary: " + (ad.executive_summary||"") + "\n" +
+        "Projected ARR: " + (fin.projected_arr||deal.arr||"") + " | Upside ARR: " + (fin.upside_arr||"") + "\n" +
+        "SOM Calculation: " + (fin.som_calculation||"") + "\n" +
+        "Incumbent: " + (ad.incumbent ? ad.incumbent.name + " — " + ad.incumbent.weaknesses : "none identified") + "\n" +
+        "Key Contacts:\n" + (contacts||"none identified") + "\n" +
+        "Intent Signals:\n" + (intentions||"none") + "\n" +
+        "Positioning: " + (ad.positioning_statement||"") + "\n\n" +
+        "REQUIRED SLIDES:\n" +
+        "Slide 1: Title — [" + deal.company + "] x CoinPayments Partnership Opportunity\n" +
+        "Slide 2: Executive Summary — why this target, key opportunity statement\n" +
+        "Slide 3: Company Overview — HQ, employees, segment, recent news highlights\n" +
+        "Slide 4: The Opportunity — TAM, SOM, projected ARR with bottoms-up calc\n" +
+        "Slide 5: Why Now — intent signals, recent crypto activity, market timing\n" +
+        "Slide 6: CoinPayments Solution Fit — how 100+ digital assets, white-label infra, fiat on/off ramps, API-first maps to their needs\n" +
+        "Slide 7: Competitive Advantage — CP vs their existing stack\n" +
+        "Slide 8: GTM Attack Plan — first 90 days, key contacts to engage\n" +
+        "Slide 9: Key Contacts — names, roles, LinkedIn links\n" +
+        "Slide 10: Next Steps — proposed meeting agenda, call to action\n\n" +
+        "For each slide provide: title, 3-5 bullet points with specific data, and 1 talking point. Be specific and use the provided data.",
+        4000, false, grokKey
+      );
+      var res = await fetch("/api/gamma", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: outline,
+          title: deal.company + " x CoinPayments — Partnership Opportunity",
+          key: gammaKey,
+        }),
+      });
+      var data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Gamma API error " + res.status);
+      var url = data.url || data.presentation_url || data.link || (data.id ? "https://gamma.app/docs/" + data.id : null);
+      if (!url) throw new Error("Gamma did not return a URL");
+      setDeals(function(prev){ return prev.map(function(d){ return d.id===deal.id ? Object.assign({},d,{gammaDeckUrl:url}) : d; }); });
+      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"done"}); });
+    } catch(e) {
+      setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:" + e.message.slice(0,80)}); });
+    }
+  }
 
   function addDeal() {
     if (!form.company.trim()) return;
@@ -2002,15 +2060,39 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                   </select>
                                 </div>
 
-                                {/* 7. Action row: 3 equal buttons */}
-                                <div style={{ display:"flex", gap:6, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box", width:"100%" }}>
-                                  <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
-                                    style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
-                                  <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
-                                    style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
-                                  <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
-                                    style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
-                                </div>
+                                {/* 7. Action row: 4 equal buttons */}
+                                {(function(){
+                                  var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
+                                  var deckLoading = ds === "loading";
+                                  var deckDone = ds === "done" || !!(deal.gammaDeckUrl && ds !== "loading");
+                                  var deckErr = ds.startsWith("error:");
+                                  return (
+                                    <div>
+                                      <div style={{ display:"flex", gap:6, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box", width:"100%" }}>
+                                        <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
+                                          style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
+                                        <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
+                                          style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
+                                        <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
+                                          style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
+                                        {deckDone && deal.gammaDeckUrl
+                                          ? <div style={{ display:"flex", flex:"1 1 0", gap:3 }}>
+                                              <a href={deal.gammaDeckUrl} target="_blank" rel="noreferrer"
+                                                style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", flex:"1 1 0" })}>📊 Deck</a>
+                                              <button onClick={function(){ buildGammaDeck(deal); }} disabled={deckLoading}
+                                                title="Regenerate deck"
+                                                style={Object.assign({},actionBtn,{ flex:"0 0 auto", padding:"7px 7px", color:C.dim })}>↺</button>
+                                            </div>
+                                          : <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
+                                              style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
+                                              {deckLoading ? "⏳..." : "🎨 Deck"}
+                                            </button>
+                                        }
+                                      </div>
+                                      {deckErr && <div style={{ padding:"3px 12px 0", color:C.red, fontSize:9 }}>{ds.slice(6)}</div>}
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* 8. Sub-vertical link + edit link */}
                                 <div style={{ padding:"6px 12px 8px", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
@@ -2051,6 +2133,114 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   );
 }
 
+// ─── DeckBuilder ──────────────────────────────────────────────────────────────
+function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory }) {
+  var s1 = useState(""); var prompt = s1[0]; var setPrompt = s1[1];
+  var s2 = useState(""); var deckTitle = s2[0]; var setDeckTitle = s2[1];
+  var s3 = useState(""); var status = s3[0]; var setStatus = s3[1];
+  var s4 = useState(null); var deckUrl = s4[0]; var setDeckUrl = s4[1];
+  var s5 = useState(false); var busy = s5[0]; var setBusy = s5[1];
+
+  async function generate() {
+    if (!prompt.trim() || busy) return;
+    if (!grokKey) { setStatus("⚠️ Grok API key required — add it in Settings"); return; }
+    if (!gammaKey) { setStatus("⚠️ Gamma API key required — add it in Settings"); return; }
+    setBusy(true); setDeckUrl(null); setStatus("🤖 Grok is building your outline...");
+    try {
+      var outline = await callGrok(
+        "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
+        "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.",
+        3000, false, grokKey
+      );
+      setStatus("🎨 Sending to Gamma...");
+      var finalTitle = deckTitle.trim() || prompt.slice(0, 80);
+      var res = await fetch("/api/gamma", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: outline, title: finalTitle, key: gammaKey }),
+      });
+      var data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Gamma API error " + res.status);
+      var url = data.url || data.presentation_url || data.link || (data.id ? "https://gamma.app/docs/" + data.id : null);
+      if (!url) throw new Error("Gamma did not return a presentation URL. Response: " + JSON.stringify(data).slice(0, 200));
+      setDeckUrl(url);
+      setStatus("");
+      var entry = { id: Date.now(), title: finalTitle, url: url, createdAt: new Date().toISOString() };
+      setGammaHistory(function(h) { return [entry].concat(h.slice(0, 19)); });
+    } catch(e) {
+      setStatus("❌ " + e.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom:24 }}>
+        <div style={{ color:C.text, fontSize:22, fontWeight:900, marginBottom:4 }}>🎨 Deck Builder</div>
+        <div style={{ color:C.muted, fontSize:12 }}>Grok builds the outline — Gamma renders the presentation.</div>
+      </div>
+
+      <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"20px", marginBottom:20 }}>
+        <div style={{ marginBottom:12 }}>
+          <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Presentation Title (optional)</label>
+          <input value={deckTitle} onChange={function(e){ setDeckTitle(e.target.value); }}
+            placeholder="e.g. CoinPayments × Stripe — Partnership Opportunity"
+            style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none" }}/>
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <label style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", display:"block", marginBottom:5 }}>Describe your presentation</label>
+          <textarea value={prompt} onChange={function(e){ setPrompt(e.target.value); }}
+            placeholder="e.g. A 10-slide investor pitch for CoinPayments targeting remittance fintechs in Southeast Asia. Include TAM/SOM analysis, competitive landscape, and go-to-market strategy."
+            rows={4}
+            style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none", resize:"vertical", lineHeight:1.5 }}/>
+        </div>
+        <button onClick={generate} disabled={busy || !prompt.trim()}
+          style={{ background:busy||!prompt.trim()?"#334155":C.purple, color:"#fff", border:"none", borderRadius:7, padding:"10px 22px", fontWeight:800, fontSize:12, cursor:busy||!prompt.trim()?"default":"pointer", fontFamily:"inherit", transition:"background 0.15s" }}>
+          {busy ? "Generating..." : "✨ Generate with Grok + Gamma"}
+        </button>
+      </div>
+
+      {status && (
+        <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"14px 18px", marginBottom:16, color:status.startsWith("❌")?C.red:C.accent, fontSize:12, fontWeight:600 }}>
+          {status}
+        </div>
+      )}
+
+      {deckUrl && (
+        <div style={{ background:"#10B98120", border:"1px solid "+C.green, borderRadius:10, padding:"20px", marginBottom:20, textAlign:"center" }}>
+          <div style={{ color:C.green, fontSize:16, fontWeight:900, marginBottom:8 }}>✅ Your presentation is ready</div>
+          <div style={{ color:C.muted, fontSize:11, marginBottom:16 }}>{deckTitle || prompt.slice(0, 60)}</div>
+          <a href={deckUrl} target="_blank" rel="noreferrer"
+            style={{ display:"inline-block", background:C.green, color:"#000", borderRadius:8, padding:"12px 28px", fontWeight:800, fontSize:13, textDecoration:"none" }}>
+            Open in Gamma →
+          </a>
+        </div>
+      )}
+
+      {gammaHistory.length > 0 && (
+        <div>
+          <div style={{ color:C.muted, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:10 }}>Generated Decks</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {gammaHistory.map(function(entry) {
+              return (
+                <div key={entry.id} style={{ background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between", gap:12 }}>
+                  <div>
+                    <div style={{ color:C.text, fontWeight:700, fontSize:12, marginBottom:2 }}>{entry.title}</div>
+                    <div style={{ color:C.dim, fontSize:10 }}>{new Date(entry.createdAt).toLocaleString()}</div>
+                  </div>
+                  <a href={entry.url} target="_blank" rel="noreferrer"
+                    style={{ background:C.purple+"30", border:"1px solid "+C.purple+"60", color:C.purple, borderRadius:6, padding:"5px 12px", fontWeight:700, fontSize:10, textDecoration:"none", whiteSpace:"nowrap" }}>
+                    Open in Gamma →
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 export default function App() {
   var s1  = useState("analyze"); var page    = s1[0];  var setPage    = s1[1];
@@ -2068,8 +2258,11 @@ export default function App() {
   var s11 = useState(function(){ try { return (JSON.parse(localStorage.getItem(PIPE_LS)||"[]")).filter(function(d){ return d && d.company; }); } catch { return []; } });
   var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
+  var sGamma = useState(function(){ return localStorage.getItem(GAMMA_KEY_LS)||""; }); var gammaKey = sGamma[0]; var setGammaKey = sGamma[1];
+  var sGammaH = useState(function(){ try { return JSON.parse(localStorage.getItem(GAMMA_HIST_LS)||"[]"); } catch { return []; } }); var gammaHistory = sGammaH[0]; var setGammaHistory = sGammaH[1];
 
   useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
+  useEffect(function(){ localStorage.setItem(GAMMA_HIST_LS, JSON.stringify(gammaHistory)); }, [gammaHistory]);
 
   // Load pipeline from server on mount — server is source of truth for cross-device sync
   useEffect(function() {
@@ -2113,6 +2306,7 @@ export default function App() {
     ["analyze", "🔍 Analyze"],
     ["result",  "📊 Result"+(result?" ✓":"")],
     ["pipeline","📋 Pipeline"],
+    ["deck",    "🎨 Deck Builder"],
     ["history", "🕐 History"+(history.length?" ("+history.length+")":"")],
   ];
 
@@ -2147,9 +2341,10 @@ export default function App() {
             <button onClick={function(){setShowKeys(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11 }}>Done</button>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:12 }}>
-            {[{ label:"⚡ xAI / Grok",      desc:"Primary intelligence · console.x.ai",          lsk:GROK_KEY_LS, val:grokKey, fn:function(v){saveKey(GROK_KEY_LS,v,setGrokKey);}, ph:"xai-xxxx", warn:!grokKey },
-              { label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,     val:tKey,    fn:function(v){saveKey(TKEY_LS,v,setTKey);},         ph:"tvly-xxxx" },
-              { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS,    val:njKey,   fn:function(v){saveKey(NJKEY_LS,v,setNjKey);},        ph:"api key from nubela.co" }
+            {[{ label:"⚡ xAI / Grok",      desc:"Primary intelligence · console.x.ai",          lsk:GROK_KEY_LS,  val:grokKey,  fn:function(v){saveKey(GROK_KEY_LS,v,setGrokKey);},   ph:"xai-xxxx", warn:!grokKey },
+              { label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,      val:tKey,     fn:function(v){saveKey(TKEY_LS,v,setTKey);},           ph:"tvly-xxxx" },
+              { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS,     val:njKey,    fn:function(v){saveKey(NJKEY_LS,v,setNjKey);},          ph:"api key from nubela.co" },
+              { label:"🎨 Gamma",          desc:"AI presentations · gamma.app/api",              lsk:GAMMA_KEY_LS, val:gammaKey, fn:function(v){saveKey(GAMMA_KEY_LS,v,setGammaKey);}, ph:"gamma api key" }
             ].map(function(k){
               return (
                 <div key={k.label} style={{ background:C.card, borderRadius:8, padding:"12px 14px", border:"1px solid "+(k.val?C.green+"40":k.warn?C.red+"50":C.border) }}>
@@ -2233,7 +2428,10 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} grokKey={grokKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} grokKey={grokKey} gammaKey={gammaKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+
+        {/* Deck Builder */}
+        {page==="deck" && <DeckBuilder grokKey={grokKey} gammaKey={gammaKey} gammaHistory={gammaHistory} setGammaHistory={setGammaHistory}/>}
 
         {/* History */}
         {page==="history" && (
