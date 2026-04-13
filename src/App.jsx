@@ -2123,11 +2123,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             </div>
           </div>
 
-          {/* Tier/sub-vert cards — sorted by total ARR descending */}
+          {/* Tier/sub-vert cards — FS uses fixed order; other verticals sorted by ARR */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
-            {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical).slice().sort(function(a,b){
-              return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr;
-            })).map(function(t) {
+            {(function(){
+              var FS_ORDER = ["brokerage","escrow","remittance","neobanks","regional_bank"];
+              var buckets = getBuckets(pipeView.vertical);
+              var ordered = pipeView.vertical==="financial_services"
+                ? FS_ORDER.map(function(id){ return buckets.find(function(b){ return b.id===id; }); }).filter(Boolean)
+                : buckets.slice().sort(function(a,b){ return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr; });
+              return [{id:"all",label:"All",color:C.green}].concat(ordered);
+            })().map(function(t) {
               var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
