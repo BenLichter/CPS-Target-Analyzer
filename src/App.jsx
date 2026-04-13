@@ -1242,6 +1242,42 @@ var FS_SUBVERTS = [
   { id:"regional_bank",label:"Regional / Middle Market Banks",color:"#10B981" },
   { id:"escrow",       label:"Escrow",                        color:"#EC4899" },
 ];
+var CRYPTO_INFRA_PARTNERS = [
+  { terms:["coinbase prime"],     name:"Coinbase Prime"    },
+  { terms:["coinbase"],           name:"Coinbase Prime"    },
+  { terms:["kraken"],             name:"Kraken"            },
+  { terms:["fireblocks"],         name:"Fireblocks"        },
+  { terms:["paxos"],              name:"Paxos"             },
+  { terms:["zero hash","zerohash"],name:"Zero Hash"        },
+  { terms:["bakkt"],              name:"Bakkt"             },
+  { terms:["bitgo"],              name:"BitGo"             },
+  { terms:["anchorage digital"],  name:"Anchorage Digital" },
+  { terms:["anchorage"],          name:"Anchorage Digital" },
+  { terms:["bitpay"],             name:"BitPay"            },
+  { terms:["chainalysis"],        name:"Chainalysis"       },
+  { terms:["copper"],             name:"Copper"            },
+  { terms:["talos"],              name:"Talos"             },
+  { terms:["ledger enterprise"],  name:"Ledger Enterprise" },
+  { terms:["blockdaemon"],        name:"Blockdaemon"       },
+];
+function detectCryptoPartners(analysisData) {
+  if (!analysisData) return { cryptoPartners:[], hasCryptoPartner:false };
+  var text = [
+    analysisData.executive_summary || "",
+    JSON.stringify(analysisData.partnerships || []),
+    JSON.stringify(analysisData.intent_data || []),
+    JSON.stringify(analysisData.competitive_comparison || {}),
+    String(analysisData.positioning_statement || ""),
+  ].join(" ").toLowerCase();
+  var found = []; var seen = {};
+  CRYPTO_INFRA_PARTNERS.forEach(function(p) {
+    if (seen[p.name]) return;
+    for (var i=0; i<p.terms.length; i++) {
+      if (text.includes(p.terms[i])) { found.push(p.name); seen[p.name]=true; break; }
+    }
+  });
+  return { cryptoPartners:found, hasCryptoPartner:found.length>0 };
+}
 
 function parseArr(s) {
   if (!s) return 0;
@@ -1499,6 +1535,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   var s13 = useState(null);  var overlayDealId   = s13[0]; var setOverlayDealId   = s13[1];
   var s14 = useState({});    var updateFinStatus = s14[0]; var setUpdateFinStatus = s14[1];
   var s15 = useState({});    var deckStatus      = s15[0]; var setDeckStatus      = s15[1];
+  var s16 = useState("all"); var cryptoFilter    = s16[0]; var setCryptoFilter    = s16[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1707,9 +1744,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
       var freshFin = buildFinancials(t, freshArr, false);
       freshFin.updatedByRerun = true;
+      var freshCp = detectCryptoPartners(data);
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr });
+        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
     }).catch(function(err) {
@@ -1750,7 +1788,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     var tam = (h.data.tam_som_arr&&h.data.tam_som_arr.tam_usd)||"";
     var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
-    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, financials:buildFinancials(h.data.tam_som_arr, arr, true) };
+    var hCp = detectCryptoPartners(h.data);
+    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
     setDeals(function(prev){ return prev.concat([d]); });
   }
 
@@ -1761,19 +1800,27 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     var t = d.analysisData.tam_som_arr.tam_usd || d.analysisData.tam_som_arr.tam;
     return t ? parseArr(String(t)) : 0;
   }
-  function vMetrics(vid, geo) {
+  function applyCryptoFilter(arr, cp) {
+    if (!cp || cp==="all") return arr;
+    if (cp==="partnered")  return arr.filter(function(d){ return !!d.hasCryptoPartner; });
+    if (cp==="greenfield") return arr.filter(function(d){ return !d.hasCryptoPartner; });
+    return arr;
+  }
+  function vMetrics(vid, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     if (geo && geo!=="all") vd = vd.filter(function(d){ return (d.geography||"")===geo; });
+    vd = applyCryptoFilter(vd, cp);
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var tam = vd.reduce(function(s,d){ return s+getDealTam(d); }, 0);
     return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
-  function tMetrics(vid, tid, prio, geo) {
+  function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
     if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
     if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
+    td = applyCryptoFilter(td, cp);
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var tam = td.reduce(function(s,d){ return s+getDealTam(d); }, 0);
@@ -1803,6 +1850,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
       if (arrFilter==="1m_2m" && (av < 1000000 || av > 2000000)) return false;
       if (arrFilter==="over2m" && av <= 2000000) return false;
     }
+    if (cryptoFilter==="partnered"  && !d.hasCryptoPartner) return false;
+    if (cryptoFilter==="greenfield" &&  d.hasCryptoPartner) return false;
     return true;
   });
 
@@ -1906,7 +1955,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
             <div style={{ color:C.text, fontSize:18, fontWeight:900 }}>Pipeline Dashboard</div>
-            <div style={{ display:"flex", gap:4 }}>
+            <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
               {GEO_OPTS.map(function(o){
                 var active = geoFilter===o.id;
                 return <button key={o.id} onClick={function(){ setGeoFilter(o.id); }}
@@ -1914,11 +1963,18 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                   {o.label}
                 </button>;
               })}
+              {[{id:"all",label:"All Partners"},{id:"partnered",label:"🔗 Partnered"},{id:"greenfield",label:"⬜ Greenfield"}].map(function(o){
+                var active = cryptoFilter===o.id;
+                return <button key={o.id} onClick={function(){ setCryptoFilter(o.id); }}
+                  style={{ background:active?(o.id==="partnered"?C.green:C.surface):C.surface, color:active?(o.id==="partnered"?"#000":C.green):C.muted, border:"1px solid "+(active?C.green:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
+                  {o.label}
+                </button>;
+              })}
             </div>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
             {VERTICALS.map(function(v) {
-              var m = vMetrics(v.id, geoFilter);
+              var m = vMetrics(v.id, geoFilter, cryptoFilter);
               return (
                 <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s" }}>
@@ -2029,7 +2085,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
           {/* Tier/sub-vert cards */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
             {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical)).map(function(t) {
-              var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter);
+              var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -2103,8 +2159,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
               {GEO_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
             </select>
-            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all") && (
-              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); }}
+            <select value={cryptoFilter} onChange={function(e){ setCryptoFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+(cryptoFilter!=="all"?C.green:C.border), borderRadius:6, padding:"6px 10px", color:cryptoFilter!=="all"?C.green:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All Partners</option>
+              <option value="partnered">🔗 Crypto-Partnered</option>
+              <option value="greenfield">⬜ Greenfield</option>
+            </select>
+            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all") && (
+              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); }}
                 style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>
                 Clear
               </button>
@@ -2166,7 +2228,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                 style={{ flexShrink:0, background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>✕</button>
                             </div>
 
-                            {/* 3. Tags row: sub-vertical + geo toggles */}
+                            {/* 3. Tags row: sub-vertical + geo toggles + crypto badge */}
                             <div style={{ display:"flex", flexWrap:"wrap", gap:4, padding:"0 12px 8px", minWidth:0 }}>
                               {dt && <span style={{ background:dt.color+"22", border:"1px solid "+dt.color+"50", color:dt.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700 }}>{dt.label}</span>}
                               {["AMER","EMEA","APAC"].map(function(g){
@@ -2175,6 +2237,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                 return <button key={g} onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{geography:isGeo?"":g}):x; }); }); }}
                                   style={{ background:isGeo?gc+"22":"transparent", border:"1px solid "+(isGeo?gc:C.border), color:isGeo?gc:C.dim, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>{g}</button>;
                               })}
+                              {deal.hasCryptoPartner
+                                ? <span title={(deal.cryptoPartners||[]).join(", ")} style={{ background:"#10B98122", border:"1px solid #10B98150", color:C.green, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, cursor:"default" }}>🔗 {(deal.cryptoPartners||[]).length===1?(deal.cryptoPartners[0]):"Crypto Partner"}</span>
+                                : <span style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:600, cursor:"default" }}>⬜ Greenfield</span>
+                              }
                             </div>
 
                             {/* 4. ARR block */}
@@ -2228,12 +2294,29 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                     <option value="EMEA">EMEA</option>
                                     <option value="APAC">APAC</option>
                                   </select>
+                                  <div style={{ paddingTop:8, borderTop:"1px solid "+C.border }}>
+                                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>Crypto Infrastructure Partners</div>
+                                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 10px", marginBottom:6 }}>
+                                      {CRYPTO_INFRA_PARTNERS.map(function(p){
+                                        var cbId="cp_"+p.name.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+deal.id;
+                                        return <label key={p.name} style={{ display:"flex", alignItems:"center", gap:5, cursor:"pointer", color:C.muted, fontSize:10 }}>
+                                          <input type="checkbox" id={cbId} defaultChecked={Array.isArray(deal.cryptoPartners)&&deal.cryptoPartners.includes(p.name)} style={{ accentColor:C.accent }}/>
+                                          {p.name}
+                                        </label>;
+                                      })}
+                                    </div>
+                                    <input id={"cp_other_"+deal.id} defaultValue={(deal.cryptoPartners||[]).filter(function(p){ return !CRYPTO_INFRA_PARTNERS.find(function(x){ return x.name===p; }); }).join(", ")} placeholder="Other partners (comma-separated)" style={Object.assign({},inp,{fontSize:10,padding:"5px 8px"})}/>
+                                  </div>
                                 </div>
                                 <button onClick={function(){
                                   var arrEl=document.getElementById("arr_"+deal.id), notesEl=document.getElementById("notes_"+deal.id), tierEl=document.getElementById("tier_"+deal.id), priorityEl=document.getElementById("priority_"+deal.id), stageEl=document.getElementById("stage_"+deal.id), vertEl=document.getElementById("vert_"+deal.id), geoEl=document.getElementById("geo_"+deal.id);
                                   var newArr=arrEl?arrEl.value:(deal.financials?deal.financials.projected_arr:deal.arr);
                                   var finPatch=deal.financials?{financials:Object.assign({},deal.financials,{projected_arr:newArr})}:{};
-                                  updateDeal(deal.id,Object.assign({arr:newArr,notes:notesEl?notesEl.value:deal.notes,tier:tierEl?tierEl.value:(deal.tier||""),priority:priorityEl?priorityEl.value:(deal.priority||"p1"),stage:stageEl?stageEl.value:deal.stage,vertical:vertEl?vertEl.value:deal.vertical,geography:geoEl?geoEl.value:(deal.geography||"")},finPatch));
+                                  var selPartners=CRYPTO_INFRA_PARTNERS.filter(function(p){ var cb=document.getElementById("cp_"+p.name.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+deal.id); return cb&&cb.checked; }).map(function(p){ return p.name; });
+                                  var otherEl=document.getElementById("cp_other_"+deal.id);
+                                  var otherPartners=otherEl?otherEl.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean):[];
+                                  var allPartners=selPartners.concat(otherPartners);
+                                  updateDeal(deal.id,Object.assign({arr:newArr,notes:notesEl?notesEl.value:deal.notes,tier:tierEl?tierEl.value:(deal.tier||""),priority:priorityEl?priorityEl.value:(deal.priority||"p1"),stage:stageEl?stageEl.value:deal.stage,vertical:vertEl?vertEl.value:deal.vertical,geography:geoEl?geoEl.value:(deal.geography||""),cryptoPartners:allPartners,hasCryptoPartner:allPartners.length>0},finPatch));
                                 }} style={{ background:dealVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
@@ -2611,10 +2694,16 @@ export default function App() {
       if (Array.isArray(d.pipeline) && d.pipeline.length > 0) {
         // Migrate any deals where the old label was stored as the tier value
         var migrated = d.pipeline.filter(function(d){ return d && d.company; }).map(function(d) {
+          var patched = d;
           if (d.tier === "Brokerage & Investment" || d.tier === "Brokerage & Investment Firms") {
-            return Object.assign({}, d, { tier: "brokerage" });
+            patched = Object.assign({}, patched, { tier: "brokerage" });
           }
-          return d;
+          // One-time crypto partner detection migration for deals that predate this field
+          if (patched.hasCryptoPartner === undefined && patched.analysisData) {
+            var cp = detectCryptoPartners(patched.analysisData);
+            patched = Object.assign({}, patched, cp);
+          }
+          return patched;
         });
         setPipelineDeals(migrated);
       }
@@ -2761,7 +2850,8 @@ export default function App() {
                     setPipelineDeals(function(prev){
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true) }]);
+                      var rCp = detectCryptoPartners(result);
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true), cryptoPartners:rCp.cryptoPartners, hasCryptoPartner:rCp.hasCryptoPartner }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
