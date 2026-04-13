@@ -11,10 +11,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   const id  = req.query.id  || (req.body && req.body.id);
-  const key = req.query.key || (req.body && req.body.key) || process.env.GAMMA_API_KEY || '';
+  const key = process.env.GAMMA_API_KEY || '';
 
   if (!id)  return res.status(400).json({ error: 'No generation id provided' });
-  if (!key) return res.status(400).json({ error: 'No Gamma API key provided' });
+  if (!key) return res.status(500).json({ error: 'Gamma not configured — contact your administrator' });
 
   try {
     const r = await fetch(`${GAMMA_BASE}/generations/${encodeURIComponent(id)}`, {

@@ -14,11 +14,11 @@ export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { generationId, key } = req.body || {};
-  const apiKey = key || process.env.GAMMA_API_KEY || '';
+  const { generationId } = req.body || {};
+  const apiKey = process.env.GAMMA_API_KEY || '';
 
   if (!generationId) return res.status(400).json({ error: 'No generationId provided' });
-  if (!apiKey) return res.status(400).json({ error: 'No Gamma API key provided' });
+  if (!apiKey) return res.status(500).json({ error: 'Gamma not configured — contact your administrator' });
 
   try {
     // Fetch available themes to find a dark one

@@ -6,10 +6,8 @@ import "leaflet/dist/leaflet.css";
 const MODEL    = "claude-sonnet-4-20250514";
 const TKEY_LS  = "cp_tavily_key";
 const NJKEY_LS = "cp_ninjapear_key";
-const GROK_KEY_LS = "cp_grok_key";
 const HIST_LS  = "cp_history";
 const PIPE_LS  = "cp_pipeline";
-const GAMMA_KEY_LS  = "cp_gamma_key";
 const GAMMA_HIST_LS = "cp_gamma_history";
 
 // ─── CoinPayments Authoritative Capability Data ───────────────────────────────
@@ -60,11 +58,11 @@ async function callAPI(system, user, maxTokens) {
   return blocks.map(b => b.text).join("\n");
 }
 
-async function callGrok(system, user, maxTokens, fast, gKey) {
+async function callGrok(system, user, maxTokens, fast) {
   const model = fast ? "grok-3-fast" : "grok-3";
   const res = await fetch("/api/grok", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, max_tokens: maxTokens || 8000, system, messages: [{ role: "user", content: user }], key: gKey }),
+    body: JSON.stringify({ model, max_tokens: maxTokens || 8000, system, messages: [{ role: "user", content: user }] }),
   });
   if (!res.ok) {
     const t = await res.text().catch(() => "");
@@ -129,7 +127,7 @@ function profileToContact(p, source) {
 }
 
 async function runAnalysis(company, onStep, keys) {
-  const { tavily: tKey, ninjapear: njKey, grok: gKey } = keys;
+  const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
   const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow this exact structure:\n\nStep 1 — Find the volume driver. Identify the most appropriate volume metric based on business model:\n  FX & Brokerage: AUM or annual trading volume\n  Neobanks: annual payment volume or total transaction volume\n  Remittance Fintechs: annual remittance volume\n  Regional/Middle Market Banks: total payment volume or deposit base\n  Escrow: annual escrow transaction volume\n  Luxury Travel: annual booking volume or GMV\n  Luxury Goods: annual GMV or revenue\n  Gaming & Casinos: annual GGR or wagering volume\nUse the actual figure from the provided research data. If not found, make an informed estimate based on company size, funding, and comparable companies — state clearly that it is an estimate.\n\nStep 2 — Calculate crypto adoption volume. Apply a rate based on this company\'s current crypto maturity:\n  Already offering crypto: 15-25% of volume\n  Actively exploring crypto: 8-15% of volume\n  Early stage / no crypto yet: 3-8% of volume\nCrypto adoption volume = Total volume x adoption rate.\n\nStep 3 — Calculate SOM. SOM = Crypto adoption volume x 0.5% CoinPayments fee rate. This is the serviceable obtainable market — what CoinPayments can realistically earn from this company\'s crypto volume.\n\nStep 4 — Calculate projected ARR. projected_arr = SOM x capture rate:\n  1% for no existing crypto infrastructure or early exploration\n  1.5% for actively piloting or exploring crypto payments\n  2% for already partially deployed or strong crypto affinity\nupside_arr = SOM x 3% capture rate.\n\nStep 5 — Sanity check. Does projected_arr make sense relative to the company\'s overall scale? Flag and adjust if the number seems too low or too high — explain why.\n\nAlways show full inline math in som_calculation in this format:\n"[Volume driver] x [adoption %] = [crypto volume] x 0.5% fee = [SOM] x [capture %] = [Projected ARR]"\nExample: "$500B AUM x 10% crypto adoption = $50B crypto volume x 0.5% fee = $250M SOM x 1.5% = $3.75M ARR"\n\nOutput fields: tam = broad industry TAM for reference only (not used in calculation), som = crypto adoption volume x 0.5% fee, projected_arr = SOM x capture rate, upside_arr = SOM x 3%.\n\nFX & BROKERAGE VERTICAL OVERRIDE — For any target identified as FX & Brokerage (broker, FX firm, prop trading firm, market maker, institutional trading desk), ignore the general ARR formula above and use this simplified basis points model instead. Do NOT apply a crypto adoption haircut — the fee applies to full volume:\n\nFormula:\nProjected ARR = Total annual volume × 0.003% (0.3 bps = $3 per $1,000,000)\nUpside ARR = Total annual volume × 0.005% (0.5 bps upside scenario)\n\nStep 1 — Find 2025 total trading/transaction volume. Use the full volume number — not crypto volume, not an adoption subset. Priority: (1) annual trading or transaction volume; (2) daily average volume × 252 trading days to annualize; (3) comparable firm benchmarks for their size/category. If not publicly disclosed, extrapolate from most recent disclosed figure adjusted for growth rate. Always state the source or methodology used.\n\nShow the full inline math in som_calculation in this exact format:\n"$[total volume] annual volume × 0.003% (0.3bps per $1M) = $[Projected ARR] ARR"\nExample: "$100B annual volume × 0.003% (0.3bps per $1M) = $3M ARR"\n\nFor FX & Brokerage: SOM = total annual volume (the full volume base). TAM = total addressable market for their specific segment (retail FX, institutional FX, equity brokerage, prop trading) — for reference only. All figures in USD — convert any non-USD volumes at current approximate exchange rates and state the conversion used.';
@@ -370,20 +368,13 @@ async function runAnalysis(company, onStep, keys) {
   var P1_USER = CP_CAPABILITIES + "\n\nWhen describing CoinPayments in the executive summary, opportunity analysis, positioning statement, or any other output section, always use the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above as your reference. Do not describe CoinPayments as a generic crypto payment processor — always reference the four specific capabilities by name where relevant. The four capabilities are: Stablecoin + Blockchain Rails, Fiat On/Off Ramps, Third-Party Wallet Hosting, Compliance-as-a-Service.\n\n" + sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nIMPORTANT: Ground all financial estimates, scale metrics, and key facts in the Tavily news, NinjaPear enrichment, and scraped web content provided above. When you cite a specific number (users, revenue, volume), name which source it came from. If sources conflict, prefer the most specific and recent data point over generic industry stats.\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array. For each intent signal, provide a source URL if you have one. IMPORTANT source URL rules: (1) only include a URL if it points to a specific article, post, or press release — never a homepage or search results page; (2) if you cannot provide a specific verified URL, set source_url to null and set source_type to 'Grok real-time knowledge'; (3) never fabricate URLs — a null with an honest source_type is far better than a made-up link. Set verified: true only if you have a specific URL, false if based on your knowledge without a specific URL.\n\nCRYPTO INFRASTRUCTURE PARTNERSHIPS — CRITICAL RESEARCH REQUIREMENT:\nCarefully research ALL existing crypto infrastructure partnerships for " + company + " and all their subsidiaries. Pay specific attention to relationships with the following known crypto infrastructure providers — these are commonly used by financial firms and are often underreported in general news:\n- Fireblocks (MPC custody, digital asset infrastructure)\n- Anchorage Digital (institutional custody)\n- Coinbase Prime (institutional trading and custody)\n- Zero Hash (crypto-as-a-service, stablecoin settlement)\n- Paxos (regulated blockchain infrastructure, stablecoins)\n- BitGo (institutional custody and wallets)\n- Bakkt (digital asset platform)\n- Chainalysis (blockchain analytics and compliance)\n- Ledger Enterprise (hardware custody)\n- Copper (institutional custody)\n- Talos (institutional trading infrastructure)\n- Blockdaemon (node infrastructure)\n- Alchemy (blockchain developer platform)\n\nFor each partnership found:\n- Name the specific provider and the nature of the relationship (custody, settlement, compliance, trading infrastructure etc)\n- State when the partnership was announced if known\n- Explain what this tells us about " + company + "'s existing crypto infrastructure maturity\n- Flag if this partnership overlaps with or complements CoinPayments' capabilities\n- Flag if this partnership means " + company + " already has a solution CoinPayments would need to displace or complement\n\nIf a partnership with any of the above providers is found, this is critical intelligence for the competitive comparison — " + company + " already has crypto infrastructure and the CoinPayments pitch must be framed as complementary or superior, not introductory. Adjust the opportunity framing accordingly.\n\nNever return an empty partnerships section without first exhausting searches for all providers listed above. If no partnerships are found after thorough research, state explicitly in the partnerships array: 'No confirmed crypto infrastructure partnerships found. " + company + " appears to be building or exploring independently.'\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"e.g. 1.5%\",\n    \"projected_arr\": \"e.g. $6.1M\",\n    \"upside_arr\": \"e.g. $12.2M (SOM × 3%)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM × 1.5% = $6.1M ARR\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\", \"source_url\": \"specific URL to the exact article, post, or press release — or null if you cannot provide a verified specific URL (never use homepage URLs like reuters.com or linkedin.com; never fabricate)\", \"source_type\": \"X Post|News Article|LinkedIn Post|Press Release|Grok real-time knowledge\", \"verified\": false }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
   var p1raw;
   var p1GrokError = null;
-  if (gKey) {
-    try {
-      console.log('[Phase 1] Using: grok-3');
-      p1raw = await callGrok(SYS, P1_USER, 8000, false, gKey);
-    } catch (grokErr) {
-      p1GrokError = grokErr.message;
-      console.log('[Phase 1] Fallback: claude |', p1GrokError);
-      onStep("⚠️ Grok unavailable (" + p1GrokError + "), falling back to Claude...");
-      p1raw = await callAPI(SYS, P1_USER, 7000);
-      p1raw = '__CLAUDE_FALLBACK__' + p1raw;
-    }
-  } else {
-    console.log('[Phase 1] Fallback: claude (no Grok key)');
-    p1GrokError = 'no Grok key configured';
+  try {
+    console.log('[Phase 1] Using: grok-3');
+    p1raw = await callGrok(SYS, P1_USER, 8000, false);
+  } catch (grokErr) {
+    p1GrokError = grokErr.message;
+    console.log('[Phase 1] Fallback: claude |', p1GrokError);
+    onStep("⚠️ Grok unavailable (" + p1GrokError + "), falling back to Claude...");
     p1raw = await callAPI(SYS, P1_USER, 7000);
     p1raw = '__CLAUDE_FALLBACK__' + p1raw;
   }
@@ -435,12 +426,8 @@ async function runAnalysis(company, onStep, keys) {
     try {
       const articleList = rawNews.slice(0, 10).map((r, i) => (i + 1) + ". " + r.title + " (" + (r.published_date || "") + ")\n   " + (r.content || "").slice(0, 180)).join("\n\n");
       var catRaw;
-      if (gKey) {
-        try { catRaw = await callGrok("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000, true, gKey); }
-        catch { catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000); }
-      } else {
-        catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000);
-      }
+      try { catRaw = await callGrok("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000, true); }
+      catch { catRaw = await callAPI("Categorize news articles. Output ONLY a JSON array.", "For each article about " + company + ", output: {\"idx\":N, \"category\":\"Funding|Partnership|Product|Regulatory|Leadership|Competitive|Crypto|Other\", \"summary\":\"1 sentence\", \"cp_relevance\":\"why matters for CoinPayments\"}\n\n" + articleList, 2000); }
       let cs = catRaw.trim().replace(/^```json\s*/i, "").replace(/^```/, "").replace(/```$/, "").trim();
       const cats = cs.startsWith("[") ? JSON.parse(cs) : [];
       p1.recent_news = rawNews.slice(0, 10).map((r, i) => {
@@ -468,8 +455,7 @@ async function runAnalysis(company, onStep, keys) {
   var P4_USER = "Company: " + company + ". Today: " + todayStr + ".\nKey contacts: " + (contactsForEvt || "none") + ".\n\nSOURCES:\n" + evtCtx + "\n\nOutput array of event objects. For CONFIRMED events:\n{\"tier\":\"confirmed\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Speaker|Sponsor|Exhibitor|Confirmed Attendee\",\"contacts_attending\":[{\"name\":\"Full Name\",\"role\":\"title\",\"evidence_quote\":\"verbatim sentence (max 140 chars)\",\"evidence_url\":\"url\",\"evidence_platform\":\"X|LinkedIn|Official Event Page|Press Release|News Article\"}],\"source_post\":\"verbatim confirmation quote (max 120 chars)\",\"url\":\"source url\",\"notes\":\"\"}\n\nFor LIKELY events:\n{\"tier\":\"likely\",\"name\":\"event name\",\"date\":\"exact date\",\"location\":\"city, country\",\"relevance\":\"Likely\",\"reasoning\":\"1 sentence explaining why likely e.g. fintech company at primary industry event, or attended in 2024\",\"reasoning_url\":\"conference website url or empty string\",\"contacts_attending\":[],\"source_post\":\"\",\"url\":\"\",\"notes\":\"\"}\n\nAim to include 2-4 LIKELY events even if sources are sparse — use your knowledge of which conferences are standard for this company's vertical and size. If nothing at all qualifies for either tier, output [].";
 
   function grokOrClaude(sys, user, tokens, fast) {
-    if (gKey) return callGrok(sys, user, tokens, fast, gKey).catch(function() { return callAPI(sys, user, tokens); });
-    return callAPI(sys, user, tokens);
+    return callGrok(sys, user, tokens, fast).catch(function() { return callAPI(sys, user, tokens); });
   }
 
   const [p2raw, p3raw, p4raw] = await Promise.all([
@@ -1530,7 +1516,7 @@ function WorldMap({ deals }) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grokKey, gammaKey }) {
+function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
@@ -1556,11 +1542,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
   async function buildGammaDeck(deal) {
-    if (!grokKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Grok key required"}); }); return; }
-    if (!gammaKey) { setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:Gamma key required"}); }); return; }
-
     var dealId = deal.id;
-    var capturedGammaKey = gammaKey;
     var co = deal.company;
 
     // Phase 1 — Grok independent intelligence (fresh research, no app data bias)
@@ -1579,7 +1561,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "  \"urgency_reason\": \"the single most compelling reason " + co + " needs to act now — market shift, regulatory deadline, or competitor move\",\n" +
         "  \"cost_of_inaction\": \"specific cost of falling behind — estimated market share lost, customer churn risk, revenue at risk, name which competitors will capture it\"\n" +
         "}\n\nUse your full knowledge of " + co + ". Be specific with real names, products, and figures.",
-        2000, true, grokKey
+        2000, true
       );
 
       var intelData = {};
@@ -1685,14 +1667,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         "- " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above \u2014 no generic crypto talking points\n" +
         "- The deck should feel like it came from someone who deeply respects " + co + "'s business and genuinely wants them to win\n" +
         "- 4 slides \u2014 no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
-        8000, false, grokKey
+        8000, false
       );
 
       // Phase 3 — Start Gamma generation (fire and return generationId immediately)
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity", key: capturedGammaKey }),
+        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity" }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
@@ -1710,7 +1692,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         }
         await new Promise(function(r){ setTimeout(r, 5000); });
         try {
-          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedGammaKey));
+          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId));
           var pd = await pr.json();
           if (!pr.ok) throw new Error(pd.error || "Poll error " + pr.status);
           if (pd.status === "completed" && pd.url) {
@@ -1718,7 +1700,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
             try {
               await fetch("/api/gamma-theme", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ generationId: generationId, key: capturedGammaKey }),
+                body: JSON.stringify({ generationId: generationId }),
               });
             } catch(themeErr) { /* non-fatal */ }
             setDeals(function(prev){ return prev.map(function(d){ return d.id===dealId ? Object.assign({},d,{gammaDeckUrl:pd.url,gammaGenerationId:null}) : d; }); });
@@ -1754,7 +1736,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Starting..."}); });
     runAnalysis(deal.company, function(step){
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
-    }, { tavily:tKey||"", ninjapear:njKey||"", grok:grokKey||"" }).then(function(data) {
+    }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       var t = (data && data.tam_som_arr) || {};
       var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
@@ -2536,7 +2518,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
 }
 
 // ─── DeckBuilder ──────────────────────────────────────────────────────────────
-function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }) {
+function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
   var s1 = useState(""); var prompt = s1[0]; var setPrompt = s1[1];
   var s2 = useState(""); var deckTitle = s2[0]; var setDeckTitle = s2[1];
   var s3 = useState(""); var status = s3[0]; var setStatus = s3[1];
@@ -2589,8 +2571,6 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }
     if (busy) return;
     if (slideType==="free" && !prompt.trim()) return;
     if (slideType==="pipeline_brief" && (!deals || !deals.length)) { setStatus("⚠️ No pipeline deals to analyze — add accounts in the Pipeline tab first"); return; }
-    if (!grokKey)  { setStatus("⚠️ Grok API key required — add it in Settings"); return; }
-    if (!gammaKey) { setStatus("⚠️ Gamma API key required — add it in Settings"); return; }
     setBusy(true); setDeckUrl(null);
 
     var outline; var finalTitle;
@@ -2604,7 +2584,7 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }
         var briefPrompt = CP_CAPABILITIES + "\n\nHere is the full pipeline deal data you must analyze:\n\n" + pipelineData + "\n\nUsing only the pipeline deal data provided above, generate a Pipeline Intelligence Brief structured as a series of tables — one section per vertical, broken down by sub-vertical within each vertical. Every account named must exist in the provided pipeline data.\n\nFor each vertical present in the pipeline data (Financial Services, Luxury Travel, Luxury Goods, Gaming & Casinos — only include verticals that have accounts):\n\nStart with a vertical header row showing:\n- Vertical name\n- Total account count\n- Total projected ARR across all accounts in this vertical\n- Total estimated volume across all accounts in this vertical\n\nThen for each sub-vertical within that vertical, produce a table with these columns:\n| Account Name | Priority | Crypto Infrastructure Partners | Estimated Annual Volume | Projected ARR | Pipeline Stage |\n\nPopulate each row as follows:\n- Account Name: The brand name of the company as stored in the pipeline\n- Priority: P1 or P2\n- Crypto Infrastructure Partners: List any confirmed crypto infrastructure partners found in the analysis data (Fireblocks, Anchorage, Zero Hash, Paxos, BitGo, Coinbase Prime, Bakkt, Chainalysis, etc). If none confirmed write 'None identified — greenfield opportunity'\n- Estimated Annual Volume: The volume figure used in the ARR calculation — pull directly from the bottoms-up calculation stored on the deal (e.g. '$500B annual trading volume' for an FX broker, '$2B payment volume' for a neobank). If not available write 'Volume not disclosed — estimated [X] based on [methodology]'\n- Projected ARR: The projected ARR figure stored on the deal in USD\n- Pipeline Stage: Current stage (Prospecting, Lead/SQL, Discovery, Solution Design & Demo, Proposal & Negotiation, Closed/Won, Expansion/Retention)\n\nSort each sub-vertical table: P1 accounts first (sorted by Projected ARR descending), then P2 accounts (sorted by Projected ARR descending).\n\nSPECIAL CASE — FX & BROKERAGE SUB-VERTICAL ONLY:\nFor the FX & Brokerage sub-vertical, do NOT use the single table format above. Instead replace it entirely with the following structure:\n\nSub-vertical header:\nFX & Brokerage | [X] Accounts | $[total ARR] Projected ARR | $[total volume] Est. Volume\n\nSection 1 — Business Type Classification:\nFirst classify each FX & Brokerage account as either:\n- FX-Focused: Primary business is foreign exchange trading, retail or institutional FX, currency pairs. Examples: CMC Markets, Pepperstone, FxPro, XM, OANDA\n- Multi-Asset: Offers FX plus equities, crypto, commodities, ETFs, or other asset classes. Examples: Interactive Brokers, Saxo Bank, Webull, DriveWealth, Robinhood\nUse Grok's knowledge of each firm's actual business model to classify correctly — do not guess based on name alone.\n\nSection 2 — Four tables, one per category combination:\n\nTable 1: FX-Focused x Crypto-Partnered\nAccounts whose primary business is FX AND have confirmed crypto infrastructure partnerships (Anchorage, Fireblocks, Coinbase Prime, Zero Hash, Kraken, BitGo, Bakkt, Paxos, or similar)\nColumns: | Account | Priority | Crypto Partner(s) | Nature of Partnership | Est. Annual Volume | Projected ARR | Stage | CoinPayments Angle |\n- Crypto Partner(s): Name the specific confirmed partner(s)\n- Nature of Partnership: What the partnership covers — custody, settlement, compliance, trading infrastructure, stablecoin etc\n- CoinPayments Angle: Given they already have crypto infrastructure, what is the CoinPayments play? Complementary capability? Displacement? White-label layer on top?\n\nTable 2: FX-Focused x Greenfield (No Crypto Partners)\nAccounts whose primary business is FX AND have no confirmed crypto infrastructure partnerships\nColumns: | Account | Priority | Crypto Signal | Greenfield Opportunity | Est. Annual Volume | Projected ARR | Stage | CoinPayments Angle |\n- Crypto Signal: Any intent signals from the analysis indicating crypto interest or exploration\n- Greenfield Opportunity: What CoinPayments can bring that they currently lack entirely\n\nTable 3: Multi-Asset x Crypto-Partnered\nAccounts offering multiple asset classes AND have confirmed crypto infrastructure partnerships\nColumns: same as Table 1\n\nTable 4: Multi-Asset x Greenfield (No Crypto Partners)\nAccounts offering multiple asset classes AND have no confirmed crypto infrastructure partnerships\nColumns: same as Table 2\n\nWithin each table:\n- Sort P1 accounts first, then P2; within each priority tier sort by Projected ARR descending\n- Highlight the top account in each table with a brief one-line note: 'Largest ARR opportunity in this category'\n- If Jump Trading or any firm with an internal crypto division appears, note it in Crypto Partner(s) as 'Internal crypto arm: [division name]' and in CoinPayments Angle as 'Potential displacement or complementary play given internal capabilities'\n\nSection 3 — Summary stats after all four tables:\n| Category | Accounts | P1 | P2 | Total ARR | Total Volume | Crypto-Partnered | Greenfield |\n| FX-Focused | | | | | | | |\n| Multi-Asset | | | | | | | |\n| Total FX & Brokerage | | | | | | | |\n\nFormatting for Gamma (FX & Brokerage only): Each of the four tables is a separate slide titled 'FX & Brokerage — [category]' e.g. 'FX & Brokerage — FX-Focused, Crypto-Partnered'. Use dark background, P1 rows in a slightly brighter accent, column headers bold, alternating row shading. The summary stats table is its own final slide for this sub-vertical.\n\nFor all other sub-verticals (Remittance Fintechs, Neobanks, and any tiers within Luxury Travel, Luxury Goods, Gaming & Casinos), use the standard single table format described above.\n\nAfter each sub-vertical table, add a one-line sub-vertical summary:\n'[Sub-vertical name]: [X] accounts | $[total ARR] projected ARR | $[total volume] estimated volume | [X] accounts with existing crypto partnerships | [X] greenfield accounts'\n\nAfter all sub-vertical tables within a vertical, add a vertical summary row:\n'Total [Vertical]: [X] accounts | [X] P1 / [X] P2 | $[total ARR] projected ARR | $[total volume] estimated volume | [X]% accounts with existing crypto infrastructure'\n\nAfter all verticals, add a Grand Total section:\n- Total accounts across entire pipeline: X\n- Total P1 accounts: X ($Y ARR)\n- Total P2 accounts: X ($Y ARR)\n- Total projected ARR: $X\n- Total estimated volume: $X\n- Accounts with confirmed crypto infrastructure partners: X of Y ([Z]%)\n- Greenfield accounts (no confirmed crypto partners): X of Y ([Z]%)\n- Top 5 accounts by projected ARR: [name, vertical, sub-vertical, ARR]\n- Top 5 accounts by estimated volume: [name, vertical, sub-vertical, volume]\n\nFormatting instructions for Gamma:\nFormat each vertical section as a separate slide in Gamma. The grand total should be its own slide. Use dark background. Tables should have clear column headers, alternating row shading, and P1 accounts highlighted. Sub-vertical summary lines should be bold. Vertical summary rows should be a distinct accent color.\n\nUse only data from the pipeline dataset provided. Do not estimate, hallucinate, or reference accounts not in the provided data. If a field is missing for a specific account, write 'Not available' rather than guessing.";
         outline = await callGrok(
           "You are a senior revenue intelligence analyst producing a boardroom-ready pipeline brief. Be specific, data-driven, and reference named accounts throughout. Use only the pipeline data provided — never generalize without examples.",
-          briefPrompt, 8000, false, grokKey
+          briefPrompt, 8000, false
         );
         finalTitle = deckTitle.trim() || "Pipeline Intelligence Brief — CoinPayments";
       } else {
@@ -2612,7 +2592,7 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }
         outline = await callGrok(
           "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
           "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
-          3000, false, grokKey
+          3000, false
         );
         finalTitle = deckTitle.trim() || prompt.slice(0, 80);
       }
@@ -2620,18 +2600,18 @@ function DeckBuilder({ grokKey, gammaKey, gammaHistory, setGammaHistory, deals }
       setStatus("🚀 Starting Gamma generation...");
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: outline, title: finalTitle, key: gammaKey }),
+        body: JSON.stringify({ prompt: outline, title: finalTitle }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
       var generationId = startData.generationId;
       if (!generationId) throw new Error("Gamma did not return a generation ID. Response: " + JSON.stringify(startData).slice(0, 200));
 
-      var capturedKey = gammaKey; var resolved = false;
+      var resolved = false;
       for (var attempt = 1; attempt <= 30; attempt++) {
         setStatus("🎨 Generating presentation... " + (attempt * 5) + "s elapsed (Gamma takes ~60-90s)");
         await new Promise(function(r){ setTimeout(r, 5000); });
-        var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId) + "&key=" + encodeURIComponent(capturedKey));
+        var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId));
         var pd = await pr.json();
         if (!pr.ok) throw new Error(pd.error || "Poll failed " + pr.status);
         if (pd.status === "completed" && pd.url) {
@@ -2792,15 +2772,13 @@ export default function App() {
   var s5  = useState(null);      var result  = s5[0];  var setResult  = s5[1];
   var s6  = useState("");        var error   = s6[0];  var setError   = s6[1];
   var s7  = useState(false);     var showKeys= s7[0];  var setShowKeys= s7[1];
-  var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; });      var tKey    = s8[0];  var setTKey    = s8[1];
-  var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; });     var njKey   = s9[0];  var setNjKey   = s9[1];
-  var sGk = useState(function(){ return localStorage.getItem(GROK_KEY_LS)||""; }); var grokKey = sGk[0]; var setGrokKey = sGk[1];
+  var s8  = useState(function(){ return localStorage.getItem(TKEY_LS)||""; });  var tKey = s8[0]; var setTKey = s8[1];
+  var s9  = useState(function(){ return localStorage.getItem(NJKEY_LS)||""; }); var njKey = s9[0]; var setNjKey = s9[1];
   var s10 = useState(function(){ try { return JSON.parse(localStorage.getItem(HIST_LS)||"[]"); } catch { return []; } });
   var history      = s10[0]; var setHistory      = s10[1];
   var s11 = useState(function(){ try { return (JSON.parse(localStorage.getItem(PIPE_LS)||"[]")).filter(function(d){ return d && d.company; }); } catch { return []; } });
   var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
-  var sGamma = useState(function(){ return localStorage.getItem(GAMMA_KEY_LS)||""; }); var gammaKey = sGamma[0]; var setGammaKey = sGamma[1];
   var sGammaH = useState(function(){ try { return JSON.parse(localStorage.getItem(GAMMA_HIST_LS)||"[]"); } catch { return []; } }); var gammaHistory = sGammaH[0]; var setGammaHistory = sGammaH[1];
 
   useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
@@ -2847,7 +2825,7 @@ export default function App() {
     if (!company.trim() || loading) return;
     setLoading(true); setError(""); setResult(null); setStep("Starting analysis...");
     try {
-      var data = await runAnalysis(company.trim(), setStep, { tavily:tKey, ninjapear:njKey, grok:grokKey });
+      var data = await runAnalysis(company.trim(), setStep, { tavily:tKey, ninjapear:njKey });
       setResult(data);
       setHistory(function(h){ return [{ company:data.company, analyzedAt:data.analyzedAt, data:data }].concat(h.slice(0,9)); });
       setPage("result");
@@ -2855,8 +2833,8 @@ export default function App() {
     setLoading(false); setStep("");
   }
 
-  var keyColor = (grokKey&&tKey&&njKey)?C.green:(grokKey||tKey||njKey)?C.gold:C.red;
-  var keyLabel = (grokKey&&tKey&&njKey)?"🟢 Full Intel":(grokKey||tKey||njKey)?"🟡 Partial":"🔑 Add Keys";
+  var keyColor = (tKey&&njKey)?C.green:(tKey||njKey)?C.gold:C.red;
+  var keyLabel = (tKey&&njKey)?"🟢 Full Intel":(tKey||njKey)?"🟡 Partial":"🔑 Add Keys";
 
   var pipeCount = history.length; // pipeline uses history-imported deals, no separate count needed in nav
   var NAV = [
@@ -2898,10 +2876,8 @@ export default function App() {
             <button onClick={function(){setShowKeys(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11 }}>Done</button>
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:12 }}>
-            {[{ label:"⚡ xAI / Grok",      desc:"Primary intelligence · console.x.ai",          lsk:GROK_KEY_LS,  val:grokKey,  fn:function(v){saveKey(GROK_KEY_LS,v,setGrokKey);},   ph:"xai-xxxx", warn:!grokKey },
-              { label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,      val:tKey,     fn:function(v){saveKey(TKEY_LS,v,setTKey);},           ph:"tvly-xxxx" },
-              { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS,     val:njKey,    fn:function(v){saveKey(NJKEY_LS,v,setNjKey);},          ph:"api key from nubela.co" },
-              { label:"🎨 Gamma",          desc:"AI presentations · gamma.app/api",              lsk:GAMMA_KEY_LS, val:gammaKey, fn:function(v){saveKey(GAMMA_KEY_LS,v,setGammaKey);}, ph:"gamma api key" }
+            {[{ label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,  val:tKey,  fn:function(v){saveKey(TKEY_LS,v,setTKey);},   ph:"tvly-xxxx" },
+              { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS, val:njKey, fn:function(v){saveKey(NJKEY_LS,v,setNjKey);}, ph:"api key from nubela.co" }
             ].map(function(k){
               return (
                 <div key={k.label} style={{ background:C.card, borderRadius:8, padding:"12px 14px", border:"1px solid "+(k.val?C.green+"40":k.warn?C.red+"50":C.border) }}>
@@ -2986,10 +2962,10 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} grokKey={grokKey} gammaKey={gammaKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
 
         {/* Deck Builder */}
-        {page==="deck" && <DeckBuilder grokKey={grokKey} gammaKey={gammaKey} gammaHistory={gammaHistory} setGammaHistory={setGammaHistory} deals={pipelineDeals}/>}
+        {page==="deck" && <DeckBuilder gammaHistory={gammaHistory} setGammaHistory={setGammaHistory} deals={pipelineDeals}/>}
 
         {/* History */}
         {page==="history" && (

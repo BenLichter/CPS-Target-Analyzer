@@ -51,12 +51,12 @@ export default async function handler(req, res) {
     }
 
     const body = cleanValue(req.body);
-    const { model, max_tokens, system, messages, key } = body;
+    const { model, max_tokens, system, messages } = body;
 
-    // Use key from request body, fall back to server env var
-    const apiKey = key || process.env.XAI_API_KEY || '';
+    // Use server env var only — key never comes from client
+    const apiKey = process.env.XAI_API_KEY || '';
     if (!apiKey) {
-      return res.status(400).json({ error: 'No xAI API key provided' });
+      return res.status(500).json({ error: 'Grok not configured — contact your administrator' });
     }
 
     // Build messages — prepend system as a system-role message if provided
