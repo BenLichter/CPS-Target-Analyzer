@@ -1846,14 +1846,23 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     if (cp==="greenfield") return arr.filter(function(d){ return !d.hasCryptoPartner; });
     return arr;
   }
+  function calcTamStats(dealList) {
+    var vals = dealList.map(getDealTam).filter(function(v){ return v>0; });
+    if (!vals.length) return { avgTam:0, medianTam:0 };
+    var avg = vals.reduce(function(s,v){ return s+v; }, 0) / vals.length;
+    var sorted = vals.slice().sort(function(a,b){ return a-b; });
+    var mid = Math.floor(sorted.length/2);
+    var median = sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
+    return { avgTam:avg, medianTam:median };
+  }
   function vMetrics(vid, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     if (geo && geo!=="all") vd = vd.filter(function(d){ return (d.geography||"")===geo; });
     vd = applyCryptoFilter(vd, cp);
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    var tam = vd.reduce(function(s,d){ return s+getDealTam(d); }, 0);
-    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
+    var ts = calcTamStats(vd);
+    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:ts.avgTam, medianTam:ts.medianTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
@@ -1863,8 +1872,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     td = applyCryptoFilter(td, cp);
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    var tam = td.reduce(function(s,d){ return s+getDealTam(d); }, 0);
-    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, tam:tam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
+    var ts = calcTamStats(td);
+    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:ts.avgTam, medianTam:ts.medianTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
@@ -2038,9 +2047,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                   </div>
                   <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Total ARR</div>
-                  {m.tam > 0 && <div style={{ marginBottom:6 }}>
-                    <div style={{ color:C.gold, fontSize:11, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.tam)}</div>
-                    <div style={{ color:C.cyan, fontSize:11, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.tam*0.125)}</div>
+                  {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Avg TAM (ref) {fmtMoney(m.avgTam)}</div>
+                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM (ref) {fmtMoney(m.medianTam)}</div>
+                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
                   </div>}
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
@@ -2148,9 +2158,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                   <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
                   <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
-                  {m.tam > 0 && <div style={{ marginBottom:6 }}>
-                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.tam)}</div>
-                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.tam*0.125)}</div>
+                  {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Avg TAM (ref) {fmtMoney(m.avgTam)}</div>
+                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM (ref) {fmtMoney(m.medianTam)}</div>
+                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
                   </div>}
                   <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.tam > 0 ? 0 : 6 }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
