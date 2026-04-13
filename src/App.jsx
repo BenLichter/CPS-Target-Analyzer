@@ -2048,8 +2048,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                   <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Total ARR</div>
                   {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
-                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Avg TAM (ref) {fmtMoney(m.avgTam)}</div>
-                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM (ref) {fmtMoney(m.medianTam)}</div>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
+                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM {fmtMoney(m.medianTam)}</div>
                     <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
                   </div>}
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
@@ -2159,8 +2159,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                   <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
                   {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
-                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Avg TAM (ref) {fmtMoney(m.avgTam)}</div>
-                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM (ref) {fmtMoney(m.medianTam)}</div>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
+                    <div style={{ color:C.muted, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Median TAM {fmtMoney(m.medianTam)}</div>
                     <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
                   </div>}
                   <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.tam > 0 ? 0 : 6 }}>
