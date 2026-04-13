@@ -1370,6 +1370,19 @@ var GEO_OPTS = [
   { id:"EMEA", label:"EMEA" },
   { id:"APAC", label:"APAC" },
 ];
+const SORT_KEY_LS = "cp_pipeline_sort";
+var OPP_SIZES = [
+  { id:"enterprise", label:"🔴 Enterprise",  dotColor:"#EF4444", min:5000000,  max:Infinity },
+  { id:"midmarket",  label:"🟠 Mid-Market",   dotColor:"#F97316", min:1000000,  max:5000000  },
+  { id:"growth",     label:"🟡 Growth",        dotColor:"#EAB308", min:500000,   max:1000000  },
+  { id:"emerging",   label:"🟢 Emerging",      dotColor:"#10B981", min:0,        max:500000   },
+];
+var VOL_TIERS = [
+  { id:"t1vol", label:"Tier 1 Vol: >$1T",       min:1e12 },
+  { id:"t2vol", label:"Tier 2 Vol: $100B–$1T",  min:1e11, max:1e12 },
+  { id:"t3vol", label:"Tier 3 Vol: $10B–$100B", min:1e10, max:1e11 },
+  { id:"t4vol", label:"Tier 4 Vol: <$10B",      min:0,    max:1e10 },
+];
 function detectGeo(hq) {
   if (!hq) return "";
   var h = String(hq).toLowerCase();
@@ -1536,6 +1549,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
   var s14 = useState({});    var updateFinStatus = s14[0]; var setUpdateFinStatus = s14[1];
   var s15 = useState({});    var deckStatus      = s15[0]; var setDeckStatus      = s15[1];
   var s16 = useState("all"); var cryptoFilter    = s16[0]; var setCryptoFilter    = s16[1];
+  var s17 = useState(function(){ return localStorage.getItem(SORT_KEY_LS)||"az"; }); var sortOrder = s17[0]; var setSortOrder = s17[1];
+  var s18 = useState("all"); var oppSizeFilter  = s18[0]; var setOppSizeFilter  = s18[1];
+  var s19 = useState("all"); var volTierFilter  = s19[0]; var setVolTierFilter  = s19[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1800,6 +1816,30 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     var t = d.analysisData.tam_som_arr.tam_usd || d.analysisData.tam_som_arr.tam;
     return t ? parseArr(String(t)) : 0;
   }
+  function getDealVolume(d) {
+    var s = (d.financials&&d.financials.som)||(d.analysisData&&d.analysisData.tam_som_arr&&(d.analysisData.tam_som_arr.som||d.analysisData.tam_som_arr.som_usd))||"";
+    return parseArr(String(s));
+  }
+  function getDealOppSize(d) {
+    var av = parseArr(d.arr||"0");
+    if (av>=5000000) return "enterprise";
+    if (av>=1000000) return "midmarket";
+    if (av>=500000)  return "growth";
+    return "emerging";
+  }
+  function sortDeals(arr, order) {
+    return arr.slice().sort(function(a,b){
+      if (order==="za")       return b.company.localeCompare(a.company);
+      if (order==="arr_high") return parseArr(b.arr||"0")-parseArr(a.arr||"0");
+      if (order==="arr_low")  return parseArr(a.arr||"0")-parseArr(b.arr||"0");
+      if (order==="vol_high") return getDealVolume(b)-getDealVolume(a);
+      if (order==="vol_low")  return getDealVolume(a)-getDealVolume(b);
+      if (order==="recent")   return new Date(b.addedAt||0)-new Date(a.addedAt||0);
+      if (order==="priority"){ var pa=(a.priority||"p1")==="p1"?0:1,pb=(b.priority||"p1")==="p1"?0:1; return pa-pb||a.company.localeCompare(b.company); }
+      if (order==="stage"){    var si=PIPE_STAGES.findIndex(function(s){return s.id===a.stage;}),sj=PIPE_STAGES.findIndex(function(s){return s.id===b.stage;}); return si-sj||a.company.localeCompare(b.company); }
+      return a.company.localeCompare(b.company);
+    });
+  }
   function applyCryptoFilter(arr, cp) {
     if (!cp || cp==="all") return arr;
     if (cp==="partnered")  return arr.filter(function(d){ return !!d.hasCryptoPartner; });
@@ -1838,7 +1878,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         return pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
       })
     : [];
-  var tierDeals = baseTierDeals.filter(function(d){
+  var tierDeals = sortDeals(baseTierDeals.filter(function(d){
     if (prioFilter!=="all" && (d.priority||"p1")!==prioFilter) return false;
     if (geoFilter!=="all" && (d.geography||"")!==geoFilter) return false;
     if (dealSearch && !d.company.toLowerCase().includes(dealSearch.toLowerCase())) return false;
@@ -1852,8 +1892,22 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
     }
     if (cryptoFilter==="partnered"  && !d.hasCryptoPartner) return false;
     if (cryptoFilter==="greenfield" &&  d.hasCryptoPartner) return false;
+    if (oppSizeFilter!=="all") {
+      var oa = parseArr(d.arr||"0");
+      if (oppSizeFilter==="enterprise" && oa<5000000) return false;
+      if (oppSizeFilter==="midmarket"  && (oa<1000000||oa>=5000000)) return false;
+      if (oppSizeFilter==="growth"     && (oa<500000||oa>=1000000)) return false;
+      if (oppSizeFilter==="emerging"   && oa>=500000) return false;
+    }
+    if (volTierFilter!=="all") {
+      var vv = getDealVolume(d);
+      if (volTierFilter==="t1vol" && vv<1e12) return false;
+      if (volTierFilter==="t2vol" && (vv<1e11||vv>=1e12)) return false;
+      if (volTierFilter==="t3vol" && (vv<1e10||vv>=1e11)) return false;
+      if (volTierFilter==="t4vol" && vv>=1e10) return false;
+    }
     return true;
-  });
+  }), sortOrder);
 
   // ── Shared add-form snippet ──────────────────────────────────────────────────
   function AddForm({ vert }) {
@@ -2082,9 +2136,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
             </div>
           </div>
 
-          {/* Tier/sub-vert cards */}
+          {/* Tier/sub-vert cards — sorted by total ARR descending */}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
-            {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical)).map(function(t) {
+            {[{id:"all",label:"All",color:C.green}].concat(getBuckets(pipeView.vertical).slice().sort(function(a,b){
+              return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr;
+            })).map(function(t) {
               var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
               return (
                 <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
@@ -2119,21 +2175,21 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
         <div>
           {/* Breadcrumb + back */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); setGeoFilter("all"); }}
+            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); }}
               style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
             <span style={{ fontSize:16 }}>{activeVert.icon}</span>
             <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
             <span style={{ color:C.dim, fontSize:13 }}>›</span>
             <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
             <span style={{ color:C.dim, fontSize:11 }}>
-              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all")
+              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all"||oppSizeFilter!=="all"||volTierFilter!=="all")
                 ? "(Showing "+tierDeals.length+" of "+baseTierDeals.length+")"
                 : "("+baseTierDeals.length+")"}
             </span>
           </div>
 
           {/* Search + filter bar */}
-          <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+          <div style={{ display:"flex", gap:8, marginBottom:8, flexWrap:"wrap", alignItems:"center" }}>
             <input value={dealSearch} onChange={function(e){ setDealSearch(e.target.value); }}
               placeholder="Search companies…"
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", minWidth:160, flex:"1 1 160px" }}/>
@@ -2155,6 +2211,18 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
               <option value="1m_2m">$1M – $2M</option>
               <option value="over2m">Over $2M</option>
             </select>
+            <select value={oppSizeFilter} onChange={function(e){ setOppSizeFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All Sizes</option>
+              {OPP_SIZES.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
+            </select>
+            {pipeView.tier==="brokerage" && (
+              <select value={volTierFilter} onChange={function(e){ setVolTierFilter(e.target.value); }}
+                style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+                <option value="all">All Volumes</option>
+                {VOL_TIERS.map(function(v){ return <option key={v.id} value={v.id}>{v.label}</option>; })}
+              </select>
+            )}
             <select value={geoFilter} onChange={function(e){ setGeoFilter(e.target.value); }}
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
               {GEO_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
@@ -2165,13 +2233,48 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
               <option value="partnered">🔗 Crypto-Partnered</option>
               <option value="greenfield">⬜ Greenfield</option>
             </select>
-            {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all") && (
-              <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); }}
-                style={{ background:"transparent", border:"1px solid "+C.border, color:C.dim, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>
-                Clear
-              </button>
-            )}
+            <select value={sortOrder} onChange={function(e){ var v=e.target.value; setSortOrder(v); localStorage.setItem(SORT_KEY_LS,v); }}
+              style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="az">A–Z</option>
+              <option value="za">Z–A</option>
+              <option value="arr_high">ARR: High → Low</option>
+              <option value="arr_low">ARR: Low → High</option>
+              <option value="vol_high">Volume: High → Low</option>
+              <option value="vol_low">Volume: Low → High</option>
+              <option value="recent">Recently Added</option>
+              <option value="priority">Priority (P1 first)</option>
+              <option value="stage">Stage</option>
+            </select>
           </div>
+
+          {/* Active filter summary bar */}
+          {(function(){
+            var chips = [];
+            if (prioFilter!=="all") chips.push({ label:prioFilter==="p1"?"Priority 1":"Priority 2", clear:function(){setPrioFilter("all");} });
+            if (stageFilter!=="all"){ var sf=PIPE_STAGES.find(function(s){return s.id===stageFilter;}); chips.push({ label:sf?sf.label:stageFilter, clear:function(){setStageFilter("all");} }); }
+            if (arrFilter!=="all")  chips.push({ label:arrFilter==="under1m"?"ARR <$1M":arrFilter==="1m_2m"?"ARR $1M–$2M":"ARR >$2M", clear:function(){setArrFilter("all");} });
+            if (oppSizeFilter!=="all"){ var os=OPP_SIZES.find(function(o){return o.id===oppSizeFilter;}); chips.push({ label:os?os.label:oppSizeFilter, clear:function(){setOppSizeFilter("all");} }); }
+            if (volTierFilter!=="all"){ var vt=VOL_TIERS.find(function(v){return v.id===volTierFilter;}); chips.push({ label:vt?vt.label:volTierFilter, clear:function(){setVolTierFilter("all");} }); }
+            if (geoFilter!=="all")  chips.push({ label:geoFilter, clear:function(){setGeoFilter("all");} });
+            if (cryptoFilter!=="all") chips.push({ label:cryptoFilter==="partnered"?"🔗 Partnered":"⬜ Greenfield", clear:function(){setCryptoFilter("all");} });
+            if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
+            if (!chips.length) return null;
+            var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0"); },0);
+            return (
+              <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", marginBottom:10, display:"flex", alignItems:"center", gap:5, flexWrap:"wrap", fontSize:10 }}>
+                <span style={{ color:C.dim, fontWeight:700, flexShrink:0 }}>Showing:</span>
+                {chips.map(function(chip,i){
+                  return <span key={i} style={{ background:C.card, border:"1px solid "+C.border, borderRadius:20, padding:"2px 6px 2px 8px", color:C.text, display:"inline-flex", alignItems:"center", gap:3 }}>
+                    {chip.label}
+                    <button onClick={chip.clear} style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:"0 0 0 1px", lineHeight:1, fontSize:12, fontFamily:"inherit" }}>×</button>
+                  </span>;
+                })}
+                <span style={{ color:C.muted, marginLeft:"auto", flexShrink:0 }}>{tierDeals.length} account{tierDeals.length!==1?"s":""} · {fmtMoney(filteredArr)} ARR</span>
+                <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); }}
+                  style={{ background:"transparent", border:"none", color:C.gold, cursor:"pointer", fontSize:10, fontWeight:600, fontFamily:"inherit", flexShrink:0 }}>Clear All ×</button>
+              </div>
+            );
+          })()}
 
           <ActionsBar vert={activeVert} defaultTier={pipeView.tier!=="all"?pipeView.tier:""} />
           {showAdd && <AddForm vert={activeVert} />}
@@ -2252,7 +2355,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, grok
                                   </div>
                                 ) : (
                                   <div>
-                                    <div style={{ color:C.cyan, fontWeight:800, fontSize:22, lineHeight:1.1, marginBottom:2 }}>{dispArr}</div>
+                                    {(function(){
+                                      var oppId = getDealOppSize(deal);
+                                      var oppEntry = OPP_SIZES.find(function(o){ return o.id===oppId; });
+                                      var dotColor = oppEntry ? oppEntry.dotColor : "#94A3B8";
+                                      return (
+                                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
+                                          <span title={oppEntry?oppEntry.label:"Unknown"} style={{ width:8, height:8, borderRadius:"50%", background:dotColor, display:"inline-block", flexShrink:0 }}></span>
+                                          <div style={{ color:C.cyan, fontWeight:800, fontSize:22, lineHeight:1.1 }}>{dispArr}</div>
+                                        </div>
+                                      );
+                                    })()}
                                     {deal.financials && (
                                       <div style={{ color:C.dim, fontSize:8 }}>{deal.financials.updatedByRerun?"✏️ Financials updated":"🔒 Financials locked"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
                                     )}
