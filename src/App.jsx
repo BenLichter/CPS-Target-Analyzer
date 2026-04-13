@@ -1236,11 +1236,11 @@ var TIERS = [
   { id:"tier3", label:"Tier 3", color:"#8B5CF6" },
 ];
 var FS_SUBVERTS = [
-  { id:"remittance",   label:"Remittance Fintechs",          color:"#00C2FF" },
   { id:"brokerage",    label:"FX & Brokerage",                color:"#F59E0B" },
+  { id:"escrow",       label:"Escrow",                        color:"#EC4899" },
+  { id:"remittance",   label:"Remittance Fintechs",          color:"#00C2FF" },
   { id:"neobanks",     label:"Neobanks",                      color:"#8B5CF6" },
   { id:"regional_bank",label:"Regional / Middle Market Banks",color:"#10B981" },
-  { id:"escrow",       label:"Escrow",                        color:"#EC4899" },
 ];
 var CRYPTO_INFRA_PARTNERS = [
   { terms:["coinbase prime"],     name:"Coinbase Prime"    },
@@ -1404,11 +1404,11 @@ function geoFallbackCoords(geography) {
 
 var MAP_BUCKET_OPTS = [
   { id:"all",           label:"All Sub-verticals",            filterType:"all"      },
-  { id:"remittance",    label:"Remittance Fintechs",           filterType:"tier"     },
   { id:"brokerage",     label:"FX & Brokerage",                filterType:"tier"     },
+  { id:"escrow",        label:"Escrow",                        filterType:"tier"     },
+  { id:"remittance",    label:"Remittance Fintechs",           filterType:"tier"     },
   { id:"neobanks",      label:"Neobanks",                      filterType:"tier"     },
   { id:"regional_bank", label:"Regional / Middle Market Banks",filterType:"tier"     },
-  { id:"escrow",        label:"Escrow",                        filterType:"tier"     },
   { id:"luxury_travel", label:"Luxury Travel",                filterType:"vertical" },
   { id:"luxury_goods",  label:"Luxury Goods",                 filterType:"vertical" },
   { id:"gaming_casinos",label:"Gaming & Casinos",             filterType:"vertical" },
