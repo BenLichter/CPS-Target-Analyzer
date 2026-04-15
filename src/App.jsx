@@ -1998,7 +1998,6 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
 
   var DECK_SLIDE_TYPES = [
     { id:"free",           label:"✍️ Custom Deck",                desc:"Describe any presentation — Grok builds the outline" },
-    { id:"pipeline_brief", label:"📋 Pipeline Intelligence Brief", desc:"Synthesize your full pipeline into an executive summary" },
   ];
 
   function getSubVertLabel(tierId) {
