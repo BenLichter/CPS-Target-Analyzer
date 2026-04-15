@@ -2179,6 +2179,9 @@ function CompeteTab({ deals }) {
   var s10 = useState({ name:"", category:"Payments", description:"", segmentsPenetrated:[], competitivePosition:"complement", differentiation:"", weaknesses:"", fullDetail:"" });
   var addForm = s10[0]; var setAddForm = s10[1];
   var s11 = useState({}); var editForm = s11[0]; var setEditForm = s11[1];
+  var s12 = useState("idle"); var deckStatus = s12[0]; var setDeckStatus = s12[1];
+  var s13 = useState(function(){ try{return localStorage.getItem("cp_compete_deck_url")||null;}catch(e){return null;} }); var deckUrl = s13[0]; var setDeckUrl = s13[1];
+  var s14 = useState(function(){ try{var t=localStorage.getItem("cp_compete_deck_at");return t?parseInt(t,10):null;}catch(e){return null;} }); var deckGeneratedAt = s14[0]; var setDeckGeneratedAt = s14[1];
   var loadedRef = useRef(false);
 
   function doAutoPopulate(list) {
@@ -2301,6 +2304,109 @@ function CompeteTab({ deals }) {
     );
   }
 
+  function exportPDF() {
+    var date = new Date().toLocaleDateString();
+    var sections = filtered.map(function(c) {
+      var targets = getPipelineTargets(c.name);
+      var posLbl = (COMP_POSITIONS.find(function(p){return p.id===c.competitivePosition;})||{label:c.competitivePosition||"—"}).label;
+      return '<div class="competitor">' +
+        '<h2>' + (c.name||"") + ' <span class="cat">' + (c.category||"") + '</span> <span class="pos pos-' + (c.competitivePosition||"") + '">' + posLbl + '</span></h2>' +
+        '<p class="desc">' + (c.description||"—") + '</p>' +
+        '<div class="lbl">Segments Penetrated</div><p>' + ((c.segmentsPenetrated||[]).join(", ")||"—") + '</p>' +
+        '<div class="lbl">Pipeline Targets (' + targets.length + ')</div><p>' + (targets.length ? targets.map(function(d){ return d.company+(d.arr?" · "+d.arr:""); }).join(" · ") : "None") + '</p>' +
+        '<div class="lbl">CoinPayments Differentiation</div><p>' + (c.differentiation||"—") + '</p>' +
+        '<div class="lbl">Key Weaknesses</div><p>' + (c.weaknesses||"—") + '</p>' +
+        '<div class="lbl">Full Intelligence</div><p>' + (c.fullDetail||"—") + '</p>' +
+        '</div>';
+    }).join('<div class="pb"></div>');
+    var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>CoinPayments Competitive Landscape</title><style>' +
+      'body{font-family:Arial,sans-serif;color:#111;margin:0;padding:24px}' +
+      '.hdr{border-bottom:3px solid #00C2FF;padding-bottom:10px;margin-bottom:18px}' +
+      '.hdr h1{margin:0;font-size:20px;color:#00C2FF}.hdr .dt{color:#666;font-size:11px;margin-top:3px}' +
+      '.stats{display:flex;gap:18px;margin-bottom:22px;background:#f5f5f5;padding:10px 14px;border-radius:6px}' +
+      '.stat{font-size:11px;color:#333}' +
+      '.competitor{margin-bottom:28px;padding-bottom:18px;border-bottom:1px solid #ddd}' +
+      'h2{font-size:15px;margin:0 0 6px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}' +
+      '.cat{font-size:10px;font-weight:normal;background:#e8e8e8;padding:1px 7px;border-radius:10px;color:#555}' +
+      '.pos{font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px}' +
+      '.pos-displace{background:#FFE8E8;color:#C00}.pos-complement{background:#E8FFE8;color:#060}.pos-coexist{background:#E8F0FF;color:#003}.pos-avoid{background:#EEE;color:#666}' +
+      '.lbl{font-size:9px;font-weight:700;text-transform:uppercase;color:#888;letter-spacing:0.06em;margin:9px 0 2px}' +
+      '.desc{margin:0 0 6px;color:#555;font-size:12px}p{margin:0 0 5px;font-size:11px;line-height:1.5;color:#444}' +
+      '.pb{page-break-after:always;height:0;margin:0}@media print{.pb{page-break-after:always}}' +
+      '</style></head><body>' +
+      '<div class="hdr"><h1>⚔️ CoinPayments Competitive Landscape</h1><div class="dt">Generated ' + date + (searchQ||filterPos!=="all" ? " · Filtered view" : "") + '</div></div>' +
+      '<div class="stats"><div class="stat"><b>' + filtered.length + '</b> competitors</div><div class="stat"><b>' + pctPipeline + '%</b> pipeline w/ crypto partner</div>' + (mostCommon.count ? '<div class="stat">Most common: <b>' + mostCommon.name + '</b> (' + mostCommon.count + ')</div>' : '') + '</div>' +
+      sections + '</body></html>';
+    var w = window.open("", "_blank");
+    if (!w) { alert("Allow popups to export PDF."); return; }
+    w.document.write(html); w.document.close(); w.focus(); w.print();
+  }
+
+  function exportCSV() {
+    function esc(v) { return '"' + String(v||"").replace(/"/g,'""') + '"'; }
+    var hdrs = ["Competitor Name","Category","Description","Segments Penetrated","Pipeline Targets Count","Pipeline Targets","Total ARR at Risk","CoinPayments Differentiation","Competitive Position","Key Weaknesses","Full Intelligence"];
+    var rows = filtered.map(function(c){
+      var t = getPipelineTargets(c.name);
+      var arr = t.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+      return [c.name,c.category,c.description||"",(c.segmentsPenetrated||[]).join("; "),t.length,t.map(function(d){return d.company;}).join("; "),arr?fmtMoney(arr):"",c.differentiation||"",c.competitivePosition||"",c.weaknesses||"",c.fullDetail||""].map(esc).join(",");
+    });
+    var csv = hdrs.map(esc).join(",") + "\n" + rows.join("\n");
+    var blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    var burl = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = burl; a.download = "CoinPayments_Competitive_Landscape_" + new Date().toISOString().slice(0,10) + ".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(burl);
+  }
+
+  async function buildCompeteDeck() {
+    var busy = deckStatus==="building"||deckStatus==="starting"||deckStatus.indexOf("polling")===0;
+    if (busy) return;
+    setDeckStatus("building");
+    try {
+      var compList = filtered.map(function(c){
+        var t = getPipelineTargets(c.name);
+        return { name:c.name, category:c.category, description:c.description, segmentsPenetrated:c.segmentsPenetrated||[], competitivePosition:c.competitivePosition, differentiation:c.differentiation||"", weaknesses:c.weaknesses||"", fullDetail:c.fullDetail||"", pipelineTargets:t.map(function(d){return {company:d.company,arr:d.arr||"",segment:d.tier||""};}) };
+      });
+      var sys = "You are a CoinPayments sales enablement specialist creating a competitive intelligence deck for the sales team.\n" + CP_CAPABILITIES;
+      var user = "Using the following competitive landscape data, create a structured presentation outline for a CoinPayments internal competitive intelligence deck. Audience: CoinPayments sales team.\n\n" +
+        "Slide 1 — Competitive Landscape Overview: Summary of all competitors tracked, breakdown by category, pipeline penetration statistics, key insight about the overall competitive environment.\n\n" +
+        "Slide 2 — Competitors to Displace (highest priority): Table format — all 'displace' competitors with: name, segments penetrated, pipeline targets using them, specific CoinPayments capability that displaces them.\n\n" +
+        "Slide 3 — Complement Opportunities: Table — 'complement' competitors — accounts where CoinPayments can partner or layer. Name, segments, pipeline targets, how CoinPayments complements them.\n\n" +
+        "Slide 4 — Co-exist Landscape: Table — 'coexist' competitors with objection-handling context when prospects mention them.\n\n" +
+        "One slide per Displace and key Complement competitor: name & category, what they offer (2-3 bullets), where they are weak (2-3 bullets), CoinPayments differentiation via the four capabilities, pipeline targets using them + recommended CP angle, talk track paragraph.\n\n" +
+        "Final slide — Battle Card Summary: Competitor | Their Strength | CoinPayments Counter | Position.\n\n" +
+        "Use dark background theme. Keep slides concise and sales-actionable.\n\n" +
+        "Data:\n" + JSON.stringify(compList, null, 2);
+      var outline = await callGrok(sys, user, 12000, false);
+      setDeckStatus("starting");
+      var startRes = await fetch("/api/gamma-start", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ prompt:outline, title:"CoinPayments Competitive Intelligence Deck" }) });
+      var startData = await startRes.json();
+      if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
+      var genId = startData.generationId;
+      if (!genId) throw new Error("No generation ID from Gamma");
+      setDeckStatus("polling:0");
+      async function doPoll(attempt) {
+        if (attempt > 30) { setDeckStatus("timeout"); return; }
+        await new Promise(function(r){ setTimeout(r, 5000); });
+        try {
+          var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(genId));
+          var pd = await pr.json();
+          if (!pr.ok) throw new Error(pd.error || "Poll error " + pr.status);
+          if (pd.status === "completed" && pd.url) {
+            try { await fetch("/api/gamma-theme", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({generationId:genId}) }); } catch(te){}
+            var now = Date.now();
+            setDeckUrl(pd.url); setDeckGeneratedAt(now);
+            try { localStorage.setItem("cp_compete_deck_url", pd.url); localStorage.setItem("cp_compete_deck_at", String(now)); } catch(le){}
+            setDeckStatus("done");
+          } else if (pd.status === "failed") {
+            setDeckStatus("error:" + (pd.error||"Generation failed"));
+          } else { setDeckStatus("polling:" + attempt); doPoll(attempt + 1); }
+        } catch(pe) { setDeckStatus("error:" + pe.message.slice(0,80)); }
+      }
+      doPoll(1);
+    } catch(e) { setDeckStatus("error:" + e.message.slice(0,80)); }
+  }
+
   var dealsWithPartner = deals.filter(function(d){ return d.hasCryptoPartner; });
   var pctPipeline = deals.length ? Math.round(dealsWithPartner.length/deals.length*100) : 0;
   var mostCommon = { name:"—", count:0 };
@@ -2322,9 +2428,18 @@ function CompeteTab({ deals }) {
           <div style={{ color:C.text, fontSize:18, fontWeight:800 }}>⚔️ Competitive Landscape</div>
           <div style={{ color:C.muted, fontSize:11, marginTop:4 }}>Crypto infrastructure competitors tracked against CoinPayments' pipeline</div>
         </div>
-        <button onClick={function(){ setShowAdd(!showAdd); setEditId(null); }} style={accentBtn}>
-          {showAdd ? "✕ Cancel" : "+ Add Competitor"}
-        </button>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+          <button onClick={exportPDF} style={smBtn}>📄 Export PDF</button>
+          <button onClick={exportCSV} style={smBtn}>📊 Export CSV</button>
+          <button onClick={buildCompeteDeck}
+            disabled={deckStatus==="building"||deckStatus==="starting"||deckStatus.indexOf("polling")===0}
+            style={{ background:C.purple, color:"#fff", border:"none", borderRadius:7, padding:"7px 14px", fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit", opacity:(deckStatus==="building"||deckStatus==="starting"||deckStatus.indexOf("polling")===0)?0.6:1 }}>
+            🎨 Create Competitive Deck
+          </button>
+          <button onClick={function(){ setShowAdd(!showAdd); setEditId(null); }} style={accentBtn}>
+            {showAdd ? "✕ Cancel" : "+ Add Competitor"}
+          </button>
+        </div>
       </div>
 
       {/* Summary stats */}
@@ -2345,6 +2460,30 @@ function CompeteTab({ deals }) {
           );
         })}
       </div>
+
+      {/* Deck status */}
+      {(deckStatus!=="idle" || deckUrl) && (
+        <div style={{ background:C.card, border:"1px solid "+(deckStatus==="done"?C.green:C.border), borderRadius:10, padding:"12px 16px", marginBottom:16 }}>
+          {(deckStatus==="building"||deckStatus==="starting") && <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{deckStatus==="building" ? "🔍 Building competitive intelligence..." : "🎨 Generating deck in Gamma..."}</div>}
+          {deckStatus.indexOf("polling")===0 && <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>🎨 Generating deck in Gamma… ({deckStatus.split(":")[1]}/30)</div>}
+          {deckStatus==="done" && deckUrl && (
+            <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ color:C.green, fontSize:13, fontWeight:700 }}>✅ Competitive deck ready</div>
+              <a href={deckUrl} target="_blank" rel="noreferrer" style={{ background:C.green, color:"#000", borderRadius:7, padding:"6px 14px", fontWeight:700, fontSize:11, textDecoration:"none" }}>Open in Gamma →</a>
+              {deckGeneratedAt && <div style={{ color:C.dim, fontSize:9 }}>Last generated: {new Date(deckGeneratedAt).toLocaleDateString()}</div>}
+            </div>
+          )}
+          {deckStatus==="timeout" && <div style={{ color:C.gold, fontSize:12 }}>⏱ Deck generation timed out. <button onClick={buildCompeteDeck} style={{ background:"transparent", border:"1px solid "+C.gold, color:C.gold, borderRadius:6, padding:"3px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", marginLeft:8 }}>Retry</button></div>}
+          {deckStatus.indexOf("error:")===0 && <div style={{ display:"flex", gap:10, alignItems:"center" }}><div style={{ color:"#EF4444", fontSize:12 }}>⚠️ {deckStatus.slice(6)}</div><button onClick={buildCompeteDeck} style={{ background:"transparent", border:"1px solid #EF4444", color:"#EF4444", borderRadius:6, padding:"3px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Retry</button></div>}
+          {deckStatus==="idle" && deckUrl && (
+            <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ color:C.muted, fontSize:12, fontWeight:600 }}>🎨 Previously generated deck</div>
+              <a href={deckUrl} target="_blank" rel="noreferrer" style={{ background:C.surface, color:C.accent, border:"1px solid "+C.accent, borderRadius:7, padding:"5px 14px", fontWeight:700, fontSize:11, textDecoration:"none" }}>Open in Gamma →</a>
+              {deckGeneratedAt && <div style={{ color:C.dim, fontSize:9 }}>Generated: {new Date(deckGeneratedAt).toLocaleDateString()}</div>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Seed status banners */}
       {seedStatus==="loading" && (
