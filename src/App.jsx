@@ -1075,6 +1075,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         var greenfield = sd.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         return { id:b.id, label:b.label, totalCount:sd.length, partneredCount:partnered.length, greenfieldCount:greenfield.length, partnered:partnered, greenfield:greenfield };
       });
+      var bizTypeHints = vid === "financial_services"
+        ? "FX & Brokerage → Multi-Asset Platforms and Forex/CFD Brokers. Neobanks → Consumer Neobanks and B2B/SME Neobanks. Remittance Fintechs → B2C Remittance Apps and B2B Remittance Platforms. Escrow → keep as a single type. Regional/Middle Market Banks → Regional Banks and Middle Market Lenders."
+        : vid === "luxury_travel"
+        ? "Split tiers by business type: Luxury Hotel Groups, Airlines & Private Aviation, Cruise Lines, Luxury Travel Agencies & Tour Operators."
+        : vid === "luxury_goods"
+        ? "Split tiers by business type: Fashion Houses, Jewelry & Watches, Art & Collectibles, Luxury Automotive & Other."
+        : "Split tiers by business type: Online Gaming Platforms, Land-Based Casino Groups, Sports Betting Operators, Poker & Skill Gaming Platforms.";
       var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers.\n" + CP_CAPABILITIES;
       var user = "Using only the following pipeline deal data for the " + vertLabel + " vertical, generate a Pipeline Intelligence Brief presentation outline.\n\n" +
         "Slide 1 — " + vertLabel + " Overview:\n" +
@@ -1083,6 +1090,25 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- Total Crypto-Partnered ARR vs Total Greenfield ARR across all segments\n" +
         "- Geography breakdown: AMER / EMEA / APAC account counts and ARR\n" +
         "- Stage distribution: how many accounts at each pipeline stage\n\n" +
+        "Slide 2 — Segment Overview:\n" +
+        "Title: 'Segment Overview — " + vertLabel + " Opportunities at a Glance'\n" +
+        "Generate a single summary table covering all segments in this vertical, broken out by business type.\n\n" +
+        "Table columns: Segment | Scale | 🔓 No Partnerships (Greenfield) | 🤝 Partnership Penetrated\n\n" +
+        "For each segment within this vertical produce one row per business type:\n" +
+        "- Segment: segment name further broken out by business type. " + bizTypeHints + " Use your knowledge of each company's business model to classify correctly.\n" +
+        "- Scale: number of targets in this business type + average estimated annual volume range\n" +
+        "- 🔓 No Partnerships (Greenfield):\n" +
+        "  · Projected ARR total range for greenfield accounts in this business type\n" +
+        "  · Examples: 3-4 named accounts from the pipeline data (if fewer than 3 exist, list all)\n" +
+        "  · Pain Point: the single most common pain point for this business type\n" +
+        "  · Fix: which 1-2 CoinPayments capabilities directly address it (use exact names: Stablecoin + Blockchain Rails / Fiat On/Off Ramps / Third-Party Wallet Hosting / Compliance-as-a-Service)\n" +
+        "- 🤝 Partnership Penetrated:\n" +
+        "  · Projected ARR total range for partnered accounts in this business type\n" +
+        "  · Examples: 3-4 named accounts with their known partners (if fewer than 3 exist, list all)\n" +
+        "  · Pain Point: the most common gap even with existing infrastructure\n" +
+        "  · Fix: how CoinPayments complements or displaces their current partner\n\n" +
+        "After the table add: 'Key Insight: [one sentence on the biggest opportunity in this vertical based on the data]'\n\n" +
+        "Use only named accounts from the provided pipeline data. All ARR figures must come from actual deal data. Do not invent accounts or figures.\n\n" +
         "One slide per segment. For each segment produce two tables separated by a clear divider:\n\n" +
         "Table 1 — Crypto-Partnered Accounts:\n" +
         "Header: '🔗 Crypto-Partnered — X accounts · $Y total ARR · $Z total volume'\n" +
