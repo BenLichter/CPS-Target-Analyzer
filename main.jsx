@@ -406,7 +406,7 @@ function AnalysisView({ data }) {
 
       {/* Competitive */}
       {cc.coinpayments && (
-        <Sec title="⚔️ Competitive Comparison" accent={C.gold} open={false}>
+        <Sec title="💡 Value Prop & Comparison" accent={C.gold} open={false}>
           {data.positioning_statement && <div style={{ background: C.goldDim, border: "1px solid " + C.gold + "40", borderRadius: 8, padding: "10px 14px", marginBottom: 12, color: C.gold, fontSize: 11, lineHeight: 1.6 }}>{data.positioning_statement}</div>}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
