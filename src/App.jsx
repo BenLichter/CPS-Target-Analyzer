@@ -871,6 +871,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s17 = useState(function(){ return localStorage.getItem(SORT_KEY_LS)||"az"; }); var sortOrder = s17[0]; var setSortOrder = s17[1];
   var s18 = useState("all"); var oppSizeFilter  = s18[0]; var setOppSizeFilter  = s18[1];
   var s19 = useState("all"); var volTierFilter  = s19[0]; var setVolTierFilter  = s19[1];
+  var s20 = useState(function(){ var u={}; VERTICALS.forEach(function(v){ try{var x=localStorage.getItem("cp_brief_"+v.id+"_url");if(x)u[v.id]=x;}catch(e){} }); return u; }); var briefUrls = s20[0]; var setBriefUrls = s20[1];
+  var s21 = useState({}); var briefStatus = s21[0]; var setBriefStatus = s21[1];
+  var s22 = useState(null); var briefConfirm = s22[0]; var setBriefConfirm = s22[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1053,6 +1056,76 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     } catch(e) {
       setDeckStatus(function(p){ return Object.assign({},p,{[deal.id]:"error:" + e.message.slice(0,80)}); });
     }
+  }
+
+  async function buildVerticalBrief(vid) {
+    var st = briefStatus[vid]||"idle";
+    if (st==="building"||st==="starting"||st.indexOf("polling")===0) return;
+    setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"building"}); });
+    try {
+      var vert = VERTICALS.find(function(v){ return v.id===vid; });
+      var vertLabel = vert ? vert.label : vid;
+      var vertDeals = deals.filter(function(d){ return d.vertical===vid; });
+      var buckets = getBuckets(vid);
+      var segments = buckets.map(function(b){
+        var sd = vertDeals.filter(function(d){ return d.tier===b.id; })
+          .sort(function(a,b2){
+            if ((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1;
+            return parseArr(b2.arr||"")-parseArr(a.arr||"");
+          });
+        return { id:b.id, label:b.label, count:sd.length,
+          deals:sd.map(function(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||"Greenfield", arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }) };
+      });
+      var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers.\n" + CP_CAPABILITIES;
+      var user = "Using only the following pipeline deal data for the " + vertLabel + " vertical, generate a Pipeline Intelligence Brief presentation outline.\n\n" +
+        "Slide 1 — " + vertLabel + " Overview:\n" +
+        "- Total accounts, total projected ARR, total estimated volume\n" +
+        "- P1 count and ARR vs P2 count and ARR\n" +
+        "- Accounts with confirmed crypto infrastructure partners vs greenfield\n" +
+        "- Geography breakdown: AMER / EMEA / APAC account counts and ARR\n" +
+        "- Stage distribution: how many accounts at each pipeline stage\n\n" +
+        "One slide per segment:\n" +
+        "For each segment include: segment name + account count + total ARR; " +
+        "a table — Account | Priority | Crypto Partners | Est. Volume | Projected ARR | Stage | Geography; " +
+        "sorted P1 by ARR desc then P2 by ARR desc; " +
+        "summary line 'X accounts | $Y ARR | X crypto-partnered | X greenfield'; " +
+        "a callout highlighting the top opportunity in the segment.\n\n" +
+        "Final slide — CoinPayments Value Prop for " + vertLabel + ":\n" +
+        "Using the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above, explain how CoinPayments addresses the specific needs of this vertical. " +
+        "Reference specific named accounts and their pain points. Select the 2 most relevant capabilities and explain the specific application for this vertical.\n\n" +
+        "Format: dark background. Each segment = its own slide. Clean tables with clear headers.\n\n" +
+        "Pipeline data:\n" + JSON.stringify({ vertical:vertLabel, totalDeals:vertDeals.length, segments:segments }, null, 2);
+      var outline = await callGrok(sys, user, 12000, false);
+      setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"starting"}); });
+      var startRes = await fetch("/api/gamma-start", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ prompt:outline, title:vertLabel+" Pipeline Intelligence Brief — CoinPayments" })
+      });
+      var startData = await startRes.json();
+      if (!startRes.ok||startData.error) throw new Error(startData.error||"Gamma start failed "+startRes.status);
+      var genId = startData.generationId;
+      if (!genId) throw new Error("No generation ID from Gamma");
+      setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"polling:0"}); });
+      async function doPoll(attempt) {
+        if (attempt>30){ setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"timeout"}); }); return; }
+        await new Promise(function(r){ setTimeout(r,5000); });
+        try {
+          var pr = await fetch("/api/gamma-status?id="+encodeURIComponent(genId));
+          var pd = await pr.json();
+          if (!pr.ok) throw new Error(pd.error||"Poll error "+pr.status);
+          if (pd.status==="completed"&&pd.url) {
+            try{ await fetch("/api/gamma-theme",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({generationId:genId})}); }catch(te){}
+            var now = Date.now();
+            setBriefUrls(function(p){ return Object.assign({},p,{[vid]:pd.url}); });
+            try{ localStorage.setItem("cp_brief_"+vid+"_url",pd.url); localStorage.setItem("cp_brief_"+vid+"_at",String(now)); }catch(le){}
+            setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"done"}); });
+          } else if (pd.status==="failed") {
+            setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"error:"+(pd.error||"Generation failed")}); });
+          } else { setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"polling:"+attempt}); }); doPoll(attempt+1); }
+        } catch(pe){ setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"error:"+pe.message.slice(0,80)}); }); }
+      }
+      doPoll(1);
+    } catch(e){ setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"error:"+e.message.slice(0,80)}); }); }
   }
 
   function addDeal() {
@@ -1378,6 +1451,42 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{m.p1}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:13 }}>{m.p2}</div></div>
                   </div>
+                  {(function(){
+                    var st = briefStatus[v.id]||"idle";
+                    var url = briefUrls[v.id];
+                    var busy = st==="building"||st==="starting"||st.indexOf("polling")===0;
+                    var isConfirm = briefConfirm===v.id;
+                    return (
+                      <div style={{ marginTop:12, paddingTop:10, borderTop:"1px solid "+C.border }} onClick={function(e){ e.stopPropagation(); }}>
+                        {isConfirm ? (
+                          <div>
+                            <div style={{ color:C.text, fontSize:9, fontWeight:700, marginBottom:7, lineHeight:1.4 }}>Regenerate brief for {v.label}? This will replace the existing deck.</div>
+                            <div style={{ display:"flex", gap:5, flexWrap:"wrap" }}>
+                              <button onClick={function(){ setBriefConfirm(null); buildVerticalBrief(v.id); }} style={{ background:v.color, color:"#000", border:"none", borderRadius:5, padding:"4px 9px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Regenerate</button>
+                              <button onClick={function(){ setBriefConfirm(null); if(url) window.open(url,"_blank"); }} style={{ background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:5, padding:"4px 9px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>View Existing</button>
+                              <button onClick={function(){ setBriefConfirm(null); }} style={{ background:"transparent", color:C.dim, border:"none", fontSize:12, cursor:"pointer", fontFamily:"inherit", padding:"2px 4px" }}>✕</button>
+                            </div>
+                          </div>
+                        ) : url && !busy ? (
+                          <div style={{ display:"flex", gap:5 }}>
+                            <button onClick={function(){ window.open(url,"_blank"); }} style={{ flex:1, background:v.color+"22", color:v.color, border:"1px solid "+v.color+"55", borderRadius:5, padding:"5px 6px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📊 View Brief →</button>
+                            <button onClick={function(){ setBriefConfirm(v.id); }} title={(function(){ try{var t=localStorage.getItem("cp_brief_"+v.id+"_at"); return t?"Last generated: "+new Date(parseInt(t,10)).toLocaleDateString():"Regenerate";}catch(e){return "Regenerate";} })()} style={{ background:C.surface, color:C.dim, border:"1px solid "+C.border, borderRadius:5, padding:"5px 8px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>↻</button>
+                          </div>
+                        ) : busy ? (
+                          <button disabled style={{ width:"100%", background:v.color+"18", color:v.color, border:"1px solid "+v.color+"44", borderRadius:5, padding:"5px 6px", fontSize:9, fontWeight:700, cursor:"default", fontFamily:"inherit", opacity:0.75 }}>
+                            📋 {st==="building"?"Building…":st==="starting"?"Starting…":"Generating… ("+st.split(":")[1]+"/30)"}
+                          </button>
+                        ) : st.indexOf("error:")===0 ? (
+                          <div>
+                            <div style={{ color:"#EF4444", fontSize:8, marginBottom:3, lineHeight:1.4 }}>⚠️ {st.slice(6).slice(0,50)}</div>
+                            <button onClick={function(){ buildVerticalBrief(v.id); }} style={{ width:"100%", background:"#EF444418", color:"#EF4444", border:"1px solid #EF444455", borderRadius:5, padding:"4px 6px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Retry Brief</button>
+                          </div>
+                        ) : (
+                          <button onClick={function(){ buildVerticalBrief(v.id); }} style={{ width:"100%", background:v.color+"18", color:v.color, border:"1px solid "+v.color+"44", borderRadius:5, padding:"5px 6px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Brief</button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
