@@ -1068,28 +1068,39 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var vertDeals = deals.filter(function(d){ return d.vertical===vid; });
       var buckets = getBuckets(vid);
       var segments = buckets.map(function(b){
-        var sd = vertDeals.filter(function(d){ return d.tier===b.id; })
-          .sort(function(a,b2){
-            if ((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1;
-            return parseArr(b2.arr||"")-parseArr(a.arr||"");
-          });
-        return { id:b.id, label:b.label, count:sd.length,
-          deals:sd.map(function(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||"Greenfield", arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }) };
+        var sd = vertDeals.filter(function(d){ return d.tier===b.id; });
+        function sortFn(a,b2){ if((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
+        function mapDeal(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+        var partnered = sd.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
+        var greenfield = sd.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
+        return { id:b.id, label:b.label, totalCount:sd.length, partneredCount:partnered.length, greenfieldCount:greenfield.length, partnered:partnered, greenfield:greenfield };
       });
       var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers.\n" + CP_CAPABILITIES;
       var user = "Using only the following pipeline deal data for the " + vertLabel + " vertical, generate a Pipeline Intelligence Brief presentation outline.\n\n" +
         "Slide 1 — " + vertLabel + " Overview:\n" +
         "- Total accounts, total projected ARR, total estimated volume\n" +
         "- P1 count and ARR vs P2 count and ARR\n" +
-        "- Accounts with confirmed crypto infrastructure partners vs greenfield\n" +
+        "- Total Crypto-Partnered ARR vs Total Greenfield ARR across all segments\n" +
         "- Geography breakdown: AMER / EMEA / APAC account counts and ARR\n" +
         "- Stage distribution: how many accounts at each pipeline stage\n\n" +
-        "One slide per segment:\n" +
-        "For each segment include: segment name + account count + total ARR; " +
-        "a table — Account | Priority | Crypto Partners | Est. Volume | Projected ARR | Stage | Geography; " +
-        "sorted P1 by ARR desc then P2 by ARR desc; " +
-        "summary line 'X accounts | $Y ARR | X crypto-partnered | X greenfield'; " +
-        "a callout highlighting the top opportunity in the segment.\n\n" +
+        "One slide per segment. For each segment produce two tables separated by a clear divider:\n\n" +
+        "Table 1 — Crypto-Partnered Accounts:\n" +
+        "Header: '🔗 Crypto-Partnered — X accounts · $Y total ARR · $Z total volume'\n" +
+        "Columns: Account | Priority | Crypto Partner(s) | Est. Volume | Projected ARR | Stage | Geo\n" +
+        "Sort: P1 by ARR descending, then P2 by ARR descending\n" +
+        "Footer summary row (bold): 'Total Partnered | | | $[sum volume] | $[sum ARR] | |'\n\n" +
+        "Table 2 — Greenfield Accounts:\n" +
+        "Header: '⬜ Greenfield — X accounts · $Y total ARR · $Z total volume'\n" +
+        "Columns: Account | Priority | Est. Volume | Projected ARR | Stage | Geo\n" +
+        "Sort: P1 by ARR descending, then P2 by ARR descending\n" +
+        "Footer summary row (bold): 'Total Greenfield | | $[sum volume] | $[sum ARR] | |'\n\n" +
+        "After both tables — segment summary callout box:\n" +
+        "Total segment opportunity: $[partnered ARR + greenfield ARR] ARR\n" +
+        "Partnered accounts represent $[sum] ARR — displacement or complement play\n" +
+        "Greenfield accounts represent $[sum] ARR — net new infrastructure opportunity\n" +
+        "Top partnered opportunity: [account name] — $[ARR] — [one sentence on CoinPayments angle]\n" +
+        "Top greenfield opportunity: [account name] — $[ARR] — [one sentence on why they are prime for CoinPayments]\n\n" +
+        "Do NOT list individual top opportunities outside of the summary callout — the buckets and their totals are the story, not individual rankings.\n\n" +
         "Final slide — CoinPayments Value Prop for " + vertLabel + ":\n" +
         "Using the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above, explain how CoinPayments addresses the specific needs of this vertical. " +
         "Reference specific named accounts and their pain points. Select the 2 most relevant capabilities and explain the specific application for this vertical.\n\n" +
