@@ -402,5 +402,296 @@ function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
   );
 }
 
-// ─── AnalysisView (placeholder — replaced in next commit) ─────────────────────
-export default function AnalysisView() { return null; }
+// ─── AnalysisView ─────────────────────────────────────────────────────────────
+export default function AnalysisView({ data, onEventsUpdate }) {
+  // ALL hooks declared unconditionally at the very top — NEVER move these
+  var s1 = useState([]); var contacts = s1[0]; var setContacts = s1[1];
+  var s2 = useState([]); var chat = s2[0]; var setChat = s2[1];
+  var s3 = useState(""); var q = s3[0]; var setQ = s3[1];
+  var s4 = useState(false); var asking = s4[0]; var setAsking = s4[1];
+  var chatRef = useRef(null);
+
+  // Effects after ALL hooks
+  useEffect(function() {
+    setContacts(Array.isArray(data.key_contacts) ? data.key_contacts : []);
+  }, [data.key_contacts]);
+
+  useEffect(function() {
+    if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
+  }, [chat]);
+
+  // Derived values — computed after hooks, never before
+  var mo  = data.missed_opportunity || {};
+  var t   = data.tam_som_arr || {};
+  var inc = data.incumbent || {};
+  var geo = data.geography || {};
+  var ap  = data.attack_plan || {};
+  var cc  = data.competitive_comparison || {};
+
+  async function ask() {
+    var question = q.trim();
+    if (!question || asking) return;
+    setQ(""); setAsking(true);
+    var hist = chat.concat([{ role: "user", content: question }]);
+    setChat(hist);
+    try {
+      var ctx = "Company: " + data.company + ", Segment: " + data.segment + ", Summary: " + data.executive_summary + ", ARR: " + t.likely_arr_usd + ", Incumbent: " + inc.name;
+      var ans = await callAPI("You are a CoinPayments sales expert. Answer concisely.", "Account: " + ctx + "\n\nQuestion: " + question, 600);
+      setChat(hist.concat([{ role: "assistant", content: ans }]));
+    } catch (e) {
+      setChat(hist.concat([{ role: "assistant", content: "Error: " + e.message }]));
+    }
+    setAsking(false);
+  }
+
+  return (
+    <div>
+      {/* Header card */}
+      <div style={{ background: C.surface, borderRadius: 12, padding: "16px 20px", marginBottom: 16, border: "1px solid " + C.border }}>
+        <div style={{ fontSize: 22, fontWeight: 900, color: C.text, marginBottom: 4 }}>{data.company}</div>
+        <div style={{ color: C.accent, fontSize: 13, marginBottom: 10 }}>{data.segment}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: data.executive_summary ? 12 : 0 }}>
+          {data.hq && <Badge color="muted">📍 {data.hq}</Badge>}
+          {data.employees && <Badge color="muted">👥 {data.employees}</Badge>}
+          {data.website && <Badge color="cyan">🌐 {data.website}</Badge>}
+          {inc.name && <Badge color="gold">⚔ vs {inc.name}</Badge>}
+          {data.model_used === 'grok-3'
+            ? <span style={{ background:"#06B6D422", border:"1px solid #06B6D460", color:"#06B6D4", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700 }}>⚡ Powered by Grok</span>
+            : data.model_used === 'claude'
+              ? <span title={data.grok_error || ''} style={{ background:"#F59E0B22", border:"1px solid #F59E0B60", color:"#F59E0B", borderRadius:20, padding:"2px 10px", fontSize:10, fontWeight:700, cursor:"help" }}>🤖 Claude{data.grok_error ? " (Grok: " + data.grok_error.slice(0, 60) + ")" : " (Grok unavailable)"}</span>
+              : null}
+        </div>
+        {data.executive_summary && <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.7 }}>{data.executive_summary}</div>}
+      </div>
+
+      {/* ARR */}
+      {(t.projected_arr || t.likely_arr_usd) && (
+        <Sec title="💰 ARR Potential" accent={C.green}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8, marginBottom: 10 }}>
+            {t.tam_usd && <Chip label="TAM (ref)" value={t.tam_usd} color={C.muted} />}
+            {(t.som || t.som_usd) && <Chip label="SOM" value={t.som || t.som_usd} color={C.accent} />}
+            {(t.projected_arr || t.likely_arr_usd) && <Chip label="Projected ARR" value={t.projected_arr || t.likely_arr_usd} color={C.green} />}
+            {(t.upside_arr || t.upside_arr_usd) && <Chip label="Upside ARR" value={t.upside_arr || t.upside_arr_usd} color={C.gold} />}
+          </div>
+          {t.som_calculation && (
+            <div style={{ background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
+              <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>📐 Bottoms-Up Calculation</div>
+              <div style={{ color: C.cyan, fontSize: 11, lineHeight: 1.7, fontFamily: "monospace" }}>{t.som_calculation}</div>
+            </div>
+          )}
+          {(t.assumptions || []).map(function(a, i) { return <div key={i} style={{ color: C.dim, fontSize: 11, marginBottom: 4 }}>• {a}</div>; })}
+        </Sec>
+      )}
+
+      {/* Key Contacts */}
+      <Sec title={"👥 Key Contacts" + (contacts.length ? " (" + contacts.length + ")" : "")} accent={C.cyan} open={true}>
+        {contacts.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>No contacts found. Add a NinjaPear key for verified executives.</div>}
+        {contacts.map(function(c, i) { return <ContactCard key={i} contact={c} company={data.company} onRemove={function(){ setContacts(function(prev){ return prev.filter(function(_,j){ return j!==i; }); }); }} />; })}
+      </Sec>
+
+      {/* Partnerships */}
+      {(data.partnerships || []).length > 0 && (
+        <Sec title="🤝 Partnerships" accent={C.purple} open={false}>
+          {(data.partnerships || []).map(function(p, i) {
+            return (
+              <div key={i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+                  <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partner}</span>
+                  <Badge color="purple" sm>{p.type}</Badge>
+                  {p.dependency && <Badge color={p.dependency === "Critical" ? "red" : p.dependency === "Important" ? "gold" : "muted"} sm>{p.dependency}</Badge>}
+                </div>
+                {p.what_they_provide && <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>{p.what_they_provide}</div>}
+                {p.cp_angle && <div style={{ color: C.accent, fontSize: 11 }}>🎯 {p.cp_angle}</div>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Upcoming Events */}
+      <EventsSection
+        initEvents={data.upcoming_events || []}
+        contactNames={(data.key_contacts || contacts).map(function(c){ return c.name; })}
+        onEventsUpdate={onEventsUpdate}
+      />
+
+      {/* Competitive */}
+      {cc.coinpayments && (
+        <Sec title="⚔️ Competitive Comparison" accent={C.gold} open={false}>
+          {data.positioning_statement && <div style={{ background: C.goldDim, border: "1px solid " + C.gold + "40", borderRadius: 8, padding: "10px 14px", marginBottom: 12, color: C.gold, fontSize: 11, lineHeight: 1.6 }}>{data.positioning_statement}</div>}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead><tr style={{ background: C.card }}>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.dim, fontSize: 10, borderBottom: "1px solid " + C.border }}>Dimension</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.accent, fontSize: 10, borderBottom: "1px solid " + C.border }}>CoinPayments</th>
+                <th style={{ padding: "7px 10px", textAlign: "left", color: C.gold, fontSize: 10, borderBottom: "1px solid " + C.border }}>{cc.target ? cc.target.name || data.company : data.company}</th>
+              </tr></thead>
+              <tbody>
+                {COMPARE_ROWS.map(function(row, i) {
+                  var label = row[0]; var key = row[1];
+                  return (
+                    <tr key={key} style={{ borderBottom: "1px solid " + C.border, background: i % 2 === 0 ? "transparent" : C.card + "80" }}>
+                      <td style={{ padding: "7px 10px", color: C.muted, fontWeight: 600 }}>{label}</td>
+                      <td style={{ padding: "7px 10px", color: C.text }}>{(cc.coinpayments || {})[key] || "—"}</td>
+                      <td style={{ padding: "7px 10px", color: C.muted }}>{cc.target ? (cc.target[key] || "—") : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Sec>
+      )}
+
+      {/* Intent */}
+      {(data.intent_data || []).length > 0 && (
+        <Sec title="📡 Intent Signals" accent={C.cyan} open={false}>
+          {(data.intent_data || []).map(function(s, i) {
+            var srcType = s.source_type || (s.type === "X_Signal" ? "X Post" : "Web");
+            var srcColor = srcType === "X Post" ? C.text : srcType.startsWith("News") ? C.accent : srcType.startsWith("LinkedIn") ? "#0A66C2" : srcType === "Press Release" ? C.green : C.muted;
+            var rawUrl = s.source_url;
+            var urlPath = rawUrl ? rawUrl.replace(/https?:\/\/(www\.)?[^/]+/, '').replace(/\/$/, '') : '';
+            var hasUrl = rawUrl && rawUrl.startsWith("http") && urlPath.length >= 3;
+            var isVerified = hasUrl && s.verified !== false;
+            var isGrokKnowledge = !hasUrl || srcType === "Grok real-time knowledge";
+            return (
+              <div key={i} style={{ padding: "10px 12px", background: C.surface, borderRadius: 7, marginBottom: 6, border: "1px solid " + (isVerified ? C.cyan + "40" : C.border) }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5, flexWrap: "wrap" }}>
+                  <Badge color="cyan" sm>{s.type}</Badge>
+                  <span style={{ background: srcColor + "22", border: "1px solid " + srcColor + "50", color: srcColor, borderRadius: 10, padding: "1px 7px", fontSize: 9, fontWeight: 700 }}>{srcType}</span>
+                  {isVerified && <span style={{ fontSize: 10, color: C.green }} title="Source URL verified">✅</span>}
+                  {isGrokKnowledge && <span style={{ fontSize: 10, color: C.muted }} title="Based on Grok real-time knowledge — no specific URL available">🧠</span>}
+                  {s.date && <span style={{ color: C.dim, fontSize: 10 }}>{s.date}</span>}
+                </div>
+                <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.5, marginBottom: 4 }}>{s.signal}</div>
+                {s.implication && <div style={{ color: C.accent, fontSize: 10, marginBottom: 5 }}>→ {s.implication}</div>}
+                {isVerified
+                  ? <a href={s.source_url} target="_blank" rel="noopener noreferrer" style={{ color: C.cyan, fontSize: 10, textDecoration: "none", fontWeight: 600 }}>→ View Source</a>
+                  : <span style={{ color: C.dim, fontSize: 10 }}>Source: Grok real-time knowledge</span>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Recent News */}
+      {(data.recent_news || []).length > 0 && (
+        <Sec title="📰 Recent News" accent={C.muted} open={false}>
+          {(data.recent_news || []).map(function(n, i) {
+            return (
+              <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid " + C.border }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
+                  <Badge color="muted" sm>{n.category}</Badge>
+                  <span style={{ color: C.dim, fontSize: 10 }}>{n.date} · {n.source}</span>
+                </div>
+                <a href={n.url} target="_blank" rel="noreferrer" style={{ color: C.text, fontSize: 11, fontWeight: 600, textDecoration: "none" }}>{n.title}</a>
+                {n.summary && <div style={{ color: C.muted, fontSize: 10, marginTop: 3 }}>{n.summary}</div>}
+                {n.cp_relevance && <div style={{ color: C.accent, fontSize: 10, marginTop: 2 }}>🎯 {n.cp_relevance}</div>}
+              </div>
+            );
+          })}
+        </Sec>
+      )}
+
+      {/* Geography */}
+      {(geo.markets || []).length > 0 && (
+        <Sec title="🌍 Geography" accent={C.muted} open={false}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            {(geo.markets || []).map(function(m) { return <Badge key={m} color="accent" sm>{m}</Badge>; })}
+          </div>
+          {geo.gaps && <div style={{ color: C.gold, fontSize: 11 }}>⚠ Gap: {geo.gaps}</div>}
+        </Sec>
+      )}
+
+      {/* Missed Opportunity */}
+      {mo.headline && (
+        <Sec title="🚨 Missed Opportunity" accent={C.red} open={true}>
+          <div style={{ background: C.redDim, border: "1px solid " + C.red + "40", borderRadius: 8, padding: "12px 16px", marginBottom: 10 }}>
+            <div style={{ color: C.red, fontWeight: 800, fontSize: 14, marginBottom: 4 }}>{mo.headline}</div>
+            {mo.urgency_reason && <div style={{ color: C.muted, fontSize: 11 }}>{mo.urgency_reason}</div>}
+          </div>
+          {mo.competitor_threat && <div style={{ color: C.gold, fontSize: 11, marginBottom: 8 }}>⚠ Competitor threat: {mo.competitor_threat}</div>}
+          {[mo.market_stat_1, mo.market_stat_2, mo.market_stat_3].filter(Boolean).map(function(s, i) {
+            return <div key={i} style={{ padding: "6px 10px", background: C.surface, borderRadius: 6, marginBottom: 5, color: C.muted, fontSize: 11, borderLeft: "2px solid " + C.accent }}>📊 {s}</div>;
+          })}
+          {mo.narrative && <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.7, marginTop: 8 }}>{mo.narrative}</div>}
+        </Sec>
+      )}
+
+      {/* GTM */}
+      {ap.icp_profile && (
+        <Sec title="🗺️ GTM Plan" accent={C.purple} open={false}>
+          <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 12, border: "1px solid " + C.border }}>
+            <div style={{ color: C.accent, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>ICP Profile</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {[["Primary Buyer", ap.icp_profile.primary_buyer], ["Champion", ap.icp_profile.champion], ["Blocker", ap.icp_profile.blocker], ["Trigger", ap.icp_profile.trigger_event]].map(function(kv) {
+                return kv[1] ? <div key={kv[0]}><span style={{ color: C.dim, fontSize: 10 }}>{kv[0]}: </span><span style={{ color: C.muted, fontSize: 11 }}>{kv[1]}</span></div> : null;
+              })}
+            </div>
+          </div>
+          {(ap.sequenced_timeline || []).length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Sequenced Timeline</div>
+              {(ap.sequenced_timeline || []).map(function(s, i) {
+                return (
+                  <div key={i} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: "1px solid " + C.border }}>
+                    <div style={{ color: C.accent, fontSize: 10, fontWeight: 700, minWidth: 70 }}>{s.week}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: C.text, fontSize: 11 }}>{s.action}</div>
+                      {s.goal && <div style={{ color: C.dim, fontSize: 10, marginTop: 2 }}>{s.goal}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {ap.motions && (
+            <div>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>GTM Motions</div>
+              {Object.values(ap.motions).filter(Boolean).map(function(m, i) {
+                return (
+                  <div key={i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+                    <div style={{ color: C.accent, fontWeight: 700, fontSize: 11, marginBottom: 4 }}>{m.name || ""}</div>
+                    <div style={{ color: C.muted, fontSize: 11 }}>{m.tactic || m.hook || m.trigger || m.content || m.play || m.events || ""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {(ap.objection_handling || []).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ color: C.text, fontSize: 11, fontWeight: 700, marginBottom: 8 }}>Objection Handling</div>
+              {(ap.objection_handling || []).map(function(o, i) {
+                return (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <div style={{ color: C.gold, fontSize: 11, fontWeight: 600, marginBottom: 2 }}>❓ {o.objection}</div>
+                    <div style={{ color: C.muted, fontSize: 11, paddingLeft: 12 }}>✅ {o.response}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Sec>
+      )}
+
+      {/* AI Chat */}
+      <Sec title="💬 Ask AI About This Account" accent={C.accent} open={false}>
+        <div ref={chatRef} style={{ maxHeight: 280, overflowY: "auto", marginBottom: 12 }}>
+          {chat.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>Ask anything about this account...</div>}
+          {chat.map(function(m, i) {
+            return (
+              <div key={i} style={{ marginBottom: 8, textAlign: m.role === "user" ? "right" : "left" }}>
+                <div style={{ display: "inline-block", background: m.role === "user" ? C.accentDim : C.surface, color: C.text, borderRadius: 8, padding: "8px 12px", maxWidth: "85%", fontSize: 11, lineHeight: 1.6, textAlign: "left" }}>{m.content}</div>
+              </div>
+            );
+          })}
+          {asking && <div style={{ color: C.dim, fontSize: 11, padding: "8px 0" }}>Thinking...</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={q} onChange={function(e) { setQ(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter" && !asking) ask(); }} placeholder="e.g. What's the best hook for the CMO?" style={{ flex: 1, background: C.surface, border: "1px solid " + C.border, borderRadius: 8, padding: "8px 12px", color: C.text, fontSize: 11, outline: "none", fontFamily: "inherit" }} />
+          <button onClick={ask} disabled={asking || !q.trim()} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 800, fontSize: 11, cursor: asking ? "wait" : "pointer", fontFamily: "inherit" }}>Ask</button>
+        </div>
+      </Sec>
+    </div>
+  );
+}
