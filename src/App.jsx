@@ -2113,16 +2113,6 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
   );
 }
 
-// ─── Competitive Landscape constants ─────────────────────────────────────────
-var COMP_CATS = ["Custody","Stablecoin Infrastructure","Crypto-as-a-Service","Payments","Exchange","Compliance","Full Stack","Analytics"];
-var COMP_POSITIONS = ["Displace","Complement","Co-exist","Avoid"];
-var POS_COLOR = { "Displace":C.red, "Complement":C.green, "Co-exist":C.accent, "Avoid":C.dim };
-var CAT_COLOR = {
-  "Custody":"#F59E0B","Stablecoin Infrastructure":"#06B6D4","Crypto-as-a-Service":"#8B5CF6",
-  "Payments":"#00C2FF","Exchange":"#10B981","Compliance":"#EC4899","Full Stack":"#F97316","Analytics":"#94A3B8"
-};
-var INIT_COMP_LIST = ["Fireblocks","Paxos","Anchorage Digital","Coinbase Prime","Zero Hash","Kraken","BitGo","BitPay","Bakkt","BVNK","Stripe","PayPal","Block","Ripple","Circle","Chainalysis","Copper","Talos","Ledger Enterprise","Bitso","Checkout.com","Adyen","Worldpay","Nuvei"];
-var GROK_COMP_SYS = "You are a crypto payments competitive intelligence analyst for CoinPayments. CoinPayments has four capabilities: (1) Stablecoin + Blockchain Rails: 24/7 instant settlement, zero pre-funding, fractions-of-a-cent fees; (2) Fiat On/Off Ramps: white-label local fiat<>stablecoin, single UX, bank/card/cash; (3) Third-Party Wallet Hosting: white-label MPC custody, insured, audit-ready, outsourced key management; (4) Compliance-as-a-Service: 180+ jurisdictions, 40+ assets, AML/KYC, turnkey. Output ONLY valid JSON, no markdown.";
 function svLabel(vid, tid) {
   if (vid==="financial_services"||!vid) {
     var fs = FS_SUBVERTS.find(function(s){ return s.id===tid; });
@@ -2135,6 +2125,377 @@ function svColor(vid, tid) {
   var buckets = (vid==="financial_services"||!vid) ? FS_SUBVERTS : TIERS;
   var b = buckets.find(function(x){ return x.id===tid; });
   return b ? b.color : C.muted;
+}
+
+// ─── Compete Tab ─────────────────────────────────────────────────────────────
+var COMP_POSITIONS = [
+  { id:"displace",   label:"Displace",   color:"#EF4444" },
+  { id:"complement", label:"Complement", color:"#10B981" },
+  { id:"coexist",    label:"Co-exist",   color:"#3B82F6" },
+  { id:"avoid",      label:"Avoid",      color:"#6B7280" },
+];
+var COMP_SEED_NAMES = [
+  "Fireblocks","Paxos","Anchorage Digital","Coinbase Prime","Zero Hash",
+  "Kraken","BitGo","BitPay","Bakkt","BVNK","Stripe","PayPal","Block",
+  "Ripple","Circle","Chainalysis","Copper","Talos","Ledger Enterprise",
+  "Bitso","Checkout.com","Adyen","Worldpay","Nuvei"
+];
+var COMP_SEGMENT_OPTS = [
+  "FX & Brokerage","Escrow","Remittance Fintechs","Neobanks",
+  "Regional / Middle Market Banks","Luxury Travel","Luxury Goods","Gaming & Casinos"
+];
+function saveCompetitorList(list) {
+  fetch("/api/competitors", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({ competitors:list })
+  }).catch(function(){});
+}
+async function enrichCompetitorsGrok(names) {
+  var sys = "You are a competitive intelligence analyst for CoinPayments, a crypto payments infrastructure company.\n" + CP_CAPABILITIES;
+  var user = "Provide competitive intelligence on these companies vs CoinPayments. Return ONLY a JSON array (no markdown fences, no explanation). Each element must include:\n" +
+    "name (string, exactly as given in the list), category (one of: Custody/Payments/Exchange/Compliance/Banking/Infrastructure/Fintech), " +
+    "description (1-2 sentences: what the company does), " +
+    "segmentsPenetrated (array of strings from: FX & Brokerage, Escrow, Remittance Fintechs, Neobanks, Regional / Middle Market Banks, Luxury Travel, Luxury Goods, Gaming & Casinos), " +
+    "competitivePosition (one of: displace/complement/coexist/avoid — from CoinPayments' perspective), " +
+    "differentiation (2-3 sentences: how CoinPayments' four capabilities specifically beat this competitor), " +
+    "weaknesses (1-2 sentences: this competitor's key weaknesses relevant to CoinPayments' market), " +
+    "fullDetail (3-4 sentences: market position, key clients, pricing model, strategic direction)\n\n" +
+    "Companies to analyze: " + names.join(", ");
+  var raw = await callGrok(sys, user, 12000, false);
+  var m = raw.match(/\[[\s\S]*\]/);
+  if (!m) throw new Error("No JSON array in Grok response");
+  return JSON.parse(m[0]);
+}
+function CompeteTab({ deals }) {
+  var s1  = useState([]); var competitors = s1[0]; var setCompetitors = s1[1];
+  var s2  = useState("idle"); var seedStatus = s2[0]; var setSeedStatus = s2[1];
+  var s3  = useState(""); var seedError = s3[0]; var setSeedError = s3[1];
+  var s4  = useState(null); var enrichingId = s4[0]; var setEnrichingId = s4[1];
+  var s5  = useState(null); var expandedId = s5[0]; var setExpandedId = s5[1];
+  var s6  = useState(""); var searchQ = s6[0]; var setSearchQ = s6[1];
+  var s7  = useState("all"); var filterPos = s7[0]; var setFilterPos = s7[1];
+  var s8  = useState(false); var showAdd = s8[0]; var setShowAdd = s8[1];
+  var s9  = useState(null); var editId = s9[0]; var setEditId = s9[1];
+  var s10 = useState({ name:"", category:"Payments", description:"", segmentsPenetrated:[], competitivePosition:"complement", differentiation:"", weaknesses:"", fullDetail:"" });
+  var addForm = s10[0]; var setAddForm = s10[1];
+  var s11 = useState({}); var editForm = s11[0]; var setEditForm = s11[1];
+  var loadedRef = useRef(false);
+
+  function doAutoPopulate(list) {
+    var allP = [];
+    deals.forEach(function(d){ (d.cryptoPartners||[]).forEach(function(p){ if(allP.indexOf(p)===-1) allP.push(p); }); });
+    var existing = list.map(function(c){ return c.name.toLowerCase(); });
+    var newN = allP.filter(function(p){ return existing.indexOf(p.toLowerCase())===-1; });
+    if (!newN.length) return;
+    enrichCompetitorsGrok(newN).then(function(extra){
+      var ts = Date.now();
+      var items = extra.map(function(c,i){ return Object.assign({},c,{ id:ts+i, addedAt:ts, enrichedAt:ts }); });
+      var combined = list.concat(items);
+      setCompetitors(combined);
+      saveCompetitorList(combined);
+    }).catch(function(){});
+  }
+
+  useEffect(function(){
+    if (loadedRef.current) return;
+    loadedRef.current = true;
+    fetch("/api/competitors")
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        var list = Array.isArray(data.competitors) ? data.competitors : [];
+        if (list.length === 0) {
+          setSeedStatus("loading");
+          enrichCompetitorsGrok(COMP_SEED_NAMES)
+            .then(function(enriched){
+              var ts = Date.now();
+              var items = enriched.map(function(c,i){ return Object.assign({},c,{ id:ts+i, addedAt:ts, enrichedAt:ts }); });
+              setCompetitors(items); setSeedStatus("done");
+              saveCompetitorList(items);
+              doAutoPopulate(items);
+            })
+            .catch(function(err){ setSeedStatus("error"); setSeedError(err.message); });
+        } else {
+          setCompetitors(list); setSeedStatus("done");
+          doAutoPopulate(list);
+        }
+      })
+      .catch(function(){ setSeedStatus("error"); setSeedError("Failed to load from API"); });
+  }, []);
+
+  function refreshCompetitor(comp) {
+    setEnrichingId(comp.id);
+    enrichCompetitorsGrok([comp.name]).then(function(res){
+      if (!res.length) { setEnrichingId(null); return; }
+      var updated = Object.assign({}, comp, res[0], { enrichedAt:Date.now() });
+      var newList = competitors.map(function(c){ return c.id===comp.id ? updated : c; });
+      setCompetitors(newList); saveCompetitorList(newList); setEnrichingId(null);
+    }).catch(function(){ setEnrichingId(null); });
+  }
+  function deleteCompetitor(id) {
+    var newList = competitors.filter(function(c){ return c.id!==id; });
+    setCompetitors(newList); saveCompetitorList(newList);
+    if (expandedId===id) setExpandedId(null);
+  }
+  function addCompetitor() {
+    if (!addForm.name.trim()) return;
+    var ts = Date.now();
+    var item = Object.assign({}, addForm, { id:ts, addedAt:ts, enrichedAt:ts });
+    var newList = competitors.concat([item]);
+    setCompetitors(newList); saveCompetitorList(newList);
+    setShowAdd(false);
+    setAddForm({ name:"", category:"Payments", description:"", segmentsPenetrated:[], competitivePosition:"complement", differentiation:"", weaknesses:"", fullDetail:"" });
+  }
+  function saveEdit() {
+    var newList = competitors.map(function(c){ return c.id===editId ? Object.assign({},c,editForm) : c; });
+    setCompetitors(newList); saveCompetitorList(newList);
+    setEditId(null); setEditForm({});
+  }
+  function getPipelineTargets(name) {
+    return deals.filter(function(d){ return (d.cryptoPartners||[]).some(function(p){ return p.toLowerCase()===name.toLowerCase(); }); });
+  }
+  function renderFields(form, onChange) {
+    var finp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
+    var fsel = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none", width:"100%" };
+    var flbl = { color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:4 };
+    return (
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+        <div>
+          <div style={flbl}>Name *</div>
+          <input value={form.name||""} onChange={function(e){ onChange(Object.assign({},form,{name:e.target.value})); }} style={finp} />
+        </div>
+        <div>
+          <div style={flbl}>Category</div>
+          <select value={form.category||"Payments"} onChange={function(e){ onChange(Object.assign({},form,{category:e.target.value})); }} style={fsel}>
+            {["Custody","Payments","Exchange","Compliance","Banking","Infrastructure","Fintech"].map(function(v){ return <option key={v}>{v}</option>; })}
+          </select>
+        </div>
+        <div style={{ gridColumn:"1 / -1" }}>
+          <div style={flbl}>Description</div>
+          <textarea value={form.description||""} onChange={function(e){ onChange(Object.assign({},form,{description:e.target.value})); }} rows={2} style={Object.assign({},finp,{resize:"vertical"})} />
+        </div>
+        <div>
+          <div style={flbl}>Competitive Position</div>
+          <select value={form.competitivePosition||"complement"} onChange={function(e){ onChange(Object.assign({},form,{competitivePosition:e.target.value})); }} style={fsel}>
+            {COMP_POSITIONS.map(function(p){ return <option key={p.id} value={p.id}>{p.label}</option>; })}
+          </select>
+        </div>
+        <div>
+          <div style={flbl}>Segments (Ctrl/⌘ multi-select)</div>
+          <select multiple value={form.segmentsPenetrated||[]} onChange={function(e){ var v=[]; for(var i=0;i<e.target.options.length;i++){if(e.target.options[i].selected)v.push(e.target.options[i].value);} onChange(Object.assign({},form,{segmentsPenetrated:v})); }} style={Object.assign({},fsel,{height:72,color:C.text})}>
+            {COMP_SEGMENT_OPTS.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+          </select>
+        </div>
+        <div style={{ gridColumn:"1 / -1" }}>
+          <div style={flbl}>CoinPayments Differentiation</div>
+          <textarea value={form.differentiation||""} onChange={function(e){ onChange(Object.assign({},form,{differentiation:e.target.value})); }} rows={3} style={Object.assign({},finp,{resize:"vertical"})} />
+        </div>
+        <div style={{ gridColumn:"1 / -1" }}>
+          <div style={flbl}>Weaknesses</div>
+          <textarea value={form.weaknesses||""} onChange={function(e){ onChange(Object.assign({},form,{weaknesses:e.target.value})); }} rows={2} style={Object.assign({},finp,{resize:"vertical"})} />
+        </div>
+        <div style={{ gridColumn:"1 / -1" }}>
+          <div style={flbl}>Full Intelligence Detail</div>
+          <textarea value={form.fullDetail||""} onChange={function(e){ onChange(Object.assign({},form,{fullDetail:e.target.value})); }} rows={3} style={Object.assign({},finp,{resize:"vertical"})} />
+        </div>
+      </div>
+    );
+  }
+
+  var dealsWithPartner = deals.filter(function(d){ return d.hasCryptoPartner; });
+  var pctPipeline = deals.length ? Math.round(dealsWithPartner.length/deals.length*100) : 0;
+  var mostCommon = { name:"—", count:0 };
+  competitors.forEach(function(c){ var n=getPipelineTargets(c.name).length; if(n>mostCommon.count) mostCommon={name:c.name,count:n}; });
+  var filtered = competitors.filter(function(c){
+    if (filterPos!=="all" && c.competitivePosition!==filterPos) return false;
+    var q = searchQ.toLowerCase();
+    return !q || (c.name||"").toLowerCase().indexOf(q)!==-1 || (c.category||"").toLowerCase().indexOf(q)!==-1 || (c.description||"").toLowerCase().indexOf(q)!==-1;
+  });
+
+  var accentBtn = { background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"7px 14px", fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit" };
+  var smBtn     = { background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:6, padding:"5px 12px", fontWeight:600, fontSize:10, cursor:"pointer", fontFamily:"inherit" };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <div style={{ color:C.text, fontSize:18, fontWeight:800 }}>⚔️ Competitive Landscape</div>
+          <div style={{ color:C.muted, fontSize:11, marginTop:4 }}>Crypto infrastructure competitors tracked against CoinPayments' pipeline</div>
+        </div>
+        <button onClick={function(){ setShowAdd(!showAdd); setEditId(null); }} style={accentBtn}>
+          {showAdd ? "✕ Cancel" : "+ Add Competitor"}
+        </button>
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))", gap:10, marginBottom:16 }}>
+        {[
+          { label:"Tracked",                   value:competitors.length,                                                          color:C.accent },
+          { label:"Pipeline w/ Crypto Partner", value:pctPipeline+"%",                                                            color:C.gold   },
+          { label:"Most Common",               value:mostCommon.count ? mostCommon.name+" ("+mostCommon.count+")" : "—",          color:"#EF4444" },
+          { label:"Displace",                  value:competitors.filter(function(c){return c.competitivePosition==="displace";}).length,   color:"#EF4444" },
+          { label:"Complement",                value:competitors.filter(function(c){return c.competitivePosition==="complement";}).length, color:"#10B981" },
+          { label:"Co-exist",                  value:competitors.filter(function(c){return c.competitivePosition==="coexist";}).length,    color:"#3B82F6" },
+        ].map(function(s,i){
+          return (
+            <div key={i} style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"12px 14px" }}>
+              <div style={{ color:s.color, fontWeight:800, fontSize:18, marginBottom:2 }}>{s.value}</div>
+              <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Seed status banners */}
+      {seedStatus==="loading" && (
+        <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:20, marginBottom:16, textAlign:"center" }}>
+          <div style={{ color:C.accent, fontSize:14, fontWeight:700, marginBottom:6 }}>🔍 Building competitive intelligence...</div>
+          <div style={{ color:C.muted, fontSize:11 }}>Grok is analyzing {COMP_SEED_NAMES.length} competitors against CoinPayments' four capabilities. This takes ~30s.</div>
+        </div>
+      )}
+      {seedStatus==="error" && (
+        <div style={{ background:"#EF444420", border:"1px solid #EF4444", borderRadius:10, padding:12, marginBottom:16, fontSize:11, color:"#EF4444", display:"flex", gap:10, alignItems:"center" }}>
+          <span>⚠️ {seedError}</span>
+          <button onClick={function(){
+            setSeedStatus("loading"); setSeedError("");
+            enrichCompetitorsGrok(COMP_SEED_NAMES)
+              .then(function(enriched){ var ts=Date.now(); var items=enriched.map(function(c,i){ return Object.assign({},c,{id:ts+i,addedAt:ts,enrichedAt:ts}); }); setCompetitors(items); setSeedStatus("done"); saveCompetitorList(items); })
+              .catch(function(err){ setSeedStatus("error"); setSeedError(err.message); });
+          }} style={{ background:"transparent", border:"1px solid #EF4444", color:"#EF4444", borderRadius:6, padding:"3px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Retry</button>
+        </div>
+      )}
+
+      {/* Add form */}
+      {showAdd && (
+        <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:16, marginBottom:16 }}>
+          <div style={{ color:C.text, fontWeight:700, fontSize:13, marginBottom:12 }}>Add Competitor</div>
+          {renderFields(addForm, setAddForm)}
+          <div style={{ display:"flex", gap:8, marginTop:12 }}>
+            <button onClick={addCompetitor} style={accentBtn}>Save</button>
+            <button onClick={function(){ setShowAdd(false); }} style={smBtn}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter bar */}
+      <div style={{ display:"flex", gap:8, marginBottom:12, flexWrap:"wrap", alignItems:"center" }}>
+        <input value={searchQ} onChange={function(e){ setSearchQ(e.target.value); }} placeholder="Search competitors…"
+          style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", minWidth:160, flex:"1 1 160px" }} />
+        <select value={filterPos} onChange={function(e){ setFilterPos(e.target.value); }}
+          style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+          <option value="all">All Positions</option>
+          {COMP_POSITIONS.map(function(p){ return <option key={p.id} value={p.id}>{p.label}</option>; })}
+        </select>
+        <div style={{ color:C.dim, fontSize:10 }}>{filtered.length} / {competitors.length} competitors</div>
+      </div>
+
+      {/* Column headers */}
+      {filtered.length > 0 && (
+        <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 3fr 2fr 1fr 3fr 1fr", gap:8, padding:"4px 14px", marginBottom:4 }}>
+          {["Competitor","Category","Description","Segments","Pipeline","Differentiation","Position"].map(function(h){
+            return <div key={h} style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>{h}</div>;
+          })}
+        </div>
+      )}
+
+      {/* Competitor rows */}
+      {filtered.map(function(comp){
+        var pipeTargets = getPipelineTargets(comp.name);
+        var isExp  = expandedId===comp.id;
+        var isEdit = editId===comp.id;
+        var posObj = COMP_POSITIONS.find(function(p){ return p.id===comp.competitivePosition; }) || { color:C.muted, label:comp.competitivePosition||"—" };
+        return (
+          <div key={comp.id} style={{ background:C.card, border:"1px solid "+(isExp?posObj.color:C.border), borderRadius:10, marginBottom:8, overflow:"hidden" }}>
+            {/* Summary row */}
+            {!isEdit && (
+              <div onClick={function(){ setExpandedId(isExp?null:comp.id); setEditId(null); }}
+                style={{ display:"grid", gridTemplateColumns:"2fr 1fr 3fr 2fr 1fr 3fr 1fr", gap:8, padding:"12px 14px", cursor:"pointer", alignItems:"start" }}>
+                <div>
+                  <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{comp.name}</div>
+                  {pipeTargets.length>0 && <div style={{ color:C.green, fontSize:9, marginTop:2 }}>🔗 {pipeTargets.length} deal{pipeTargets.length!==1?"s":""}</div>}
+                </div>
+                <div style={{ color:C.muted, fontSize:11, paddingTop:1 }}>{comp.category||"—"}</div>
+                <div style={{ color:C.dim, fontSize:10, lineHeight:1.5 }}>{(comp.description||"").slice(0,100)}{(comp.description||"").length>100?"…":""}</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:3 }}>
+                  {(comp.segmentsPenetrated||[]).slice(0,3).map(function(s){ return <span key={s} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:10, padding:"1px 6px", fontSize:8, color:C.muted, whiteSpace:"nowrap" }}>{s}</span>; })}
+                  {(comp.segmentsPenetrated||[]).length>3 && <span style={{ color:C.dim, fontSize:8 }}>+{(comp.segmentsPenetrated||[]).length-3}</span>}
+                </div>
+                <div style={{ color:pipeTargets.length?C.green:C.dim, fontWeight:pipeTargets.length?700:400, fontSize:13, paddingTop:1 }}>{pipeTargets.length||"—"}</div>
+                <div style={{ color:C.dim, fontSize:10, lineHeight:1.5 }}>{(comp.differentiation||"").slice(0,90)}{(comp.differentiation||"").length>90?"…":""}</div>
+                <div><span style={{ background:posObj.color+"22", border:"1px solid "+posObj.color+"66", color:posObj.color, borderRadius:20, padding:"2px 8px", fontSize:9, fontWeight:700, whiteSpace:"nowrap" }}>{posObj.label}</span></div>
+              </div>
+            )}
+            {/* Edit form */}
+            {isEdit && (
+              <div style={{ padding:16 }}>
+                <div style={{ color:C.text, fontWeight:700, fontSize:13, marginBottom:10 }}>Edit: {comp.name}</div>
+                {renderFields(editForm, setEditForm)}
+                <div style={{ display:"flex", gap:8, marginTop:10 }}>
+                  <button onClick={saveEdit} style={accentBtn}>Save</button>
+                  <button onClick={function(){ setEditId(null); setEditForm({}); }} style={smBtn}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {/* Expanded detail */}
+            {isExp && !isEdit && (
+              <div style={{ borderTop:"1px solid "+C.border, padding:"14px 16px" }}>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:14 }}>
+                  <div>
+                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:6 }}>Full Intelligence</div>
+                    <div style={{ color:C.muted, fontSize:11, lineHeight:1.6 }}>{comp.fullDetail||"—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:6 }}>Key Weaknesses</div>
+                    <div style={{ color:C.muted, fontSize:11, lineHeight:1.6 }}>{comp.weaknesses||"—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:6 }}>CoinPayments Differentiation</div>
+                    <div style={{ color:C.muted, fontSize:11, lineHeight:1.6 }}>{comp.differentiation||"—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:6 }}>Pipeline Targets ({pipeTargets.length})</div>
+                    {pipeTargets.length
+                      ? <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                          {pipeTargets.map(function(d){ return <span key={d.id} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:20, padding:"2px 8px", fontSize:9, color:C.text }}>{d.company}</span>; })}
+                        </div>
+                      : <div style={{ color:C.dim, fontSize:11 }}>None in pipeline</div>}
+                  </div>
+                  <div style={{ gridColumn:"1 / -1" }}>
+                    <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", marginBottom:6 }}>All Segments Penetrated</div>
+                    <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                      {(comp.segmentsPenetrated||[]).length
+                        ? (comp.segmentsPenetrated||[]).map(function(s){ return <span key={s} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:10, padding:"2px 8px", fontSize:9, color:C.muted }}>{s}</span>; })
+                        : <span style={{ color:C.dim, fontSize:11 }}>—</span>}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                  <button onClick={function(e){ e.stopPropagation(); setEditId(comp.id); setEditForm(Object.assign({},comp)); setExpandedId(null); }} style={smBtn}>✏️ Edit</button>
+                  <button onClick={function(e){ e.stopPropagation(); if(enrichingId===comp.id) return; refreshCompetitor(comp); }}
+                    style={{ background:C.surface, color:enrichingId===comp.id?C.dim:C.accent, border:"1px solid "+(enrichingId===comp.id?C.border:C.accent), borderRadius:6, padding:"5px 12px", fontWeight:600, fontSize:10, cursor:enrichingId===comp.id?"default":"pointer", fontFamily:"inherit" }}>
+                    {enrichingId===comp.id ? "⟳ Refreshing…" : "🔄 Refresh Intelligence"}
+                  </button>
+                  <button onClick={function(e){ e.stopPropagation(); if(window.confirm("Delete "+comp.name+"?")) deleteCompetitor(comp.id); }}
+                    style={{ background:C.surface, color:"#EF4444", border:"1px solid #EF4444", borderRadius:6, padding:"5px 12px", fontWeight:600, fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>🗑 Delete</button>
+                  <div style={{ marginLeft:"auto", color:C.dim, fontSize:9 }}>
+                    {comp.enrichedAt ? "Updated "+new Date(comp.enrichedAt).toLocaleDateString() : ""}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {/* Empty state */}
+      {filtered.length===0 && seedStatus!=="loading" && (
+        <div style={{ textAlign:"center", padding:60, color:C.dim }}>
+          <div style={{ fontSize:28, marginBottom:12 }}>⚔️</div>
+          <div>{competitors.length===0 ? "Competitive intelligence loading…" : "No competitors match your filters."}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -2216,6 +2577,7 @@ export default function App() {
     ["result",  "📊 Result"+(result?" ✓":"")],
     ["pipeline","📋 Pipeline"],
     ["deck",    "🎨 Deck Builder"],
+    ["compete", "⚔️ Compete"],
     ["history", "🕐 History"+(history.length?" ("+history.length+")":"")],
   ];
 
@@ -2340,6 +2702,9 @@ export default function App() {
 
         {/* Deck Builder */}
         {page==="deck" && <DeckBuilder gammaHistory={gammaHistory} setGammaHistory={setGammaHistory} deals={pipelineDeals}/>}
+
+        {/* Compete */}
+        {page==="compete" && <CompeteTab deals={pipelineDeals} />}
 
         {/* History */}
         {page==="history" && (
