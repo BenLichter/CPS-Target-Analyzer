@@ -1172,8 +1172,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     vd = applyCryptoFilter(vd, cp);
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    var tamVals = vd.map(getDealTam).filter(function(v){ return v>0; });
-    var sumTam = tamVals.reduce(function(s,v){ return s+v; }, 0);
+    var sumTam = tMetrics(vid, "all", null, geo, cp).avgTam;
     return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
