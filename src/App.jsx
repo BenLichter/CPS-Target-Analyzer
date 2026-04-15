@@ -1127,6 +1127,26 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "Top partnered opportunity: [account name] — $[ARR] — [one sentence on CoinPayments angle]\n" +
         "Top greenfield opportunity: [account name] — $[ARR] — [one sentence on why they are prime for CoinPayments]\n\n" +
         "Do NOT list individual top opportunities outside of the summary callout — the buckets and their totals are the story, not individual rankings.\n\n" +
+        (vid === "financial_services" ?
+          "After the FX & Brokerage segment slide, add one additional slide:\n\n" +
+          "Slide — FX & Brokerage — Business Type Breakdown:\n" +
+          "Title: 'FX & Brokerage — Business Type Breakdown'\n" +
+          "Using your knowledge of each firm's actual business model, classify every FX & Brokerage account from the pipeline data into one of these two categories:\n\n" +
+          "Multi-Asset Platforms: Companies that offer FX plus equities, crypto, ETFs, commodities, or other asset classes alongside FX. Reference examples from the broader market (for classification guidance only — only include firms actually in the pipeline data): Interactive Brokers, Saxo Bank, Webull, eToro, Moomoo, Trading 212, Plus500, DriveWealth, Alpaca, Firstrade, Robinhood, TradeZero.\n\n" +
+          "Forex / CFD Brokers: Companies whose primary business is retail or institutional FX and/or CFD trading. Reference examples: Pepperstone, AvaTrade, FxPro, XM, OANDA, Forex.com, CMC Markets, IG Group, BingX, Vantage.\n\n" +
+          "Use your knowledge of each firm's actual business model to classify correctly — do not guess based on name alone.\n\n" +
+          "For each business type produce:\n" +
+          "- Header: '[Business Type] — X accounts · $Y total ARR · $Z total volume'\n" +
+          "- Table columns: Account | Priority | Crypto Partners | Est. Volume | Projected ARR | Geo\n" +
+          "- Sort: P1 by ARR descending, then P2 by ARR descending\n" +
+          "- Footer summary row: 'Total [Business Type]: X accounts | $Y ARR | X crypto-partnered | X greenfield'\n\n" +
+          "After both tables add a comparison callout:\n" +
+          "- Multi-Asset total ARR vs Forex/CFD total ARR\n" +
+          "- Which business type has higher crypto partnership penetration rate\n" +
+          "- Which business type represents the larger greenfield opportunity (by account count and ARR)\n" +
+          "- One sentence on which business type CoinPayments should prioritize first and why\n\n" +
+          "Use only accounts from the FX & Brokerage pipeline data. Do not include accounts from other segments. Do not invent accounts or figures.\n\n"
+        : "") +
         "Final slide — CoinPayments Value Prop for " + vertLabel + ":\n" +
         "Using the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above, explain how CoinPayments addresses the specific needs of this vertical. " +
         "Reference specific named accounts and their pain points. Select the 2 most relevant capabilities and explain the specific application for this vertical.\n\n" +
