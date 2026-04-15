@@ -1172,8 +1172,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     vd = applyCryptoFilter(vd, cp);
     var wa = vd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    var ts = calcTamStats(vd);
-    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:ts.avgTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
+    var tamVals = vd.map(getDealTam).filter(function(v){ return v>0; });
+    var sumTam = tamVals.reduce(function(s,v){ return s+v; }, 0);
+    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
@@ -1184,7 +1185,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var ts = calcTamStats(td);
-    var meanTam = ts.avgTam;
+    var meanTam = tid === "all"
+      ? td.map(getDealTam).filter(function(v){ return v>0; }).reduce(function(s,v){ return s+v; }, 0)
+      : ts.avgTam;
     if (tid === 'neobanks'      && meanTam < 1e12) meanTam = 9e12;
     if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
     if (tid === 'escrow'        && meanTam < 5e11) meanTam = 1e12;
