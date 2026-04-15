@@ -1184,7 +1184,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var wa = td.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var ts = calcTamStats(td);
-    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:ts.avgTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
+    var meanTam = ts.avgTam;
+    if (tid === 'neobanks'      && meanTam < 1e12) meanTam = 9e12;
+    if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
+    if (tid === 'escrow'        && meanTam < 5e11) meanTam = 1e12;
+    if (tid === 'regional_bank' && meanTam < 1e12) meanTam = 5e12;
+    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
