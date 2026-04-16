@@ -97,8 +97,10 @@ When adding new AI prompts that describe CoinPayments, always prepend `CP_CAPABI
 
 | ID | Label |
 |---|---|
+| `brokerage` | FX / Broker |
+| `escrow` | Escrow |
 | `remittance` | Remittance Fintechs |
-| `brokerage` | FX & Brokerage |
+| `regional_bank` | Corporate Treasury |
 | `neobanks` | Neobanks |
 
 ## Gamma Deck Generation
