@@ -874,8 +874,52 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s20 = useState(function(){ var u={}; VERTICALS.forEach(function(v){ try{var x=localStorage.getItem("cp_brief_"+v.id+"_url");if(x)u[v.id]=x;}catch(e){} }); return u; }); var briefUrls = s20[0]; var setBriefUrls = s20[1];
   var s21 = useState({}); var briefStatus = s21[0]; var setBriefStatus = s21[1];
   var s22 = useState(null); var briefConfirm = s22[0]; var setBriefConfirm = s22[1];
+  var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
+
+  function exportCsv(filename, headers, rows) {
+    function q(v){ return '"' + String(v==null?"":v).replace(/"/g,'""') + '"'; }
+    var csv = [headers.map(q).join(",")].concat(rows.map(function(r){ return r.map(q).join(","); })).join("\r\n");
+    var blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a"); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+  }
+
+  function buildCsvRows(segDeals, includeSegCol) {
+    function sortDl(a,b){ if((a.priority||"p1")!==(b.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b.arr||"")-parseArr(a.arr||""); }
+    return segDeals.slice().sort(sortDl).map(function(d){
+      var ad = d.analysisData||{};
+      var kc = (ad.key_contacts||[]).slice(0,5).map(function(c){ return c.name+(c.title?" ("+c.title+")":""); }).join("; ");
+      var partners = (d.cryptoPartners||[]).length ? d.cryptoPartners.join(", ") : "Greenfield";
+      var volMetric = (ad.tam_som_arr&&ad.tam_som_arr.scale_metric)||"";
+      var summary = (ad.executive_summary||d.notes||"").slice(0,200);
+      var addedAt = d.addedAt ? new Date(d.addedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+      var finUpd = (d.financials&&d.financials.lockedAt) ? new Date(d.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+      var row = includeSegCol ? [d.company, svLabel(d.vertical,d.tier)] : [d.company];
+      return row.concat([d.priority||"p1", d.geography||"", d.stage||"", d.arr||"", volMetric, partners, d.hasCryptoPartner?"Partnered":"Greenfield", summary, kc, ad.website||"", ad.hq||"", ad.employees||"", addedAt, finUpd]);
+    });
+  }
+
+  function pullSegmentCsv(e, segId, segLabel, segDeals) {
+    e.stopPropagation();
+    setCsvDlState(function(p){ return Object.assign({},p,{[segId]:true}); });
+    var dateStr = new Date().toISOString().slice(0,10).replace(/-/g,"");
+    var headers = ["Company Name","Priority","Geography","Stage","Projected ARR","Est. Volume","Crypto Partners","Greenfield/Partnered","Executive Summary","Key Contacts","Website","HQ","Employees","Added to Pipeline","Financials Last Updated"];
+    exportCsv(segLabel.replace(/[^a-z0-9]/gi,"_")+"_Targets_"+dateStr+".csv", headers, buildCsvRows(segDeals, false));
+    setTimeout(function(){ setCsvDlState(function(p){ return Object.assign({},p,{[segId]:false}); }); }, 800);
+  }
+
+  function pullVerticalCsv(e, vid, vertLabel, vertDeals) {
+    e.stopPropagation();
+    setCsvDlState(function(p){ return Object.assign({},p,{[vid+"_all"]:true}); });
+    var dateStr = new Date().toISOString().slice(0,10).replace(/-/g,"");
+    var headers = ["Company Name","Segment","Priority","Geography","Stage","Projected ARR","Est. Volume","Crypto Partners","Greenfield/Partnered","Executive Summary","Key Contacts","Website","HQ","Employees","Added to Pipeline","Financials Last Updated"];
+    exportCsv(vertLabel.replace(/[^a-z0-9]/gi,"_")+"_All_Targets_"+dateStr+".csv", headers, buildCsvRows(vertDeals, true));
+    setTimeout(function(){ setCsvDlState(function(p){ return Object.assign({},p,{[vid+"_all"]:false}); }); }, 800);
+  }
 
   async function buildGammaDeck(deal) {
     var dealId = deal.id;
@@ -1642,7 +1686,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                 <div style={{ marginBottom:20 }}>
                   {/* Full-width FS summary card (not clickable) */}
                   <div style={{ background:C.card, border:"1px solid "+activeVert.color+"44", borderRadius:10, padding:"16px 20px", marginBottom:12 }}>
-                    <div style={{ color:activeVert.color, fontWeight:800, fontSize:13, marginBottom:10 }}>Financial Services</div>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+                      <div style={{ color:activeVert.color, fontWeight:800, fontSize:13 }}>Financial Services</div>
+                      <button onClick={function(e){ pullVerticalCsv(e, pipeView.vertical, activeVert.label, deals.filter(function(d){ return d.vertical===pipeView.vertical; })); }}
+                        style={{ background:C.surface, border:"1px solid "+activeVert.color+"55", color:activeVert.color, borderRadius:5, padding:"3px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                        {csvDlState[pipeView.vertical+"_all"] ? "⬇️ Downloading..." : "📥 Pull Full Vertical List"}
+                      </button>
+                    </div>
                     <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                       <div>
                         <div style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAll.totalArr) : "—"}</div>
@@ -1674,6 +1724,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10 }}>
                     {fsSegments.map(function(t) {
                       var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
+                      var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
                       return (
                         <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                           style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -1690,6 +1741,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
                             <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
                           </div>
+                          <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }}
+                            style={{ marginTop:10, width:"100%", background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:5, padding:"4px 0", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                            {csvDlState[t.id] ? "⬇️ Downloading..." : "📥 Pull List"}
+                          </button>
                         </div>
                       );
                     })}
@@ -1702,6 +1757,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
                 {[{id:"all",label:"All",color:C.green}].concat(ordered).map(function(t) {
                   var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
+                  var segDeals = t.id==="all"
+                    ? deals.filter(function(d){ return d.vertical===pipeView.vertical; })
+                    : deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
                   return (
                     <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                       style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -1718,6 +1776,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
                         <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
                       </div>
+                      <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }}
+                        style={{ marginTop:10, width:"100%", background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:5, padding:"4px 0", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                        {csvDlState[t.id] ? "⬇️ Downloading..." : "📥 Pull List"}
+                      </button>
                     </div>
                   );
                 })}
