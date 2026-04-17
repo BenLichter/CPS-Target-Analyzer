@@ -871,7 +871,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s17 = useState(function(){ return localStorage.getItem(SORT_KEY_LS)||"az"; }); var sortOrder = s17[0]; var setSortOrder = s17[1];
   var s18 = useState("all"); var oppSizeFilter  = s18[0]; var setOppSizeFilter  = s18[1];
   var s19 = useState("all"); var volTierFilter  = s19[0]; var setVolTierFilter  = s19[1];
-  var s20 = useState(function(){ var u={}; VERTICALS.forEach(function(v){ try{var x=localStorage.getItem("cp_brief_"+v.id+"_url");if(x)u[v.id]=x;}catch(e){} }); return u; }); var briefUrls = s20[0]; var setBriefUrls = s20[1];
+  var s20 = useState(function(){ var u={}; VERTICALS.forEach(function(v){ try{var x=localStorage.getItem("cp_brief_"+v.id+"_url");if(x)u[v.id]=x;}catch(e){} }); FS_SUBVERTS.concat(TIERS).forEach(function(b){ try{var x=localStorage.getItem("cp_brief_"+b.id+"_url");if(x)u[b.id]=x;}catch(e){} }); return u; }); var briefUrls = s20[0]; var setBriefUrls = s20[1];
   var s21 = useState({}); var briefStatus = s21[0]; var setBriefStatus = s21[1];
   var s22 = useState(null); var briefConfirm = s22[0]; var setBriefConfirm = s22[1];
   var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
@@ -1227,6 +1227,75 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       }
       doPoll(1);
     } catch(e){ setBriefStatus(function(p){ return Object.assign({},p,{[vid]:"error:"+e.message.slice(0,80)}); }); }
+  }
+
+  async function buildSegmentBrief(vid, tid) {
+    var st = briefStatus[tid]||"idle";
+    if (st==="building"||st==="starting"||st.indexOf("polling")===0) return;
+    setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"building"}); });
+    try {
+      var vert = VERTICALS.find(function(v){ return v.id===vid; });
+      var vertLabel = vert ? vert.label : vid;
+      var bucket = getBuckets(vid).find(function(b){ return b.id===tid; });
+      var segLabel = bucket ? bucket.label : tid;
+      var segDeals = deals.filter(function(d){ return d.vertical===vid && (d.tier||"")===tid; });
+      function sortFn(a,b2){ if((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
+      function mapDeal(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+      var partnered = segDeals.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
+      var greenfield = segDeals.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
+      var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers.\n" + CP_CAPABILITIES;
+      var user = "Using only the following pipeline deal data for the " + segLabel + " segment (" + vertLabel + " vertical), generate a Pipeline Intelligence Brief presentation outline.\n\n" +
+        "Slide 1 — " + segLabel + " Overview:\n" +
+        "- Total accounts, total projected ARR, total estimated volume\n" +
+        "- P1 count and ARR vs P2 count and ARR\n" +
+        "- Total Crypto-Partnered ARR vs Total Greenfield ARR\n" +
+        "- Geography breakdown: AMER / EMEA / APAC account counts and ARR\n\n" +
+        "Slide 2 — Account Tables:\n" +
+        "Table 1 — Crypto-Partnered Accounts:\n" +
+        "Header: '🔗 Crypto-Partnered — X accounts · $Y total ARR · $Z total volume'\n" +
+        "Columns: Account | Priority | Crypto Partner(s) | Est. Volume | Projected ARR | Stage | Geo\n" +
+        "Sort: P1 by ARR descending, then P2 by ARR descending\n" +
+        "Footer summary row (bold): 'Total Partnered | | | $[sum volume] | $[sum ARR] | |'\n\n" +
+        "Table 2 — Greenfield Accounts:\n" +
+        "Header: '⬜ Greenfield — X accounts · $Y total ARR · $Z total volume'\n" +
+        "Columns: Account | Priority | Est. Volume | Projected ARR | Stage | Geo\n" +
+        "Sort: P1 by ARR descending, then P2 by ARR descending\n" +
+        "Footer summary row (bold): 'Total Greenfield | | $[sum volume] | $[sum ARR] | |'\n\n" +
+        "Slide 3 — CoinPayments Value Prop for " + segLabel + ":\n" +
+        "Using the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above, explain how CoinPayments addresses the specific needs of this segment. " +
+        "Reference specific named accounts and their pain points. Select the most relevant 1-2 capabilities.\n\n" +
+        "Format: dark background. Clean tables with clear headers.\n\n" +
+        "Pipeline data:\n" + JSON.stringify({ segment:segLabel, vertical:vertLabel, totalDeals:segDeals.length, partneredCount:partnered.length, greenfieldCount:greenfield.length, partnered:partnered, greenfield:greenfield }, null, 2);
+      var outline = await callGrok(sys, user, 8000, false);
+      setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"starting"}); });
+      var startRes = await fetch("/api/gamma-start", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ prompt:outline, title:segLabel+" Segment Intelligence Brief — CoinPayments" })
+      });
+      var startData = await startRes.json();
+      if (!startRes.ok||startData.error) throw new Error(startData.error||"Gamma start failed "+startRes.status);
+      var genId = startData.generationId;
+      if (!genId) throw new Error("No generation ID from Gamma");
+      setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"polling:0"}); });
+      async function doPoll(attempt) {
+        if (attempt>30){ setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"timeout"}); }); return; }
+        await new Promise(function(r){ setTimeout(r,5000); });
+        try {
+          var pr = await fetch("/api/gamma-status?id="+encodeURIComponent(genId));
+          var pd = await pr.json();
+          if (!pr.ok) throw new Error(pd.error||"Poll error "+pr.status);
+          if (pd.status==="completed"&&pd.url) {
+            try{ await fetch("/api/gamma-theme",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({generationId:genId})}); }catch(te){}
+            setBriefUrls(function(p){ return Object.assign({},p,{[tid]:pd.url}); });
+            try{ localStorage.setItem("cp_brief_"+tid+"_url",pd.url); localStorage.setItem("cp_brief_"+tid+"_at",String(Date.now())); }catch(le){}
+            setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"done"}); });
+          } else if (pd.status==="failed") {
+            setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"error:"+(pd.error||"Generation failed")}); });
+          } else { setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"polling:"+attempt}); }); doPoll(attempt+1); }
+        } catch(pe){ setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"error:"+pe.message.slice(0,80)}); }); }
+      }
+      doPoll(1);
+    } catch(e){ setBriefStatus(function(p){ return Object.assign({},p,{[tid]:"error:"+e.message.slice(0,80)}); }); }
   }
 
   function addDeal() {
@@ -1725,6 +1794,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     {fsSegments.map(function(t) {
                       var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
                       var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
+                      var bst = briefStatus[t.id]||"idle";
+                      var burl = briefUrls[t.id];
+                      var busy = bst==="building"||bst==="starting"||bst.indexOf("polling")===0;
+                      var isConfirm = briefConfirm===t.id;
                       return (
                         <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                           style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -1741,10 +1814,38 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
                             <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
                           </div>
-                          <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }}
-                            style={{ marginTop:10, width:"100%", background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:5, padding:"4px 0", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-                            {csvDlState[t.id] ? "⬇️ Downloading..." : "📥 Pull List"}
-                          </button>
+                          {/* Brief + Pull List + Details action bar */}
+                          <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
+                            {isConfirm ? (
+                              <div style={{ marginBottom:5 }}>
+                                <div style={{ color:C.text, fontSize:8, fontWeight:700, marginBottom:5, lineHeight:1.4 }}>Regenerate brief for {t.label}?</div>
+                                <div style={{ display:"flex", gap:4 }}>
+                                  <button onClick={function(){ setBriefConfirm(null); buildSegmentBrief(pipeView.vertical, t.id); }} style={{ flex:1, background:t.color, color:"#000", border:"none", borderRadius:4, padding:"3px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Regen</button>
+                                  <button onClick={function(){ setBriefConfirm(null); if(burl) window.open(burl,"_blank"); }} style={{ flex:1, background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:4, padding:"3px 0", fontSize:8, cursor:"pointer", fontFamily:"inherit" }}>View</button>
+                                  <button onClick={function(){ setBriefConfirm(null); }} style={{ background:"transparent", color:C.dim, border:"none", fontSize:10, cursor:"pointer", fontFamily:"inherit", padding:"2px 4px" }}>✕</button>
+                                </div>
+                              </div>
+                            ) : burl && !busy ? (
+                              <div style={{ display:"flex", gap:4, marginBottom:5 }}>
+                                <button onClick={function(){ window.open(burl,"_blank"); }} style={{ flex:1, background:t.color+"22", color:t.color, border:"1px solid "+t.color+"55", borderRadius:4, padding:"4px 4px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📊 View Brief →</button>
+                                <button onClick={function(){ setBriefConfirm(t.id); }} style={{ background:C.surface, color:C.dim, border:"1px solid "+C.border, borderRadius:4, padding:"4px 6px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>↻</button>
+                              </div>
+                            ) : busy ? (
+                              <button disabled style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"default", fontFamily:"inherit", opacity:0.75 }}>
+                                📋 {bst==="building"?"Building…":bst==="starting"?"Starting…":"Generating… ("+bst.split(":")[1]+"/30)"}
+                              </button>
+                            ) : bst.indexOf("error:")===0 ? (
+                              <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:"#EF444418", color:"#EF4444", border:"1px solid #EF444455", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Retry Brief</button>
+                            ) : (
+                              <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Brief</button>
+                            )}
+                            <div style={{ display:"flex", gap:4 }}>
+                              <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }} style={{ flex:1, background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                                {csvDlState[t.id] ? "⬇️…" : "📥 Pull List"}
+                              </button>
+                              <button onClick={function(e){ e.stopPropagation(); setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }} style={{ flex:1, background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Details</button>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}
@@ -1760,6 +1861,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   var segDeals = t.id==="all"
                     ? deals.filter(function(d){ return d.vertical===pipeView.vertical; })
                     : deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
+                  var bst = briefStatus[t.id]||"idle";
+                  var burl = briefUrls[t.id];
+                  var busy = bst==="building"||bst==="starting"||bst.indexOf("polling")===0;
+                  var isConfirm = briefConfirm===t.id;
                   return (
                     <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                       style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
@@ -1776,10 +1881,38 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
                         <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
                       </div>
-                      <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }}
-                        style={{ marginTop:10, width:"100%", background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:5, padding:"4px 0", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-                        {csvDlState[t.id] ? "⬇️ Downloading..." : "📥 Pull List"}
-                      </button>
+                      {/* Brief + Pull List + Details action bar */}
+                      <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
+                        {isConfirm ? (
+                          <div style={{ marginBottom:5 }}>
+                            <div style={{ color:C.text, fontSize:8, fontWeight:700, marginBottom:5, lineHeight:1.4 }}>Regenerate brief for {t.label}?</div>
+                            <div style={{ display:"flex", gap:4 }}>
+                              <button onClick={function(){ setBriefConfirm(null); buildSegmentBrief(pipeView.vertical, t.id); }} style={{ flex:1, background:t.color, color:"#000", border:"none", borderRadius:4, padding:"3px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Regen</button>
+                              <button onClick={function(){ setBriefConfirm(null); if(burl) window.open(burl,"_blank"); }} style={{ flex:1, background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:4, padding:"3px 0", fontSize:8, cursor:"pointer", fontFamily:"inherit" }}>View</button>
+                              <button onClick={function(){ setBriefConfirm(null); }} style={{ background:"transparent", color:C.dim, border:"none", fontSize:10, cursor:"pointer", fontFamily:"inherit", padding:"2px 4px" }}>✕</button>
+                            </div>
+                          </div>
+                        ) : burl && !busy ? (
+                          <div style={{ display:"flex", gap:4, marginBottom:5 }}>
+                            <button onClick={function(){ window.open(burl,"_blank"); }} style={{ flex:1, background:t.color+"22", color:t.color, border:"1px solid "+t.color+"55", borderRadius:4, padding:"4px 4px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📊 View Brief →</button>
+                            <button onClick={function(){ setBriefConfirm(t.id); }} style={{ background:C.surface, color:C.dim, border:"1px solid "+C.border, borderRadius:4, padding:"4px 6px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>↻</button>
+                          </div>
+                        ) : busy ? (
+                          <button disabled style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"default", fontFamily:"inherit", opacity:0.75 }}>
+                            📋 {bst==="building"?"Building…":bst==="starting"?"Starting…":"Generating… ("+bst.split(":")[1]+"/30)"}
+                          </button>
+                        ) : bst.indexOf("error:")===0 ? (
+                          <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:"#EF444418", color:"#EF4444", border:"1px solid #EF444455", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Retry Brief</button>
+                        ) : (
+                          <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Brief</button>
+                        )}
+                        <div style={{ display:"flex", gap:4 }}>
+                          <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }} style={{ flex:1, background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                            {csvDlState[t.id] ? "⬇️…" : "📥 Pull List"}
+                          </button>
+                          <button onClick={function(e){ e.stopPropagation(); setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }} style={{ flex:1, background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Details</button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
