@@ -875,6 +875,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s21 = useState({}); var briefStatus = s21[0]; var setBriefStatus = s21[1];
   var s22 = useState(null); var briefConfirm = s22[0]; var setBriefConfirm = s22[1];
   var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
+  var s24 = useState("all"); var segFilter = s24[0]; var setSegFilter = s24[1];
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1447,7 +1448,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var baseTierDeals = (pipeView.vertical&&pipeView.tier)
     ? deals.filter(function(d){
         if (d.vertical!==pipeView.vertical) return false;
-        return pipeView.tier==="all" ? true : (d.tier||"")===pipeView.tier;
+        if (pipeView.tier==="all") {
+          if (segFilter!=="all" && (d.tier||"")!==segFilter) return false;
+          return true;
+        }
+        return (d.tier||"")===pipeView.tier;
       })
     : [];
   var tierDeals = sortDeals(baseTierDeals.filter(function(d){
@@ -1753,14 +1758,20 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               var fsSegments = FS_ORDER.map(function(id){ return buckets.find(function(b){ return b.id===id; }); }).filter(Boolean);
               return (
                 <div style={{ marginBottom:20 }}>
-                  {/* Full-width FS summary card (not clickable) */}
-                  <div style={{ background:C.card, border:"1px solid "+activeVert.color+"44", borderRadius:10, padding:"16px 20px", marginBottom:12 }}>
+                  {/* Full-width FS summary card — clickable to show all targets */}
+                  <div onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:"all"}); setShowAdd(false); setSegFilter("all"); }}
+                    onMouseEnter={function(e){ e.currentTarget.style.borderColor=activeVert.color+"99"; e.currentTarget.style.background="#1c2a3a"; }}
+                    onMouseLeave={function(e){ e.currentTarget.style.borderColor=activeVert.color+"44"; e.currentTarget.style.background=C.card; }}
+                    style={{ background:C.card, border:"1px solid "+activeVert.color+"44", borderRadius:10, padding:"16px 20px", marginBottom:12, cursor:"pointer", transition:"border-color 0.15s, background 0.15s" }}>
                     <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
                       <div style={{ color:activeVert.color, fontWeight:800, fontSize:13 }}>Financial Services</div>
-                      <button onClick={function(e){ pullVerticalCsv(e, pipeView.vertical, activeVert.label, deals.filter(function(d){ return d.vertical===pipeView.vertical; })); }}
-                        style={{ background:C.surface, border:"1px solid "+activeVert.color+"55", color:activeVert.color, borderRadius:5, padding:"3px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                        {csvDlState[pipeView.vertical+"_all"] ? "⬇️ Downloading..." : "📥 Pull Full Vertical List"}
-                      </button>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ color:activeVert.color, fontSize:10, fontWeight:700, opacity:0.75 }}>View All Targets →</span>
+                        <button onClick={function(e){ e.stopPropagation(); pullVerticalCsv(e, pipeView.vertical, activeVert.label, deals.filter(function(d){ return d.vertical===pipeView.vertical; })); }}
+                          style={{ background:C.surface, border:"1px solid "+activeVert.color+"55", color:activeVert.color, borderRadius:5, padding:"3px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                          {csvDlState[pipeView.vertical+"_all"] ? "⬇️ Downloading..." : "📥 Pull Full Vertical List"}
+                        </button>
+                      </div>
                     </div>
                     <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                       <div>
@@ -1854,13 +1865,56 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               );
             }
             var ordered = buckets.slice().sort(function(a,b){ return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr; });
+            var vertAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
             return (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10, marginBottom:20 }}>
-                {[{id:"all",label:"All",color:C.green}].concat(ordered).map(function(t) {
+              <div style={{ marginBottom:20 }}>
+                {/* Full-width vertical summary card — clickable to show all targets */}
+                <div onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:"all"}); setShowAdd(false); setSegFilter("all"); }}
+                  onMouseEnter={function(e){ e.currentTarget.style.borderColor=activeVert.color+"99"; e.currentTarget.style.background="#1c2a3a"; }}
+                  onMouseLeave={function(e){ e.currentTarget.style.borderColor=activeVert.color+"44"; e.currentTarget.style.background=C.card; }}
+                  style={{ background:C.card, border:"1px solid "+activeVert.color+"44", borderRadius:10, padding:"16px 20px", marginBottom:12, cursor:"pointer", transition:"border-color 0.15s, background 0.15s" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+                    <div style={{ color:activeVert.color, fontWeight:800, fontSize:13 }}>{activeVert.label}</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ color:activeVert.color, fontSize:10, fontWeight:700, opacity:0.75 }}>View All Targets →</span>
+                      <button onClick={function(e){ e.stopPropagation(); pullVerticalCsv(e, pipeView.vertical, activeVert.label, deals.filter(function(d){ return d.vertical===pipeView.vertical; })); }}
+                        style={{ background:C.surface, border:"1px solid "+activeVert.color+"55", color:activeVert.color, borderRadius:5, padding:"3px 8px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                        {csvDlState[pipeView.vertical+"_all"] ? "⬇️ Downloading..." : "📥 Pull Full Vertical List"}
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
+                    <div>
+                      <div style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{vertAll.total ? fmtMoney(vertAll.totalArr) : "—"}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
+                    </div>
+                    {vertAll.avgTam > 0 && <div>
+                      <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(vertAll.avgTam)}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>TAM</div>
+                    </div>}
+                    {vertAll.avgTam > 0 && <div>
+                      <div style={{ color:C.cyan, fontSize:13, fontWeight:700 }}>{fmtMoney(vertAll.avgTam*0.125)}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Crypto SAM</div>
+                    </div>}
+                    <div>
+                      <div style={{ color:C.text, fontSize:18, fontWeight:800 }}>{vertAll.total}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Accounts</div>
+                    </div>
+                    <div>
+                      <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{vertAll.p1} <span style={{ color:C.dim, fontWeight:400 }}>P1</span></div>
+                      <div style={{ color:C.muted, fontSize:13, fontWeight:700 }}>{vertAll.p2} <span style={{ color:C.dim, fontWeight:400 }}>P2</span></div>
+                    </div>
+                    <div>
+                      <div style={{ color:activeVert.color, fontSize:13, fontWeight:700 }}>{vertAll.total&&vertAll.avgArr ? fmtMoney(vertAll.avgArr) : "—"}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Avg ARR</div>
+                    </div>
+                  </div>
+                </div>
+                {/* Tier cards grid */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10 }}>
+                {ordered.map(function(t) {
                   var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
-                  var segDeals = t.id==="all"
-                    ? deals.filter(function(d){ return d.vertical===pipeView.vertical; })
-                    : deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
+                  var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
                   var bst = briefStatus[t.id]||"idle";
                   var burl = briefUrls[t.id];
                   var busy = bst==="building"||bst==="starting"||bst.indexOf("polling")===0;
@@ -1917,6 +1971,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   );
                 })}
               </div>
+              </div>
             );
           })()}
 
@@ -1932,12 +1987,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         <div>
           {/* Breadcrumb + back */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
-            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); }}
+            <button onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:null}); setShowAdd(false); setDealSearch(""); setStageFilter("all"); setArrFilter("all"); setPrioFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); setSegFilter("all"); }}
               style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"5px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>← Back</button>
             <span style={{ fontSize:16 }}>{activeVert.icon}</span>
             <span style={{ color:activeVert.color, fontWeight:700, fontSize:14 }}>{activeVert.label}</span>
             <span style={{ color:C.dim, fontSize:13 }}>›</span>
-            <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All"}</span>
+            <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All Targets"}</span>
             <span style={{ color:C.dim, fontSize:11 }}>
               {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all"||oppSizeFilter!=="all"||volTierFilter!=="all")
                 ? "(Showing "+tierDeals.length+" of "+baseTierDeals.length+")"
@@ -1973,6 +2028,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="all">All Sizes</option>
               {OPP_SIZES.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
             </select>
+            {pipeView.tier==="all" && (
+              <select value={segFilter} onChange={function(e){ setSegFilter(e.target.value); }}
+                style={{ background:C.surface, border:"1px solid "+(segFilter!=="all"?activeVert.color:C.border), borderRadius:6, padding:"6px 10px", color:segFilter!=="all"?activeVert.color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+                <option value="all">All Segments</option>
+                {getBuckets(pipeView.vertical).map(function(b){ return <option key={b.id} value={b.id}>{b.label}</option>; })}
+              </select>
+            )}
             {pipeView.tier==="brokerage" && (
               <select value={volTierFilter} onChange={function(e){ setVolTierFilter(e.target.value); }}
                 style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
@@ -2014,6 +2076,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             if (volTierFilter!=="all"){ var vt=VOL_TIERS.find(function(v){return v.id===volTierFilter;}); chips.push({ label:vt?vt.label:volTierFilter, clear:function(){setVolTierFilter("all");} }); }
             if (geoFilter!=="all")  chips.push({ label:geoFilter, clear:function(){setGeoFilter("all");} });
             if (cryptoFilter!=="all") chips.push({ label:cryptoFilter==="partnered"?"🔗 Partnered":"⬜ Greenfield", clear:function(){setCryptoFilter("all");} });
+            if (segFilter!=="all"){ var sb=getBuckets(pipeView.vertical).find(function(b){return b.id===segFilter;}); chips.push({ label:"Segment: "+(sb?sb.label:segFilter), clear:function(){setSegFilter("all");} }); }
             if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
             if (!chips.length) return null;
             var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0"); },0);
