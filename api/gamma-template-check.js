@@ -35,7 +35,10 @@ export default async function handler(req, res) {
       : (templateValue && templateValue.templateId) || null;
     const templateUrl = templateValue && typeof templateValue === 'object'
       ? (templateValue.templateUrl || null) : null;
-    const gammaId = templateUrl ? templateUrl.split('/').filter(Boolean).pop() : null;
+    // gammaId: from URL for new-format saves; legacy string saves ARE the gammaId
+    const gammaId = templateUrl
+      ? templateUrl.split('/').filter(Boolean).pop()
+      : templateId;
 
     return res.status(200).json({
       ok: true,
@@ -46,8 +49,8 @@ export default async function handler(req, res) {
       templateUrl,
       gammaId,
       kvUrl_prefix: kvUrl.slice(0, 35) + '...',
-      note: templateId
-        ? ('Template found — gammaId for from-template: ' + (gammaId || 'n/a (no URL stored, legacy save)'))
+      note: gammaId
+        ? ('Template ready — gammaId: ' + gammaId + (templateUrl ? ' (extracted from URL)' : ' (stored directly)'))
         : 'No template saved — run Build Master Template first',
     });
   } catch (err) {

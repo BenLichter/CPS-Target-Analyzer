@@ -44,11 +44,16 @@ export default async function handler(req, res) {
     : (resolvedTemplate && resolvedTemplate.templateId) || null;
   const templateUrl = resolvedTemplate && typeof resolvedTemplate === 'object'
     ? (resolvedTemplate.templateUrl || null) : null;
-  // gammaId is extracted from the Gamma presentation URL (last path segment)
-  const gammaId = templateUrl ? templateUrl.split('/').filter(Boolean).pop() : null;
+  // gammaId: extract from URL for new-format saves; for legacy string saves the stored
+  // value IS the gammaId directly (e.g. "xQRnGKlKYfwMZuENa7alv")
+  const gammaId = templateUrl
+    ? templateUrl.split('/').filter(Boolean).pop()
+    : templateId;
 
-  if (templateId) {
-    console.log('[Gamma start] Using master template — templateId:', templateId, '| gammaId:', gammaId || 'n/a (legacy save — no URL stored)');
+  console.log('[Gamma] Master template ID resolved:', gammaId || null);
+
+  if (gammaId) {
+    console.log('[Gamma start] Using master template — gammaId:', gammaId);
   } else {
     console.log('[Gamma start] No master template found — using free generation');
   }
