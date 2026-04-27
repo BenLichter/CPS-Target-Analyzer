@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { prompt, title } = req.body || {};
+  const { prompt, title, fromTemplateId } = req.body || {};
   const apiKey = process.env.GAMMA_API_KEY || '';
 
   if (!apiKey) return res.status(500).json({ error: 'Gamma not configured — contact your administrator' });
@@ -67,7 +67,7 @@ export default async function handler(req, res) {
 
   const payload = {
     inputText: prompt,
-    textMode: 'generate',
+    textMode: fromTemplateId ? 'preserve' : 'generate',
     format: 'presentation',
     numCards: 10,
     textOptions: { language: 'en' },
@@ -76,6 +76,12 @@ export default async function handler(req, res) {
       : 'Create a professional B2B sales presentation with a dark, minimal design.',
     cardOptions: { dimensions: '16x9' },
   };
+
+  // Inject master template reference if provided
+  if (fromTemplateId) {
+    payload.fromId = fromTemplateId;
+    console.log('[Gamma start] using master template:', fromTemplateId);
+  }
 
   // Inject theme ID if found
   if (darkThemeId) {

@@ -1235,9 +1235,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
       // Phase 3 — Start Gamma generation (fire and return generationId immediately)
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
+      var tmplRes = await fetch("/api/gamma-template");
+      var tmplData = tmplRes.ok ? await tmplRes.json() : {};
+      var masterTmplId = (tmplData && tmplData.templateId) || null;
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity" }),
+        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity", fromTemplateId: masterTmplId }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
@@ -2543,6 +2546,16 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
   var s4 = useState(null); var deckUrl = s4[0]; var setDeckUrl = s4[1];
   var s5 = useState(false); var busy = s5[0]; var setBusy = s5[1];
   var s6 = useState("free"); var slideType = s6[0]; var setSlideType = s6[1];
+  var s7 = useState(null); var masterTemplateId = s7[0]; var setMasterTemplateId = s7[1];
+  var s8 = useState(""); var masterStatus = s8[0]; var setMasterStatus = s8[1];
+  var s9 = useState(null); var masterUrl = s9[0]; var setMasterUrl = s9[1];
+  var s10 = useState(false); var masterBusy = s10[0]; var setMasterBusy = s10[1];
+
+  useEffect(function() {
+    fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
+      if (d && d.templateId) setMasterTemplateId(d.templateId);
+    }).catch(function(){});
+  }, []);
 
   var DECK_SLIDE_TYPES = [
     { id:"free",           label:"✍️ Custom Deck",                desc:"Describe any presentation — Grok builds the outline" },
@@ -2582,6 +2595,76 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
       lines.push("");
     });
     return lines.join("\n");
+  }
+
+  async function buildMasterTemplate() {
+    if (masterBusy) return;
+    setMasterBusy(true);
+    setMasterStatus("building");
+    setMasterUrl(null);
+    try {
+      var templateOutline = await callGrok(
+        "You are a senior B2B sales deck designer creating institutional pitch deck templates for CoinPayments. Write a detailed, visually-specific 10-slide Gamma presentation outline that will serve as a master design reference template. Every slide must have explicit Gamma layout instructions — no vague descriptions. Use [CLIENT] as placeholder for the prospect company name throughout.",
+        "Write a 10-slide CoinPayments master institutional pitch deck template. Use [CLIENT] as placeholder for the target company name. Design for dark, minimal, high-contrast professional B2B sales context.\n\n" +
+        "Slide 1 — Title Opener:\n" +
+        "Dark full-bleed slide. Left side: '[CLIENT] x CoinPayments' in large bold white text, below it 'Crypto Infrastructure Partnership' in teal. Right side: abstract blockchain grid visualization in teal. Bottom: CoinPayments tagline 'One API. Instant Settlement. 180+ Jurisdictions.' No stock imagery — geometric/abstract only.\n\n" +
+        "Slide 2 — The Crypto Infrastructure Gap:\n" +
+        "Three-panel metrics slide, equal width panels side by side. Panel 1 (icon: market chart): '$X Trillion' large teal number | 'in annual cross-border payment volume migrating to crypto rails'. Panel 2 (icon: competitor): '3 of 5' large teal number | 'competitors of [CLIENT] have deployed crypto payment infrastructure'. Panel 3 (icon: lock): 'Growing' large teal number | 'revenue at risk from crypto-enabled competitors'. Dark background, thin dividers between panels, no imagery.\n\n" +
+        "Slide 3 — CoinPayments Platform: Four Capabilities:\n" +
+        "Two-by-two grid layout, each cell has icon + capability name (bold) + 1 sentence. Top-left (blue icon): Stablecoin + Blockchain Rails — '24/7 instant settlement, automated FX, fractions of a cent'. Top-right (green icon): Fiat On/Off Ramps — 'White-label local fiat to stablecoin in a single UX'. Bottom-left (yellow icon): Third-Party Wallet Hosting — 'MPC custody, insured storage, audit-ready reporting'. Bottom-right (red icon): Compliance-as-a-Service — '180+ licensed jurisdictions, AML/KYC, policy engines'. Dark background, teal accent borders on each cell.\n\n" +
+        "Slide 4 — Trusted By:\n" +
+        "Title: 'Trusted Across the Digital Asset Ecosystem'. Logo/name grid organized by row: Exchanges | Brokers & Trading Platforms | Neobanks & Fintechs | Remittance Providers | Institutional. Headline stat above grid: 'Powering crypto payment infrastructure across the global financial ecosystem'. Bottom tagline: 'From emerging fintechs to established institutions — CoinPayments is the infrastructure layer.' Dark background, names in light grey boxes.\n\n" +
+        "Slide 5 — Licensing & Jurisdiction Map (VISUAL MAP SLIDE):\n" +
+        "Title top: 'Our Licensing Solves Complexity & Speed to Market'. Full-slide dark world map as background. Callout boxes ON the map over each region with pointer lines: US (North America): FinCEN + 48-state MTL + NYDFS BitLicense + Trust Charter. UK: FCA registered. EU (Continental Europe): MiCA compliant, 27 member states. Canada: FINTRAC MSB. Brazil: local entity, Banco Central pending. Argentina: VASP. Singapore/APAC: MAS + AUSTRAC + AFSL. Bottom banner: '180+ Licensed Jurisdictions — Inherit our entire regulatory footprint from day one.'\n\n" +
+        "Slide 6 — Integration Architecture (THREE-COLUMN DIAGRAM):\n" +
+        "Title: 'One API. Complete Crypto Infrastructure.' Three-column diagram: LEFT (dark grey, '[CLIENT] Today'): core platform, FX rails, client portal, compliance stack. CENTER (bright teal hub, 'CoinPayments API'): four diamond nodes: Stablecoin Rails (top), Fiat Ramps (left), MPC Custody (right), Compliance (bottom). RIGHT (teal, '[CLIENT] + CoinPayments'): 24/7 settlement, 40+ assets, white-label UX, 180+ jurisdictions. Arrow LEFT to CENTER labeled 'Single API - 4-8 weeks'. Four arrows CENTER to RIGHT. Bottom text only: 'No rip-and-replace. Existing infrastructure stays intact.'\n\n" +
+        "Slide 7 — Stablecoin Rails Flow (FLOW DIAGRAM):\n" +
+        "Title: 'How Stablecoin Rails Work in Practice'. Subtitle: 'The Stablecoin Sandwich - Instant Cross-Border Settlement'. Three connected boxes: Box 1 (dark grey left): icon + 'Step 1 - Client Initiates' + 'Sends USDT/USDC on-chain - settles in seconds'. Arrow 'On-chain - Seconds'. Box 2 (bright teal center, largest): icon + 'Step 2 - CoinPayments Layer' + 'Automated screening + AML/KYC + 0.5% fee'. Arrow 'Instant conversion'. Box 3 (dark grey right): icon + 'Step 3 - [CLIENT] Executes' + 'Receives stablecoin or fiat, applies rate optimization'. Bottom two columns: LEFT = 4 icon rows (Speed / Cost / Client Acquisition / Compliance). RIGHT = '0.5%' large teal metric + 'High LTV' metric. Full-width banner: 'Near-instant cross-border settlement with CoinPayments as the crypto layer.'\n\n" +
+        "Slide 8 — Implementation Timeline:\n" +
+        "Title: '[CLIENT]s Path to Implementation'. Horizontal three-phase timeline diagram spanning full slide width. Phase 1 box (weeks 1-8, dark grey): 'First Capability Live' - API integration, sandbox testing, production launch. Arrow to Phase 2 box (weeks 9-16, medium teal): 'Expand Use Cases' - second capability, pilot customer base, feedback loop. Arrow to Phase 3 box (month 4+, bright teal): 'Full Deployment' - all four capabilities, 180+ jurisdictions, white-label UX live. Below phases: 'No rip-and-replace. [CLIENT] expands on their own timeline - no big-bang migration.' Dark background.\n\n" +
+        "Slide 9 — Regulatory Tailwinds (FULL-WIDTH HORIZONTAL TIMELINE):\n" +
+        "Title: 'The Regulatory Window Is Open'. Full-width horizontal timeline across center of slide. Color bands behind timeline: GREY band (left third) 2013-2023 Foundation. BRIGHT TEAL band (center) 2024-2025 The Window Opens. GRADIENT TEAL-TO-DARK band (right third) 2026-2028+ Mainstream. Nodes ON the line: 2013 FinCEN, 2015 NYDFS, 2019 FATF, 2023 MiCA, 2024 SEC ETFs, Q1 2025 Basel III, STAR July 2025 GENIUS Act (2x larger, teal, callout box: 'First US Federal Stablecoin Framework'), 2026 bank stablecoins, 2027+ CBDC interop, 2028+ blockchain settlement. Bottom: 'Every quarter of delay is market share ceded to crypto-ready competitors.'\n\n" +
+        "Slide 10 — Next Steps:\n" +
+        "Title: 'Lets Build [CLIENT]s Crypto Infrastructure Layer'. Three-column layout: Column 1 (icon: calendar): 'Schedule' - '30-minute technical walkthrough this week' - 'Map [CLIENT]s specific use cases to CoinPayments capabilities'. Column 2 (icon: code): 'Evaluate' - 'Sandbox API access - 2-week pilot - zero commitment' - '[CLIENT] tests integration with real infrastructure, no risk'. Column 3 (icon: rocket): 'Deploy' - 'First capability live in 4-8 weeks' - 'CoinPayments eliminates the infrastructure build - [CLIENT] gets crypto-native capabilities without the complexity'. Bottom CTA centered: 'Ready to close the crypto infrastructure gap? Lets talk.' Dark background, teal accent on column headers.\n\n" +
+        "DESIGN RULES: Dark background throughout. Teal accent color (#00D9FF or similar). No stock imagery of people or handshakes. All layouts centered or balanced two-column. Maximum 2 sentences of prose per slide. Every slide has a clear title. Format for 16:9 presentation.",
+        5000, false
+      );
+
+      setMasterStatus("starting");
+      var startRes = await fetch("/api/gamma-start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: templateOutline, title: "CoinPayments Master Pitch Template" }),
+      });
+      var startData = await startRes.json();
+      if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
+      var generationId = startData.generationId;
+      if (!generationId) throw new Error("Gamma did not return a generation ID: " + JSON.stringify(startData).slice(0, 200));
+
+      for (var attempt = 1; attempt <= 30; attempt++) {
+        setMasterStatus("polling:" + attempt);
+        await new Promise(function(r){ setTimeout(r, 5000); });
+        var pr = await fetch("/api/gamma-status?id=" + encodeURIComponent(generationId));
+        var pd = await pr.json();
+        if (!pr.ok) throw new Error(pd.error || "Poll failed " + pr.status);
+        if (pd.status === "completed" && pd.url) {
+          await fetch("/api/gamma-template", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ templateId: generationId }),
+          });
+          setMasterTemplateId(generationId);
+          setMasterUrl(pd.url);
+          setMasterStatus("done");
+          var entry = { id: Date.now(), title: "CoinPayments Master Pitch Template", url: pd.url, createdAt: new Date().toISOString() };
+          setGammaHistory(function(h){ return [entry].concat(h.slice(0, 19)); });
+          break;
+        }
+        if (pd.status === "failed") throw new Error("Gamma generation failed: " + (pd.error || "unknown"));
+        if (attempt >= 30) throw new Error("Template generation timed out (>2.5 min)");
+      }
+    } catch(e) {
+      setMasterStatus("error:" + e.message);
+    }
+    setMasterBusy(false);
   }
 
   async function generate() {
@@ -2663,6 +2746,13 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
     setBusy(false);
   }
 
+  var masterPollSecs = masterStatus.startsWith("polling:") ? (parseInt(masterStatus.split(":")[1]||"0",10)*5) : 0;
+  var masterStatusLabel = masterStatus === "building" ? "✍️ Building template outline..."
+    : masterStatus === "starting" ? "🚀 Sending to Gamma..."
+    : masterStatus.startsWith("polling:") ? "🎨 ~" + Math.max(5, 150 - masterPollSecs) + "s remaining..."
+    : masterStatus === "done" ? "✅ Template saved"
+    : masterStatus.startsWith("error:") ? "❌ " + masterStatus.slice(6)
+    : "🏗️ Building master template...";
   var canGenerate = slideType==="pipeline_brief" ? (deals && deals.length > 0) : !!prompt.trim();
 
   return (
@@ -2670,6 +2760,45 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
       <div style={{ marginBottom:24 }}>
         <div style={{ color:C.text, fontSize:22, fontWeight:900, marginBottom:4 }}>🎨 Deck Builder</div>
         <div style={{ color:C.muted, fontSize:12 }}>Grok builds the outline — Gamma renders the presentation.</div>
+      </div>
+
+      {/* Master Template */}
+      <div style={{ background:C.card, border:"1px solid "+(masterTemplateId?C.accent+"50":C.border), borderRadius:10, padding:"14px 18px", marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
+              <div style={{ color:masterTemplateId?C.accent:C.muted, fontWeight:800, fontSize:12 }}>
+                {masterTemplateId ? "✅ Master Template Active" : "⬜ No Master Template"}
+              </div>
+              {masterTemplateId && (
+                <div style={{ color:C.dim, fontSize:10, background:C.surface, border:"1px solid "+C.border, borderRadius:4, padding:"1px 6px" }}>ID: {masterTemplateId.slice(0,10)}...</div>
+              )}
+            </div>
+            <div style={{ color:C.dim, fontSize:11 }}>
+              {masterTemplateId
+                ? "Pipeline decks reference this template for design consistency."
+                : "Build a CoinPayments master deck — pipeline decks inherit its design."}
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexShrink:0 }}>
+            {masterTemplateId && masterUrl && (
+              <a href={masterUrl} target="_blank" rel="noreferrer"
+                style={{ background:C.accentDim, border:"1px solid "+C.accent+"60", color:C.accent, borderRadius:6, padding:"6px 12px", fontWeight:700, fontSize:10, textDecoration:"none", whiteSpace:"nowrap" }}>
+                View →
+              </a>
+            )}
+            <button onClick={buildMasterTemplate} disabled={masterBusy}
+              style={{ background:masterBusy?"#334155":C.accent, color:masterBusy?"#94a3b8":"#000", border:"none", borderRadius:6, padding:"7px 14px", fontWeight:800, fontSize:11, cursor:masterBusy?"default":"pointer", fontFamily:"inherit", whiteSpace:"nowrap", transition:"background 0.15s" }}>
+              {masterBusy ? masterStatusLabel : (masterTemplateId ? "🔄 Rebuild" : "🏗️ Build Master Template")}
+            </button>
+          </div>
+        </div>
+        {masterBusy && (
+          <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid "+C.border, color:C.accent, fontSize:11, fontWeight:600 }}>{masterStatusLabel}</div>
+        )}
+        {masterStatus.startsWith("error:") && !masterBusy && (
+          <div style={{ marginTop:10, paddingTop:10, borderTop:"1px solid "+C.border, color:C.gold, fontSize:11 }}>{masterStatusLabel}</div>
+        )}
       </div>
 
       {/* Slide type selector */}
