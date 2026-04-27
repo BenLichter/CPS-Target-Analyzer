@@ -1078,6 +1078,24 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- 180+ jurisdictions covered\n" +
         "Connecting elements: Bold arrow LEFT \u2192 CENTER labeled 'Single API \u00b7 4-8 weeks'. Four arrows CENTER \u2192 RIGHT showing capability flow. Bottom of slide: small text only \u2014 'No rip-and-replace. Existing infrastructure stays intact.'\n" +
         "Do NOT include paragraphs of text. The diagram IS the slide. Dark background, teal accent colors.\n\n" +
+        "Credential Slide 3b \u2014 How Stablecoin Rails Work in Practice (FLOW DIAGRAM + DATA SLIDE \u2014 NOT a text slide, NOT stock imagery):\n" +
+        "Slide title: 'How Stablecoin Rails Work in Practice for " + co + "'\n" +
+        "Subtitle: 'The Stablecoin Sandwich \u2014 Instant Cross-Border Settlement'\n" +
+        "TOP SECTION \u2014 Three-step flow diagram spanning full slide width. Show three connected boxes with arrows between them:\n" +
+        "Box 1 (left \u2014 dark grey): Icon \ud83d\udc64 | Label 'Step 1 \u2014 Client Initiates' | Detail: 'Sends USDT/USDC instantly on-chain \u2014 settles in seconds, not days' | Arrow \u2192 labeled 'On-chain \u00b7 Seconds'\n" +
+        "Box 2 (center \u2014 bright teal, most prominent): Icon \u26a1 | Label 'Step 2 \u2014 CoinPayments Layer' | Detail: Detects transaction in seconds | Automated risk screening + AML/KYC | Auto-converts or forwards as needed | 0.5% fee on the crypto leg | Arrow \u2192 labeled 'Instant conversion \u00b7 Risk cleared'\n" +
+        "Box 3 (right \u2014 dark grey): Icon \ud83c\udfe6 | Label 'Step 3 \u2014 " + co + " Executes' | Detail: Receives stablecoin or converted fiat | Applies rate optimization + hedging | Delivers to recipient bank account | " + co + "'s FX strengths applied to the final leg\n" +
+        "Middle divider line between top and bottom sections.\n" +
+        "BOTTOM SECTION \u2014 two equal columns side by side:\n" +
+        "LEFT COLUMN \u2014 Strengths for " + co + " (icon + text rows, no bullet points):\n" +
+        "\u26a1 Speed: Seconds for stablecoin inflows vs 1-2 days traditional wire \u2014 perfect for time-sensitive property, salary, and business deals\n" +
+        "\ud83d\udcb0 Cost: Avoids FX and banking fees on the crypto leg \u2014 stablecoins eliminate volatility risk\n" +
+        "\ud83c\udfaf Client Acquisition: Attracts crypto-native and high-net-worth users without " + co + " building blockchain infrastructure\n" +
+        "\u2705 Compliance: CoinPayments handles crypto KYC/AML/risk screening \u2014 " + co + " stays focused on FCA-regulated fiat operations\n" +
+        "RIGHT COLUMN \u2014 CoinPayments Monetization Model:\n" +
+        "Large teal metric: '0.5%' | Label: 'fee on crypto/stablecoin leg' | Below: 'Low integration cost via API'\n" +
+        "Second metric: 'High LTV' | Label: 'from " + co + "'s recurring mid-to-large volume client base' | Below: 'Every transaction on stablecoin rails generates CoinPayments revenue with zero marginal compliance cost'\n" +
+        "Bottom banner (full width): 'Result: Near-instant cross-border inflows + " + co + "'s rate optimization and hedging expertise on the final leg \u2014 the best of both worlds.'\n\n" +
         "Credential Slide 4 \u2014 Example Implementation:\n" +
         "Title: 'Example: How " + co + " Deploys CoinPayments'\n" +
         "Show a step-by-step user/client flow specific to " + co + "\u2019s actual business model from the analysis. Reference segment and business model from the analysis data. Example flows by segment (select and adapt the most relevant):\n" +
@@ -1142,7 +1160,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- CoinPayments is a partner in their growth, not a vendor selling a product\n" +
         "- " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above \u2014 no generic crypto talking points\n" +
         "- The deck should feel like it came from someone who deeply respects " + co + "'s business and genuinely wants them to win\n" +
-        "- 10 slides total: Slide 1 (Competitive Gap), Slide 2 (Opportunity Cost), Slide 3 (How " + co + " Closes the Gap), Credential Slides 1\u20136 (Trusted By / Jurisdiction Map / Integration / Example Implementation / Regulatory Tailwinds / Rails Comparison), Slide 10 (Path to Implementation). No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
+        "- 11 slides total: Slide 1 (Competitive Gap), Slide 2 (Opportunity Cost), Slide 3 (How " + co + " Closes the Gap), Credential Slides 1\u20137 (Trusted By / Jurisdiction Map / Integration / Stablecoin Rails / Example Implementation / Regulatory Tailwinds / Rails Comparison), Slide 11 (Path to Implementation). No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
         8000, false
       );
 
@@ -1185,6 +1203,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- Timeline does not span the full width of the slide (content stacked on right side is a failure)\n" +
         "- GENIUS Act node is not 2x larger than other nodes\n" +
         "- If rejected: rewrite with explicit full-width horizontal line, evenly spaced nodes ON the line, GREY/TEAL/GRADIENT-TEAL color bands\n\n" +
+        "STABLECOIN RAILS SLIDE \u2014 reject and rewrite if:\n" +
+        "- The three-step flow is shown as bullet points rather than connected diagram boxes\n" +
+        "- CoinPayments is not the visually dominant center box (must be teal, larger, most prominent)\n" +
+        "- The 0.5% fee metric is not prominently displayed in the right column\n" +
+        "- The bottom section is not split into two equal columns\n" +
+        "- Prose paragraphs are used instead of icon + short text rows\n" +
+        "- Stock imagery of people or handshakes is used\n" +
+        "- If rejected: rewrite with explicit three-box flow (dark grey LEFT \u2192 bright teal CENTER \u2192 dark grey RIGHT), middle divider, LEFT column = 4 icon-rows, RIGHT column = 0.5% large metric + High LTV metric, full-width bottom banner\n\n" +
         "OPPORTUNITY COST SLIDE \u2014 reject and rewrite if:\n" +
         "- Formatted as prose paragraphs or bullet points instead of three equal metric panels\n" +
         "- Uses people imagery, handshakes, or stock photography\n" +
