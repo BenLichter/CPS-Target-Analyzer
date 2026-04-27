@@ -14,11 +14,44 @@ export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { prompt, title, fromTemplateId } = req.body || {};
+  const { prompt, title } = req.body || {};
   const apiKey = process.env.GAMMA_API_KEY || '';
 
   if (!apiKey) return res.status(500).json({ error: 'Gamma not configured — contact your administrator' });
   if (!prompt) return res.status(400).json({ error: 'No prompt provided' });
+
+  // Server-side master template lookup from Upstash Redis
+  const kvUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const kvToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  let resolvedTemplate = null;
+
+  if (kvUrl && kvToken) {
+    try {
+      const tmplResult = await fetch(`${kvUrl}/get/cp_gamma_master_template_id`, {
+        headers: { Authorization: `Bearer ${kvToken}` }
+      });
+      const tmplData = await tmplResult.json();
+      if (tmplData.result) {
+        resolvedTemplate = JSON.parse(tmplData.result);
+      }
+    } catch (tmplErr) {
+      console.warn('[Gamma start] master template lookup failed (non-fatal):', tmplErr.message);
+    }
+  }
+
+  // Resolve template fields — support both legacy string saves and new object saves
+  const templateId = typeof resolvedTemplate === 'string' ? resolvedTemplate
+    : (resolvedTemplate && resolvedTemplate.templateId) || null;
+  const templateUrl = resolvedTemplate && typeof resolvedTemplate === 'object'
+    ? (resolvedTemplate.templateUrl || null) : null;
+  // gammaId is extracted from the Gamma presentation URL (last path segment)
+  const gammaId = templateUrl ? templateUrl.split('/').filter(Boolean).pop() : null;
+
+  if (templateId) {
+    console.log('[Gamma start] Using master template — templateId:', templateId, '| gammaId:', gammaId || 'n/a (legacy save — no URL stored)');
+  } else {
+    console.log('[Gamma start] No master template found — using free generation');
+  }
 
   // Fetch available themes to find a dark basic theme ID
   let darkThemeId = null;
@@ -40,12 +73,10 @@ export default async function handler(req, res) {
       }
     } catch { /* ignore parse errors */ }
 
-    // Log all theme IDs and names for debugging
     if (themes.length) {
       console.log('[Gamma start] available themes:', themes.map(t => `${t.id || t.themeId} — ${t.name}`).join(' | '));
     }
 
-    // Find dark basic theme: prefer exact "dark basic" name, then dark, then basic, then first
     const darkTheme =
       themes.find(t => (t.name || '').toLowerCase() === 'dark basic') ||
       themes.find(t => (t.name || '').toLowerCase().includes('dark') && (t.name || '').toLowerCase().includes('basic')) ||
@@ -65,31 +96,64 @@ export default async function handler(req, res) {
     console.warn('[Gamma start] theme fetch failed (non-fatal):', themeErr.message);
   }
 
+  const additionalInstructions = title
+    ? 'Title: ' + title + '. Create a professional B2B sales presentation with a dark, minimal design.'
+    : 'Create a professional B2B sales presentation with a dark, minimal design.';
+
+  // Attempt from-template generation if master template exists and we have a gammaId
+  if (gammaId) {
+    const fromTemplatePayload = {
+      gammaId,
+      inputText: prompt,
+      textMode: 'preserve',
+      numCards: 10,
+      textOptions: { language: 'en' },
+      additionalInstructions,
+      cardOptions: { dimensions: '16x9' },
+    };
+    if (darkThemeId) fromTemplatePayload.themeId = darkThemeId;
+
+    console.log('[Gamma start] Attempting /generations/from-template, gammaId:', gammaId);
+    console.log('[Gamma start] from-template payload:', JSON.stringify(fromTemplatePayload));
+
+    try {
+      const r = await fetch(`${GAMMA_BASE}/generations/from-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+        body: JSON.stringify(fromTemplatePayload),
+      });
+      const text = await r.text();
+      console.log('[Gamma start] from-template status:', r.status, '| body:', text.slice(0, 400));
+
+      if (r.ok) {
+        let data;
+        try { data = JSON.parse(text); } catch { data = { error: text }; }
+        const generationId = data.generationId || data.id;
+        if (generationId) {
+          console.log('[Gamma start] from-template SUCCESS, generationId:', generationId);
+          return res.status(200).json({ generationId, status: data.status, themeId: darkThemeId, usedTemplate: true, gammaId, raw: data });
+        }
+      }
+      console.warn('[Gamma start] from-template endpoint returned', r.status, '— falling back to standard generation');
+    } catch (ftErr) {
+      console.warn('[Gamma start] from-template fetch error (falling back):', ftErr.message);
+    }
+  }
+
+  // Standard generation (also used as fallback when from-template fails)
   const payload = {
     inputText: prompt,
-    textMode: fromTemplateId ? 'preserve' : 'generate',
+    textMode: 'generate',
     format: 'presentation',
     numCards: 10,
     textOptions: { language: 'en' },
-    additionalInstructions: title
-      ? 'Title: ' + title + '. Create a professional B2B sales presentation with a dark, minimal design.'
-      : 'Create a professional B2B sales presentation with a dark, minimal design.',
+    additionalInstructions,
     cardOptions: { dimensions: '16x9' },
   };
-
-  // Inject master template reference if provided
-  if (fromTemplateId) {
-    payload.fromId = fromTemplateId;
-    console.log('[Gamma start] using master template:', fromTemplateId);
-  }
-
-  // Inject theme ID if found
-  if (darkThemeId) {
-    payload.themeId = darkThemeId;
-  }
+  if (darkThemeId) payload.themeId = darkThemeId;
 
   console.log('[Gamma start] key prefix:', apiKey.slice(0, 10) + '...');
-  console.log('[Gamma start] request body:', JSON.stringify(payload));
+  console.log('[Gamma start] standard generation payload:', JSON.stringify(payload));
 
   try {
     const r = await fetch(`${GAMMA_BASE}/generations`, {

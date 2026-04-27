@@ -33,13 +33,15 @@ export default async function handler(req, res) {
   try {
     if (url && token) {
       if (req.method === 'GET') {
-        const templateId = await kvGet(url, token, REDIS_KEY);
-        return res.status(200).json({ templateId: templateId || null });
+        const stored = await kvGet(url, token, REDIS_KEY);
+        const templateId = typeof stored === 'string' ? stored : (stored && stored.templateId) || null;
+        const templateUrl = stored && typeof stored === 'object' ? (stored.templateUrl || null) : null;
+        return res.status(200).json({ templateId: templateId || null, templateUrl: templateUrl || null });
       }
       if (req.method === 'POST') {
-        const { templateId } = req.body || {};
+        const { templateId, templateUrl } = req.body || {};
         if (!templateId) return res.status(400).json({ error: 'No templateId provided' });
-        await kvSet(url, token, REDIS_KEY, templateId);
+        await kvSet(url, token, REDIS_KEY, { templateId, templateUrl: templateUrl || null });
         return res.status(200).json({ ok: true });
       }
       if (req.method === 'DELETE') {
@@ -50,12 +52,15 @@ export default async function handler(req, res) {
 
     // In-memory fallback
     if (req.method === 'GET') {
-      return res.status(200).json({ templateId: memTemplateId });
+      const stored = memTemplateId;
+      const templateId = typeof stored === 'string' ? stored : (stored && stored.templateId) || null;
+      const templateUrl = stored && typeof stored === 'object' ? (stored.templateUrl || null) : null;
+      return res.status(200).json({ templateId: templateId || null, templateUrl: templateUrl || null });
     }
     if (req.method === 'POST') {
-      const { templateId } = req.body || {};
+      const { templateId, templateUrl } = req.body || {};
       if (!templateId) return res.status(400).json({ error: 'No templateId provided' });
-      memTemplateId = templateId;
+      memTemplateId = { templateId, templateUrl: templateUrl || null };
       return res.status(200).json({ ok: true });
     }
     if (req.method === 'DELETE') {

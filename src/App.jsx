@@ -876,6 +876,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s22 = useState(null); var briefConfirm = s22[0]; var setBriefConfirm = s22[1];
   var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
   var s24 = useState("all"); var segFilter = s24[0]; var setSegFilter = s24[1];
+  var s25 = useState(false); var hasMasterTemplate = s25[0]; var setHasMasterTemplate = s25[1];
+
+  useEffect(function() {
+    fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
+      setHasMasterTemplate(!!(d && d.templateId));
+    }).catch(function(){});
+  }, []);
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
@@ -1235,12 +1242,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
       // Phase 3 — Start Gamma generation (fire and return generationId immediately)
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
-      var tmplRes = await fetch("/api/gamma-template");
-      var tmplData = tmplRes.ok ? await tmplRes.json() : {};
-      var masterTmplId = (tmplData && tmplData.templateId) || null;
       var startRes = await fetch("/api/gamma-start", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity", fromTemplateId: masterTmplId }),
+        body: JSON.stringify({ prompt: deckPrompt, title: co + " \u00d7 CoinPayments \u2014 A Crypto Partnership Opportunity" }),
       });
       var startData = await startRes.json();
       if (!startRes.ok || startData.error) throw new Error(startData.error || "Gamma start failed " + startRes.status);
@@ -2460,7 +2464,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   var deckErr = ds.startsWith("error:");
                                   var deckTimeout = ds === "timeout";
                                   var pollSecs = deckPolling ? parseInt(ds.split(":")[1]||"0",10)*5 : 0;
-                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching " + deal.company + "..." : ds === "building" ? "✍️ Building outline..." : ds === "reviewing" ? "🎨 Reviewing..." : ds === "starting" ? "🚀 Sending to Gamma..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
+                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching " + deal.company + "..." : ds === "building" ? "✍️ Building outline..." : ds === "reviewing" ? "🎨 Reviewing..." : ds === "starting" ? "🚀 Sending to Gamma..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : (hasMasterTemplate ? "📋 Deck" : "🎨 Deck");
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
@@ -2554,6 +2558,7 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
       if (d && d.templateId) setMasterTemplateId(d.templateId);
+      if (d && d.templateUrl) setMasterUrl(d.templateUrl);
     }).catch(function(){});
   }, []);
 
@@ -2649,7 +2654,7 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
         if (pd.status === "completed" && pd.url) {
           await fetch("/api/gamma-template", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ templateId: generationId }),
+            body: JSON.stringify({ templateId: generationId, templateUrl: pd.url }),
           });
           setMasterTemplateId(generationId);
           setMasterUrl(pd.url);
