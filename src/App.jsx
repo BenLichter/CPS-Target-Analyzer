@@ -1029,7 +1029,56 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- What becomes possible in 12-24 months that is not possible today?\n" +
         "- What competitive position does " + co + " hold after deployment?\n\n" +
         "The output for Slide 3 should read like it was written by a senior solutions architect who spent a week studying " + co + "'s business \u2014 not a sales template with the company name swapped in. Every sentence must be defensible in a boardroom. If you are not confident about a specific claim, write 'based on " + co + "'s reported [X]' rather than fabricating precision.\n\n" +
-        "Slide 4 \u2014 " + co + "'s Path to Implementation\n" +
+        "=== CREDENTIAL SLIDES (Slides 4\u20139 \u2014 insert after Slide 3, before the Implementation slide) ===\n\n" +
+        "Credential Slide 1 \u2014 Trusted By:\n" +
+        "Title: 'Trusted Across the Digital Asset Ecosystem'\n" +
+        "Group logos/names by category: Exchanges | Brokers & Trading Platforms | Neobanks & Fintechs | Remittance Providers | Institutional\n" +
+        "Include a headline stat: e.g. '$XB in annual payment volume processed' or 'X+ institutional clients across X jurisdictions'\n" +
+        "Tagline: 'From emerging fintechs to established financial institutions \u2014 CoinPayments powers the infrastructure behind digital asset payments'\n\n" +
+        "Credential Slide 2 \u2014 Licensing & Jurisdiction Map:\n" +
+        "Title: 'Our Licensing Solves Complexity & Speed to Market'\n" +
+        "World map with highlighted jurisdictions where CoinPayments is licensed or registered.\n" +
+        "Key jurisdiction callouts: United States (FinCEN registered, state MTL licenses), European Union (MiCA compliant), United Kingdom, Canada, Australia, Singapore, and other key markets.\n" +
+        "Bottom line: '180+ licensed jurisdictions \u2014 turnkey compliance so " + co + " doesn\u2019t have to build it'\n" +
+        "Subtext: 'Expanding into a new market? CoinPayments\u2019 Compliance-as-a-Service means " + co + " can launch crypto in [their target market from the analysis] without a single additional compliance hire'\n\n" +
+        "Credential Slide 3 \u2014 How Integration Works:\n" +
+        "Title: 'One API. " + co + "\u2019s Entire Crypto Infrastructure.'\n" +
+        "Left side: " + co + "\u2019s existing systems (their core banking / trading platform / payment rails \u2014 reference their actual stack from the analysis data above).\n" +
+        "Center: CoinPayments API layer with four capability nodes: Stablecoin Rails | Fiat On/Off Ramps | MPC Custody | Compliance Engine\n" +
+        "Right side: What their customers/users gain: Instant crypto settlement | 40+ digital assets | Fiat conversion | Audit-ready reporting\n" +
+        "Key message: 'No rip-and-replace. " + co + " adds the full CoinPayments capability stack via a single API integration \u2014 live in 4\u20138 weeks'\n" +
+        "Footer: 'White-label \u2014 your brand, your UX, CoinPayments infrastructure'\n\n" +
+        "Credential Slide 4 \u2014 Example Implementation:\n" +
+        "Title: 'Example: How " + co + " Deploys CoinPayments'\n" +
+        "Show a step-by-step user/client flow specific to " + co + "\u2019s actual business model from the analysis. Reference segment and business model from the analysis data. Example flows by segment (select and adapt the most relevant):\n" +
+        "- FX brokers: 'Client deposits USDC \u2192 instant conversion to USD \u2192 funds trading account \u2192 zero pre-funding required'\n" +
+        "- Neobanks: 'User buys BTC in-app \u2192 held in white-label MPC wallet \u2192 converted to fiat on withdrawal \u2192 settled T+0'\n" +
+        "- Remittance: 'Sender deposits fiat \u2192 converted to stablecoin \u2192 transmitted across CoinPayments rails \u2192 recipient receives local fiat \u2192 total cost: fractions of a cent'\n" +
+        "- Escrow: 'Funds held in smart contract escrow \u2192 automated release on condition \u2192 stablecoin settlement \u2192 no correspondent bank delays'\n" +
+        "Include a before/after comparison: 'Current: [their existing slow/expensive process specific to their model] \u2192 With CoinPayments: [the improved outcome]'\n\n" +
+        "Credential Slide 5 \u2014 Regulatory Tailwinds:\n" +
+        "Title: 'The Regulatory Window Is Open \u2014 " + co + " Should Move Now'\n" +
+        "Feature the GENIUS Act (signed July 18, 2025) and its four key impacts:\n" +
+        "1. Establishes federal framework for dollar-backed stablecoins\n" +
+        "2. Authorizes Treasury oversight \u2014 institutional-grade legitimacy\n" +
+        "3. Defines clear issuer requirements \u2014 compliance clarity for " + co + "\n" +
+        "4. Creates level playing field \u2014 crypto-native and traditional FIs compete equally\n" +
+        "Bottom line: 'For " + co + ": the regulatory uncertainty that may have caused hesitation is now resolved. This is the moment to build crypto infrastructure \u2014 before competitors do.'\n" +
+        "Reference any relevant regulatory developments specific to their jurisdiction from the analysis.\n\n" +
+        "Credential Slide 6 \u2014 Digital Assets vs Traditional Rails:\n" +
+        "Title: 'Stablecoin Rails vs Traditional Payment Infrastructure'\n" +
+        "Comparison table:\n" +
+        "| Dimension | Traditional Rails (SWIFT/ACH/SEPA) | CoinPayments Stablecoin Rails |\n" +
+        "| Settlement Speed | T+1 to T+5 | Instant, 24/7 |\n" +
+        "| Cost per Transaction | $15\u2013$45 cross-border | Fractions of a cent |\n" +
+        "| Availability | Business hours, weekdays | 24/7/365 |\n" +
+        "| Pre-funding Required | Yes \u2014 capital tied up | No |\n" +
+        "| FX Conversion | Manual, expensive | Automated, real-time |\n" +
+        "| Compliance | Jurisdiction-specific | 180+ jurisdictions, built-in |\n" +
+        "| Integration | Complex, multiple counterparties | Single API |\n" +
+        "Callout box specific to " + co + ": quantify what the table means for their specific volume (e.g. 'On $50B annual volume, replacing SWIFT with stablecoin rails saves an estimated $X in transaction costs annually \u2014 use their actual reported volume from the analysis data').\n\n" +
+        "These six credential slides give " + co + "\u2019s technical and compliance teams the institutional confidence to proceed, while the business case slides give their executives the commercial rationale.\n\n" +
+        "Slide 10 \u2014 " + co + "'s Path to Implementation\n" +
         co + " gets access to CoinPayments' entire API-driven infrastructure stack without building or maintaining any blockchain infrastructure. Make implementation feel fast, low-risk, and within " + co + "'s control:\n" +
         "- Phase 1: [the highest-priority capability from your Slide 3 analysis] \u2014 live in 4-8 weeks\n" +
         "- Phase 2: [second capability expansion tied to their platform] \u2014 weeks 9-16\n" +
@@ -1047,7 +1096,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- CoinPayments is a partner in their growth, not a vendor selling a product\n" +
         "- " + co + " is the hero. Name competitors explicitly. Every claim grounded in the data above \u2014 no generic crypto talking points\n" +
         "- The deck should feel like it came from someone who deeply respects " + co + "'s business and genuinely wants them to win\n" +
-        "- 4 slides \u2014 no more. No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
+        "- 10 slides total: Slide 1 (Competitive Gap), Slide 2 (Opportunity Cost), Slide 3 (How " + co + " Closes the Gap), Credential Slides 1\u20136 (Trusted By / Jurisdiction Map / Integration / Example Implementation / Regulatory Tailwinds / Rails Comparison), Slide 10 (Path to Implementation). No ROI calculations, no fee structures, no financial projections. Format for dark professional theme \u2014 minimal, high-contrast.",
         8000, false
       );
 
