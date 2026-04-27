@@ -1129,6 +1129,53 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         8000, false
       );
 
+      // Phase 2.5 — Creative Director Review (grok-3)
+      setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"reviewing"}); });
+      var reviewResult = await callGrok(
+        "You are a senior creative director at a top-tier financial services design firm reviewing a CoinPayments pitch deck outline before it goes into production in Gamma. Your job is to ensure every slide is production-ready, visually specific, and will render as a polished institutional presentation \u2014 not a text-heavy bullet point document.",
+        "Review the following deck outline for " + co + " and apply these quality checks to every slide:\n\n" +
+        "GLOBAL CHECKS \u2014 reject any slide that:\n" +
+        "- Uses generic bullet point lists where a visual diagram, table, or map was specified\n" +
+        "- Has vague instructions like 'show a chart' without specifying exact data, labels, and layout\n" +
+        "- Uses placeholder language like '[insert data here]' without the actual data filled in\n" +
+        "- Has more than 6 bullet points on a single slide\n" +
+        "- Does not specify a slide title\n\n" +
+        "LICENSING MAP SLIDE \u2014 reject and rewrite if:\n" +
+        "- Jurisdictions are listed as bullets below the map rather than as callout boxes positioned ON the map\n" +
+        "- Missing any of these callouts: United States, United Kingdom, European Union, Canada, Brazil, Argentina, Singapore/APAC\n" +
+        "- Bottom banner '180+ Licensed Jurisdictions' is missing\n" +
+        "- Does not explicitly instruct Gamma to use a full-slide dark world map as the background with semi-transparent callout boxes overlaid directly on each geographic region with pointer lines to the exact country\n" +
+        "- If rejected: rewrite with explicit Gamma layout instructions specifying exact callout positions (top-left for Canada, center-left for US, top-right for UK/EU, bottom-center for Brazil/Argentina, right for APAC)\n\n" +
+        "REGULATORY TIMELINE SLIDE \u2014 reject and rewrite if:\n" +
+        "- Not structured as a horizontal visual timeline flowing left (past) to right (future)\n" +
+        "- GENIUS Act (July 18, 2025) is not the visually dominant anchor event on the timeline\n" +
+        "- Future projections beyond 2026 are missing\n" +
+        "- Color coding is not specified: grey for past milestones, bright teal for present/GENIUS Act section, gradient teal fading right for future\n" +
+        "- Timeline does not include at minimum: 2013 FinCEN, 2015 NYDFS, 2019 FATF, 2023 MiCA, 2024 SEC ETFs, 2025 GENIUS Act, 2026 implementation, 2027+ CBDC interoperability, 2028+ blockchain settlement\n" +
+        "- If rejected: rewrite as explicit horizontal timeline with each milestone as a labeled node on a line, GENIUS Act node significantly larger than others, color bands behind the timeline sections\n\n" +
+        "ARCHITECTURE DIAGRAM SLIDE \u2014 reject and rewrite if:\n" +
+        "- Described as a list rather than a three-column flow diagram\n" +
+        "- Does not specify " + co + "'s actual existing stack on the left column\n" +
+        "- CoinPayments API hub in the center with four radiating capability nodes is not explicitly described\n" +
+        "- Connecting arrows with labels are not specified\n" +
+        "- If rejected: rewrite as explicit three-column diagram with left/center/right layout, named boxes, colored nodes, and labeled arrows\n\n" +
+        "VALUE PROP SLIDES \u2014 reject and rewrite if:\n" +
+        "- CoinPayments capabilities are described generically rather than mapped to " + co + "'s specific pain points\n" +
+        "- Does not use exact capability names: Stablecoin + Blockchain Rails, Fiat On/Off Ramps, Third-Party Wallet Hosting, Compliance-as-a-Service\n" +
+        "- If rejected: rewrite with company-specific application of each capability\n\n" +
+        "For every slide that passes review mark it [APPROVED]. For every slide that fails mark it [REVISED] and rewrite the Gamma instructions for that slide to be explicit, visual, and production-ready.\n\n" +
+        "Return the complete deck outline with all slides \u2014 approved and revised \u2014 in the correct order. Do not remove any slides. Do not add new slides. Only improve the Gamma instructions for failing slides.\n\n" +
+        "=== DECK OUTLINE TO REVIEW ===\n\n" + deckPrompt,
+        6000, false
+      );
+      var revisedSlides = (reviewResult||"").match(/\[REVISED\][^\n]*/g) || [];
+      if (revisedSlides.length) {
+        console.log("[CreativeDirector] " + revisedSlides.length + " slide(s) revised for " + co + ": " + revisedSlides.join(" | "));
+      } else {
+        console.log("[CreativeDirector] All slides approved for " + co);
+      }
+      deckPrompt = reviewResult || deckPrompt;
+
       // Phase 3 — Start Gamma generation (fire and return generationId immediately)
       setDeckStatus(function(p){ return Object.assign({},p,{[dealId]:"starting"}); });
       var startRes = await fetch("/api/gamma-start", {
@@ -2348,12 +2395,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                 {(function(){
                                   var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
                                   var deckPolling = ds.startsWith("polling:");
-                                  var deckLoading = ds === "researching" || ds === "building" || ds === "starting" || deckPolling;
+                                  var deckLoading = ds === "researching" || ds === "building" || ds === "reviewing" || ds === "starting" || deckPolling;
                                   var deckDone = ds === "done" || !!(deal.gammaDeckUrl && !deckLoading && ds !== "timeout");
                                   var deckErr = ds.startsWith("error:");
                                   var deckTimeout = ds === "timeout";
                                   var pollSecs = deckPolling ? parseInt(ds.split(":")[1]||"0",10)*5 : 0;
-                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching..." : ds === "building" ? "🧠 Building..." : ds === "starting" ? "🚀 Starting..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
+                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching " + deal.company + "..." : ds === "building" ? "✍️ Building outline..." : ds === "reviewing" ? "🎨 Reviewing..." : ds === "starting" ? "🚀 Sending to Gamma..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : "🎨 Deck";
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
@@ -2501,12 +2548,29 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
         );
         finalTitle = deckTitle.trim() || "Pipeline Intelligence Brief — CoinPayments";
       } else {
-        setStatus("🤖 Grok is building your outline...");
+        setStatus("✍️ Grok is building your outline...");
         outline = await callGrok(
           "You are a presentation outline expert for B2B sales materials. Create a detailed, structured presentation outline with clear slide titles, key bullet points, talking points, and specific data suggestions for each slide. Be thorough and specific.",
           "Create a detailed presentation outline for this: " + prompt + "\n\nFormat as a structured outline: Slide 1: [Title], key points, talking points. Slide 2: ... etc. Include suggested data, stats, or visuals for each slide.\n\nDesign note: Format this presentation for a dark professional theme — minimal, clean, high-contrast. Keep all copy concise and data-driven.",
           3000, false
         );
+        // Creative director review for custom free-form decks
+        setStatus("🎨 Creative director reviewing outline...");
+        var freeReview = await callGrok(
+          "You are a senior creative director reviewing a presentation outline before Gamma production. Ensure every slide is visually specific, production-ready, and will render as a polished professional deck — not a text-heavy bullet document.",
+          "Review the following presentation outline and improve any slides that:\n" +
+          "- Use generic bullet lists where a table, diagram, or visual was more appropriate\n" +
+          "- Have vague instructions without specifying exact data, labels, or layout\n" +
+          "- Have more than 6 bullet points on a single slide\n" +
+          "- Lack a clear slide title\n\n" +
+          "For every slide that passes mark it [APPROVED]. For every slide that needs improvement mark it [REVISED] and rewrite the Gamma instructions to be explicit, visual, and production-ready.\n\n" +
+          "Return the complete outline with all slides in order. Do not remove or add slides.\n\n" +
+          "=== OUTLINE TO REVIEW ===\n\n" + outline,
+          2000, false
+        );
+        var freeRevisedCount = ((freeReview||"").match(/\[REVISED\]/g)||[]).length;
+        if (freeRevisedCount) console.log("[CreativeDirector] " + freeRevisedCount + " slide(s) revised in custom deck");
+        outline = freeReview || outline;
         finalTitle = deckTitle.trim() || prompt.slice(0, 80);
       }
 
