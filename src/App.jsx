@@ -1038,19 +1038,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "Tagline: 'From emerging fintechs to established financial institutions \u2014 CoinPayments powers the infrastructure behind digital asset payments'\n\n" +
         "Credential Slide 2 \u2014 Licensing & Jurisdiction Map (VISUAL MAP SLIDE \u2014 NOT a text slide):\n" +
         "Title: 'Our Licensing Solves Complexity & Speed to Market'\n" +
-        "Generate a full-slide world map showing CoinPayments\u2019 jurisdictional licensing footprint. Instructions for Gamma:\n" +
-        "- Use a dark world map as the slide background\n" +
-        "- Highlight licensed/registered jurisdictions in teal/green\n" +
-        "- Add labeled callout boxes with lines pointing to key regions:\n" +
-        "  \ud83c\uddfa\ud83c\uddf8 United States: FinCEN registered, Money Transmitter Licenses in 48 states, NYDFS BitLicense, operates in 51 jurisdictions\n" +
-        "  \ud83c\uddec\ud83c\udde7 United Kingdom: FCA registered\n" +
-        "  \ud83c\uddea\ud83c\uddfa European Union: MiCA compliant, passported across EU member states\n" +
-        "  \ud83c\udde8\ud83c\udde6 Canada: FINTRAC registered\n" +
-        "  \ud83c\udde6\ud83c\uddfa Australia: AUSTRAC registered, AFSL licensed\n" +
-        "  \ud83c\uddf8\ud83c\uddec Singapore: MAS registered\n" +
-        "  \ud83c\udf0d 180+ jurisdictions total \u2014 turnkey compliance\n" +
-        "- Bottom banner: 'When " + co + " partners with CoinPayments, they inherit our entire regulatory footprint \u2014 zero additional compliance overhead to enter new markets'\n" +
-        "- Make this slide feel like a geopolitical intelligence briefing \u2014 authoritative, precise, institutional\n\n" +
+        "Generate a full-slide world map with detailed callout boxes positioned directly ON the map over each licensed region \u2014 not in a list below the map. The map IS the slide. Instructions for Gamma:\n" +
+        "Slide title at top: 'Our Licensing Solves Complexity & Speed to Market'\n" +
+        "Use a dark world map as the full slide background. Overlay the following callout boxes directly on top of their geographic regions on the map \u2014 each callout has a pointer line anchoring it to the correct country/region:\n" +
+        "\ud83c\uddfa\ud83c\uddf8 United States (position callout over North America): FinCEN registered | Money Transmitter Licenses \u2014 48 states | NYDFS BitLicense | Operates across 51 US jurisdictions | Trust Charter \u2014 Qualified Custodian status\n" +
+        "\ud83c\uddec\ud83c\udde7 United Kingdom (position callout over UK): FCA registered | Supported with third party FCA approval\n" +
+        "\ud83c\uddea\ud83c\uddfa European Union (position callout over Continental Europe): MiCA compliant \u2014 authorized under EU Markets in Crypto-Assets Regulation | Passported across all 27 EU member states | Activities: custody, trading platform, exchange, portfolio management\n" +
+        "\ud83c\udde8\ud83c\udde6 Canada (position callout over Canada): FINTRAC registered | Money Services Business | Financial Transactions and Reports Analysis Centre\n" +
+        "\ud83c\udde7\ud83c\uddf7 Brazil (position callout over South America): Local entity incorporated 2020 | Currently grandfathered into regulatory framework | Pending full authorization from Banco Central\n" +
+        "\ud83c\udde6\ud83c\uddf7 Argentina (position callout over southern South America): Virtual Asset Services Provider | Registered with Argentina's National Securities Commission\n" +
+        "\ud83c\uddf8\ud83c\uddec Singapore / APAC (position callout over Southeast Asia): MAS registered | AUSTRAC registered (Australia) | AFSL licensed | New Zealand: Financial Services Provider registered\n" +
+        "Each callout box must: have a small flag emoji as the header | use a semi-transparent dark background so the map shows through | have a thin teal border | have a pointer/line anchoring it to the exact country location on the map | be sized to fit the text without overlapping other callouts.\n" +
+        "Bottom banner across the full width of the slide: '\ud83c\udf0d 180+ Licensed Jurisdictions \u2014 When " + co + " partners with CoinPayments, you inherit our entire regulatory footprint. Zero additional compliance overhead to enter new markets.'\n" +
+        "This slide must look like a geopolitical intelligence briefing \u2014 the map dominates, callouts are surgical overlays. Do NOT list jurisdictions below the map in bullet points. The callouts ARE on the map.\n\n" +
         "Credential Slide 3 \u2014 How Integration Works (ARCHITECTURE DIAGRAM SLIDE \u2014 NOT a text slide):\n" +
         "Title: 'One API. " + co + "\u2019s Complete Crypto Infrastructure.'\n" +
         "Design as a three-column flow diagram with connecting arrows:\n" +
