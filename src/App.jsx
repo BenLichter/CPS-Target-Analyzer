@@ -995,12 +995,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- Frame the gap precisely: '" + co + " is [timeframe] behind [Competitor] in crypto payment capability'\n" +
         "- What customer segments are competitors capturing that " + co + " cannot serve today?\n" +
         "Make the competitive threat visceral with real names and specific product moves.\n\n" +
-        "Slide 2 \u2014 " + co + "'s Crypto Opportunity Cost\n" +
-        "Translate the competitive gap into real revenue " + co + " is losing right now.\n" +
-        "- Use the actual SOM context: '" + co + " processes $X in [volume type] annually. At [Y]% crypto adoption, that is $Z in crypto volume your customers want to transact \u2014 today that goes to [named competitor]'\n" +
-        "- Quantify customer churn risk: what % of their customer base is actively seeking crypto capabilities from competitors?\n" +
-        "- What does [Competitor]'s crypto feature cost " + co + " in retention and new customer acquisition?\n" +
-        "- Frame as revenue already being lost, not hypothetical future revenue\n\n" +
+        "Slide 2 \u2014 The Crypto Opportunity Cost\n" +
+        "Generate a three-panel data slide with equal-width panels side by side across the full slide. This is a METRICS slide \u2014 no stock imagery, no prose paragraphs.\n" +
+        "Slide title top center: 'The Crypto Opportunity Cost'\n" +
+        "Subtitle: 'The absence of a crypto strategy is already costing " + co + " revenue, clients, and market position.'\n" +
+        "Three equal panels below the title (each panel = icon + large metric + 2-line explanation):\n" +
+        "Panel 1 \u2014 Volume at Risk: Icon: \ud83d\udcca | Large number: '10-15%' | Label: 'of B2B payment volume primed for crypto rails' | Sub-text: 'Hundreds of millions in volume flowing to crypto-enabled competitors annually'\n" +
+        "Panel 2 \u2014 Client Churn Exposure: Icon: \ud83d\udc65 | Large number: 'Up to 20%' | Label: 'of tech-forward clients actively seeking crypto payment options' | Sub-text: 'Without a solution, defection risk is real and immediate'\n" +
+        "Panel 3 \u2014 Growth Locked Out: Icon: \ud83d\udd12 | Large number: '$[X]M' (use actual ARR figure from analysis) | Label: 'in new client revenue inaccessible without crypto capabilities' | Sub-text: 'Competitors with crypto features are winning accounts " + co + " cannot serve'\n" +
+        "Use actual figures from the analysis where available. Dark background, teal accent colors on the large numbers, thin dividing lines between panels.\n" +
+        "Do NOT use handshake imagery or any people imagery. Use icons and data only.\n\n" +
         "Slide 3 \u2014 How " + co + " Closes the Gap With CoinPayments\n" +
         CP_CAPABILITIES + "\n\nFor Slide 3, the CoinPayments solution must be described using only the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above. Select the 2-3 capabilities most relevant to " + co + "'s specific gaps, describe them using the exact capability names and core descriptions from the authoritative data, then add the bespoke application paragraph for " + co + " after each capability description. Do not paraphrase or invent alternative capability descriptions.\n\n" +
         "Do NOT list CoinPayments' capabilities generically. Instead, conduct a nuanced analysis of how CoinPayments' infrastructure stack specifically solves " + co + "'s unique situation. Work through this in three steps:\n\n" +
@@ -1051,18 +1055,29 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "Each callout box must: have a small flag emoji as the header | use a semi-transparent dark background so the map shows through | have a thin teal border | have a pointer/line anchoring it to the exact country location on the map | be sized to fit the text without overlapping other callouts.\n" +
         "Bottom banner across the full width of the slide: '\ud83c\udf0d 180+ Licensed Jurisdictions \u2014 When " + co + " partners with CoinPayments, you inherit our entire regulatory footprint. Zero additional compliance overhead to enter new markets.'\n" +
         "This slide must look like a geopolitical intelligence briefing \u2014 the map dominates, callouts are surgical overlays. Do NOT list jurisdictions below the map in bullet points. The callouts ARE on the map.\n\n" +
-        "Credential Slide 3 \u2014 How Integration Works (ARCHITECTURE DIAGRAM SLIDE \u2014 NOT a text slide):\n" +
+        "Credential Slide 3 \u2014 How Integration Works (ARCHITECTURE DIAGRAM SLIDE \u2014 NOT a text slide, NOT a bullet list):\n" +
         "Title: 'One API. " + co + "\u2019s Complete Crypto Infrastructure.'\n" +
-        "Design as a three-column flow diagram with connecting arrows:\n" +
-        "LEFT COLUMN \u2014 " + co + "\u2019s Existing Stack: Show their actual current systems from the analysis (core banking platform, trading infrastructure, payment rails, mobile app) as labeled boxes in dark grey.\n" +
-        "CENTER COLUMN \u2014 CoinPayments API Layer: A prominent central hub/node labeled 'CoinPayments' with four capability arms radiating outward as distinct colored nodes:\n" +
-        "- \ud83d\udd35 Stablecoin + Blockchain Rails \u2014 24/7 instant settlement\n" +
-        "- \ud83d\udfe2 Fiat On/Off Ramps \u2014 local currency \u2194 crypto\n" +
-        "- \ud83d\udfe1 MPC Custody \u2014 white-label, insured, audit-ready\n" +
-        "- \ud83d\udd34 Compliance Engine \u2014 180+ jurisdictions, AML/KYC\n" +
-        "RIGHT COLUMN \u2014 What " + co + "\u2019s Customers Gain: Instant crypto settlement | 40+ digital assets | Fiat conversion at point of transaction | Full audit trail | White-label UX \u2014 " + co + "\u2019s brand throughout.\n" +
-        "CONNECTING ELEMENTS: Single bold arrow from LEFT to CENTER labeled 'Single API Integration \u2014 4-8 weeks'. Four arrows from CENTER to RIGHT showing capability flow. Bottom note: 'No rip-and-replace. " + co + "\u2019s existing infrastructure stays intact.'\n" +
-        "Make this feel like a McKinsey architecture diagram \u2014 clean, authoritative, no clutter. Dark background with teal accent colors.\n\n" +
+        "Generate a three-column architecture diagram centered on the slide. This is a DIAGRAM slide \u2014 no prose paragraphs, no bullet lists.\n" +
+        "Layout: three equal columns spanning the full slide width with arrows connecting them left to right:\n" +
+        "LEFT COLUMN (dark grey boxes, labeled '" + co + " Today'):\n" +
+        "- Core payment platform\n" +
+        "- FX settlement rails\n" +
+        "- Client-facing portal/app\n" +
+        "- Compliance stack\n" +
+        "(Use actual systems from the analysis if known)\n" +
+        "CENTER COLUMN (prominent teal hub):\n" +
+        "Large central node labeled 'CoinPayments API' with four smaller nodes radiating in a diamond pattern:\n" +
+        "- Top: \ud83d\udd35 Stablecoin + Blockchain Rails\n" +
+        "- Left: \ud83d\udfe2 Fiat On/Off Ramps\n" +
+        "- Right: \ud83d\udfe1 MPC Custody\n" +
+        "- Bottom: \ud83d\udd34 Compliance-as-a-Service\n" +
+        "RIGHT COLUMN (teal boxes, labeled '" + co + " + CoinPayments'):\n" +
+        "- 24/7 instant settlement\n" +
+        "- 40+ digital assets live\n" +
+        "- White-label crypto UX\n" +
+        "- 180+ jurisdictions covered\n" +
+        "Connecting elements: Bold arrow LEFT \u2192 CENTER labeled 'Single API \u00b7 4-8 weeks'. Four arrows CENTER \u2192 RIGHT showing capability flow. Bottom of slide: small text only \u2014 'No rip-and-replace. Existing infrastructure stays intact.'\n" +
+        "Do NOT include paragraphs of text. The diagram IS the slide. Dark background, teal accent colors.\n\n" +
         "Credential Slide 4 \u2014 Example Implementation:\n" +
         "Title: 'Example: How " + co + " Deploys CoinPayments'\n" +
         "Show a step-by-step user/client flow specific to " + co + "\u2019s actual business model from the analysis. Reference segment and business model from the analysis data. Example flows by segment (select and adapt the most relevant):\n" +
@@ -1071,29 +1086,26 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- Remittance: 'Sender deposits fiat \u2192 converted to stablecoin \u2192 transmitted across CoinPayments rails \u2192 recipient receives local fiat \u2192 total cost: fractions of a cent'\n" +
         "- Escrow: 'Funds held in smart contract escrow \u2192 automated release on condition \u2192 stablecoin settlement \u2192 no correspondent bank delays'\n" +
         "Include a before/after comparison: 'Current: [their existing slow/expensive process specific to their model] \u2192 With CoinPayments: [the improved outcome]'\n\n" +
-        "Credential Slide 5 \u2014 Regulatory Tailwinds (TIMELINE SLIDE \u2014 NOT a bullet point slide):\n" +
-        "Title: 'The Regulatory Moment Has Arrived \u2014 The Window Is Open for " + co + "'\n" +
-        "Design as a horizontal timeline from left (past) to right (future). Color code: past = grey, present = bright teal/highlighted, future = gradient teal fading right. Make the GENIUS Act milestone the visual anchor \u2014 largest callout on the timeline.\n" +
-        "PAST \u2014 Foundation (grey):\n" +
-        "- 2013: FinCEN issues first crypto guidance \u2014 MSB registration begins\n" +
-        "- 2015: NYDFS BitLicense \u2014 first state-level crypto framework\n" +
-        "- 2019: FATF Travel Rule \u2014 AML standards go global\n" +
-        "- 2021: EU MiCA proposed \u2014 institutional framework begins\n" +
-        "- 2023: MiCA passed \u2014 regulatory clarity for 27 EU nations\n" +
-        "PRESENT \u2014 The Window Opens (bright teal, highlighted section):\n" +
-        "- 2024: SEC ETF approvals \u2014 institutional legitimacy\n" +
-        "- 2025 Q1: Basel III crypto provisions \u2014 banks can hold crypto assets\n" +
-        "- July 18, 2025: GENIUS Act signed into law \u2014 first comprehensive US federal stablecoin framework\n" +
-        "  \u2192 Federal framework for dollar-backed stablecoins\n" +
-        "  \u2192 Treasury oversight \u2014 institutional-grade legitimacy\n" +
-        "  \u2192 Clear issuer requirements for banks, fintechs, and neobanks\n" +
-        "  \u2192 Level playing field: traditional FIs and crypto-native compete equally\n" +
-        "FUTURE \u2014 Where This Leads (gradient teal fading right):\n" +
-        "- 2026: GENIUS Act implementation \u2014 20+ bank-issued stablecoins expected (e.g. JPM Coin expansion)\n" +
-        "- 2026\u20132027: State MTL consolidation \u2014 federal preemption likely\n" +
-        "- 2027+: CBDCs and stablecoin interoperability \u2014 cross-border settlement transformed\n" +
-        "- 2028+: Real-time gross settlement on blockchain becomes standard for institutional finance\n" +
-        "Below the timeline add a callout: 'For " + co + ": The regulatory uncertainty that caused hesitation is now resolved. Every quarter of delay is market share ceded to crypto-ready competitors.'\n\n" +
+        "Credential Slide 5 \u2014 Regulatory Tailwinds (FULL-WIDTH HORIZONTAL TIMELINE SLIDE \u2014 NOT a bullet list, NOT content stacked on the right):\n" +
+        "Title top center: 'The Regulatory Window Is Open'\n" +
+        "Generate a horizontal timeline that spans the full width of the slide. This is a VISUAL TIMELINE \u2014 not a text list, not content stacked on the right side.\n" +
+        "Layout: Full-width horizontal line runs across the center of the slide. Timeline nodes sit ON the line at evenly spaced intervals. Color bands behind timeline sections:\n" +
+        "GREY BAND (left third): 2013\u20132023 Foundation\n" +
+        "BRIGHT TEAL BAND (center): 2024\u20132025 The Window Opens \u2014 this section is visually dominant\n" +
+        "GRADIENT TEAL-TO-DARK BAND (right third): 2026\u20132028+ Mainstream\n" +
+        "Nodes on the timeline (each node = circle + year label above + 1-line description below):\n" +
+        "- 2013: FinCEN first crypto guidance\n" +
+        "- 2015: NYDFS BitLicense\n" +
+        "- 2019: FATF Travel Rule global\n" +
+        "- 2023: EU MiCA passed\n" +
+        "- 2024: SEC ETF approvals\n" +
+        "- Q1 2025: Basel III crypto provisions\n" +
+        "- \u2b50 July 2025: GENIUS Act signed (make this node 2x larger than others, bright teal, with a callout box above it reading 'First US Federal Stablecoin Framework \u2014 Treasury oversight \u00b7 Issuer clarity \u00b7 Level playing field')\n" +
+        "- 2026: 20+ bank stablecoins launch\n" +
+        "- 2027+: CBDC interoperability\n" +
+        "- 2028+: Real-time blockchain settlement standard\n" +
+        "Bottom center (single line only): 'Every quarter of delay is market share ceded to crypto-ready competitors.'\n" +
+        "Do NOT stack content on the right side. The timeline spans the full width centered on the slide.\n\n" +
         "Credential Slide 6 \u2014 Digital Assets vs Traditional Rails:\n" +
         "Title: 'Stablecoin Rails vs Traditional Payment Infrastructure'\n" +
         "Comparison table:\n" +
@@ -1119,6 +1131,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           ? "- 'Ready to close the gap on " + (competitorNames.split(",")[0]||"competitors") + "? Let\u2019s schedule a 30-minute technical walkthrough with " + contacts.split("\n").slice(0,2).map(function(c){ return c.split("(")[0].trim(); }).join(" and ") + " and the engineering team.'\n"
           : "- 'Ready to close the gap? Let\u2019s schedule a 30-minute technical walkthrough with your payments and engineering teams.'\n") +
         "\n" +
+        "IMPORTANT DESIGN RULES FOR GAMMA:\n" +
+        "- Never use stock photo imagery of people, handshakes, business meetings, or generic corporate imagery. Use data visualizations, diagrams, icons, maps, and abstract geometric elements only.\n" +
+        "- All slide content must be centered or use a balanced two-column layout. Never stack all content on the right side of a slide.\n" +
+        "- Every slide must have a clear visual hierarchy: large title at top, supporting visual or data in the center/body, brief explanatory text below or alongside.\n" +
+        "- Avoid long paragraphs \u2014 maximum 2 sentences of prose per slide. Use the visual to carry the message.\n\n" +
         "TONE GUIDANCE FOR THE ENTIRE DECK:\n" +
         "- Speak to " + co + "'s executives as peers, not as prospects \u2014 they are sophisticated operators who have built something real\n" +
         "- Acknowledge what they have already built \u2014 position crypto infrastructure as the next logical evolution of what they are doing, not a radical departure\n" +
@@ -1134,7 +1151,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var reviewResult = await callGrok(
         "You are a senior creative director at a top-tier financial services design firm reviewing a CoinPayments pitch deck outline before it goes into production in Gamma. Your job is to ensure every slide is production-ready, visually specific, and will render as a polished institutional presentation \u2014 not a text-heavy bullet point document.",
         "Review the following deck outline for " + co + " and apply these quality checks to every slide:\n\n" +
-        "GLOBAL CHECKS \u2014 reject any slide that:\n" +
+        "IMPORTANT GLOBAL DESIGN RULES \u2014 reject any slide that violates these:\n" +
+        "- Uses stock photo imagery of people, handshakes, business meetings, or generic corporate imagery (diagrams, icons, maps, and abstract geometric elements only)\n" +
+        "- Stacks all content on the right side of the slide rather than using centered or balanced two-column layout\n" +
+        "- Lacks clear visual hierarchy: large title at top, supporting visual or data in center/body, brief text below\n" +
+        "- Uses long paragraphs \u2014 maximum 2 sentences of prose per slide\n" +
         "- Uses generic bullet point lists where a visual diagram, table, or map was specified\n" +
         "- Has vague instructions like 'show a chart' without specifying exact data, labels, and layout\n" +
         "- Uses placeholder language like '[insert data here]' without the actual data filled in\n" +
@@ -1156,9 +1177,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "ARCHITECTURE DIAGRAM SLIDE \u2014 reject and rewrite if:\n" +
         "- Described as a list rather than a three-column flow diagram\n" +
         "- Does not specify " + co + "'s actual existing stack on the left column\n" +
-        "- CoinPayments API hub in the center with four radiating capability nodes is not explicitly described\n" +
+        "- CoinPayments API hub in the center with four radiating capability nodes in a diamond pattern is not explicitly described\n" +
         "- Connecting arrows with labels are not specified\n" +
-        "- If rejected: rewrite as explicit three-column diagram with left/center/right layout, named boxes, colored nodes, and labeled arrows\n\n" +
+        "- Content is stacked on one side instead of centered three-column layout\n" +
+        "- If rejected: rewrite as explicit three-column diagram (LEFT = " + co + " Today dark grey boxes, CENTER = CoinPayments API teal hub with 4 diamond nodes, RIGHT = " + co + " + CoinPayments teal boxes), bold arrow LEFT\u2192CENTER labeled 'Single API \u00b7 4-8 weeks', four arrows CENTER\u2192RIGHT\n\n" +
+        "REGULATORY TIMELINE SLIDE \u2014 also reject and rewrite if:\n" +
+        "- Timeline does not span the full width of the slide (content stacked on right side is a failure)\n" +
+        "- GENIUS Act node is not 2x larger than other nodes\n" +
+        "- If rejected: rewrite with explicit full-width horizontal line, evenly spaced nodes ON the line, GREY/TEAL/GRADIENT-TEAL color bands\n\n" +
+        "OPPORTUNITY COST SLIDE \u2014 reject and rewrite if:\n" +
+        "- Formatted as prose paragraphs or bullet points instead of three equal metric panels\n" +
+        "- Uses people imagery, handshakes, or stock photography\n" +
+        "- Large metric numbers are not visually prominent (teal accent, large font)\n" +
+        "- If rejected: rewrite as three equal-width panels side by side (Volume at Risk / Client Churn Exposure / Growth Locked Out), each with icon + large teal number + 2-line explanation\n\n" +
         "VALUE PROP SLIDES \u2014 reject and rewrite if:\n" +
         "- CoinPayments capabilities are described generically rather than mapped to " + co + "'s specific pain points\n" +
         "- Does not use exact capability names: Stablecoin + Blockchain Rails, Fiat On/Off Ramps, Third-Party Wallet Hosting, Compliance-as-a-Service\n" +
