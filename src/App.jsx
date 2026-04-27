@@ -1030,24 +1030,39 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- What competitive position does " + co + " hold after deployment?\n\n" +
         "The output for Slide 3 should read like it was written by a senior solutions architect who spent a week studying " + co + "'s business \u2014 not a sales template with the company name swapped in. Every sentence must be defensible in a boardroom. If you are not confident about a specific claim, write 'based on " + co + "'s reported [X]' rather than fabricating precision.\n\n" +
         "=== CREDENTIAL SLIDES (Slides 4\u20139 \u2014 insert after Slide 3, before the Implementation slide) ===\n\n" +
+        "IMPORTANT: You MUST include all six credential slides in every pipeline target deck. These are non-negotiable \u2014 do not skip or combine them. Generate each slide separately with its own title.\n\n" +
         "Credential Slide 1 \u2014 Trusted By:\n" +
         "Title: 'Trusted Across the Digital Asset Ecosystem'\n" +
         "Group logos/names by category: Exchanges | Brokers & Trading Platforms | Neobanks & Fintechs | Remittance Providers | Institutional\n" +
         "Include a headline stat: e.g. '$XB in annual payment volume processed' or 'X+ institutional clients across X jurisdictions'\n" +
         "Tagline: 'From emerging fintechs to established financial institutions \u2014 CoinPayments powers the infrastructure behind digital asset payments'\n\n" +
-        "Credential Slide 2 \u2014 Licensing & Jurisdiction Map:\n" +
+        "Credential Slide 2 \u2014 Licensing & Jurisdiction Map (VISUAL MAP SLIDE \u2014 NOT a text slide):\n" +
         "Title: 'Our Licensing Solves Complexity & Speed to Market'\n" +
-        "World map with highlighted jurisdictions where CoinPayments is licensed or registered.\n" +
-        "Key jurisdiction callouts: United States (FinCEN registered, state MTL licenses), European Union (MiCA compliant), United Kingdom, Canada, Australia, Singapore, and other key markets.\n" +
-        "Bottom line: '180+ licensed jurisdictions \u2014 turnkey compliance so " + co + " doesn\u2019t have to build it'\n" +
-        "Subtext: 'Expanding into a new market? CoinPayments\u2019 Compliance-as-a-Service means " + co + " can launch crypto in [their target market from the analysis] without a single additional compliance hire'\n\n" +
-        "Credential Slide 3 \u2014 How Integration Works:\n" +
-        "Title: 'One API. " + co + "\u2019s Entire Crypto Infrastructure.'\n" +
-        "Left side: " + co + "\u2019s existing systems (their core banking / trading platform / payment rails \u2014 reference their actual stack from the analysis data above).\n" +
-        "Center: CoinPayments API layer with four capability nodes: Stablecoin Rails | Fiat On/Off Ramps | MPC Custody | Compliance Engine\n" +
-        "Right side: What their customers/users gain: Instant crypto settlement | 40+ digital assets | Fiat conversion | Audit-ready reporting\n" +
-        "Key message: 'No rip-and-replace. " + co + " adds the full CoinPayments capability stack via a single API integration \u2014 live in 4\u20138 weeks'\n" +
-        "Footer: 'White-label \u2014 your brand, your UX, CoinPayments infrastructure'\n\n" +
+        "Generate a full-slide world map showing CoinPayments\u2019 jurisdictional licensing footprint. Instructions for Gamma:\n" +
+        "- Use a dark world map as the slide background\n" +
+        "- Highlight licensed/registered jurisdictions in teal/green\n" +
+        "- Add labeled callout boxes with lines pointing to key regions:\n" +
+        "  \ud83c\uddfa\ud83c\uddf8 United States: FinCEN registered, Money Transmitter Licenses in 48 states, NYDFS BitLicense, operates in 51 jurisdictions\n" +
+        "  \ud83c\uddec\ud83c\udde7 United Kingdom: FCA registered\n" +
+        "  \ud83c\uddea\ud83c\uddfa European Union: MiCA compliant, passported across EU member states\n" +
+        "  \ud83c\udde8\ud83c\udde6 Canada: FINTRAC registered\n" +
+        "  \ud83c\udde6\ud83c\uddfa Australia: AUSTRAC registered, AFSL licensed\n" +
+        "  \ud83c\uddf8\ud83c\uddec Singapore: MAS registered\n" +
+        "  \ud83c\udf0d 180+ jurisdictions total \u2014 turnkey compliance\n" +
+        "- Bottom banner: 'When " + co + " partners with CoinPayments, they inherit our entire regulatory footprint \u2014 zero additional compliance overhead to enter new markets'\n" +
+        "- Make this slide feel like a geopolitical intelligence briefing \u2014 authoritative, precise, institutional\n\n" +
+        "Credential Slide 3 \u2014 How Integration Works (ARCHITECTURE DIAGRAM SLIDE \u2014 NOT a text slide):\n" +
+        "Title: 'One API. " + co + "\u2019s Complete Crypto Infrastructure.'\n" +
+        "Design as a three-column flow diagram with connecting arrows:\n" +
+        "LEFT COLUMN \u2014 " + co + "\u2019s Existing Stack: Show their actual current systems from the analysis (core banking platform, trading infrastructure, payment rails, mobile app) as labeled boxes in dark grey.\n" +
+        "CENTER COLUMN \u2014 CoinPayments API Layer: A prominent central hub/node labeled 'CoinPayments' with four capability arms radiating outward as distinct colored nodes:\n" +
+        "- \ud83d\udd35 Stablecoin + Blockchain Rails \u2014 24/7 instant settlement\n" +
+        "- \ud83d\udfe2 Fiat On/Off Ramps \u2014 local currency \u2194 crypto\n" +
+        "- \ud83d\udfe1 MPC Custody \u2014 white-label, insured, audit-ready\n" +
+        "- \ud83d\udd34 Compliance Engine \u2014 180+ jurisdictions, AML/KYC\n" +
+        "RIGHT COLUMN \u2014 What " + co + "\u2019s Customers Gain: Instant crypto settlement | 40+ digital assets | Fiat conversion at point of transaction | Full audit trail | White-label UX \u2014 " + co + "\u2019s brand throughout.\n" +
+        "CONNECTING ELEMENTS: Single bold arrow from LEFT to CENTER labeled 'Single API Integration \u2014 4-8 weeks'. Four arrows from CENTER to RIGHT showing capability flow. Bottom note: 'No rip-and-replace. " + co + "\u2019s existing infrastructure stays intact.'\n" +
+        "Make this feel like a McKinsey architecture diagram \u2014 clean, authoritative, no clutter. Dark background with teal accent colors.\n\n" +
         "Credential Slide 4 \u2014 Example Implementation:\n" +
         "Title: 'Example: How " + co + " Deploys CoinPayments'\n" +
         "Show a step-by-step user/client flow specific to " + co + "\u2019s actual business model from the analysis. Reference segment and business model from the analysis data. Example flows by segment (select and adapt the most relevant):\n" +
@@ -1056,15 +1071,29 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         "- Remittance: 'Sender deposits fiat \u2192 converted to stablecoin \u2192 transmitted across CoinPayments rails \u2192 recipient receives local fiat \u2192 total cost: fractions of a cent'\n" +
         "- Escrow: 'Funds held in smart contract escrow \u2192 automated release on condition \u2192 stablecoin settlement \u2192 no correspondent bank delays'\n" +
         "Include a before/after comparison: 'Current: [their existing slow/expensive process specific to their model] \u2192 With CoinPayments: [the improved outcome]'\n\n" +
-        "Credential Slide 5 \u2014 Regulatory Tailwinds:\n" +
-        "Title: 'The Regulatory Window Is Open \u2014 " + co + " Should Move Now'\n" +
-        "Feature the GENIUS Act (signed July 18, 2025) and its four key impacts:\n" +
-        "1. Establishes federal framework for dollar-backed stablecoins\n" +
-        "2. Authorizes Treasury oversight \u2014 institutional-grade legitimacy\n" +
-        "3. Defines clear issuer requirements \u2014 compliance clarity for " + co + "\n" +
-        "4. Creates level playing field \u2014 crypto-native and traditional FIs compete equally\n" +
-        "Bottom line: 'For " + co + ": the regulatory uncertainty that may have caused hesitation is now resolved. This is the moment to build crypto infrastructure \u2014 before competitors do.'\n" +
-        "Reference any relevant regulatory developments specific to their jurisdiction from the analysis.\n\n" +
+        "Credential Slide 5 \u2014 Regulatory Tailwinds (TIMELINE SLIDE \u2014 NOT a bullet point slide):\n" +
+        "Title: 'The Regulatory Moment Has Arrived \u2014 The Window Is Open for " + co + "'\n" +
+        "Design as a horizontal timeline from left (past) to right (future). Color code: past = grey, present = bright teal/highlighted, future = gradient teal fading right. Make the GENIUS Act milestone the visual anchor \u2014 largest callout on the timeline.\n" +
+        "PAST \u2014 Foundation (grey):\n" +
+        "- 2013: FinCEN issues first crypto guidance \u2014 MSB registration begins\n" +
+        "- 2015: NYDFS BitLicense \u2014 first state-level crypto framework\n" +
+        "- 2019: FATF Travel Rule \u2014 AML standards go global\n" +
+        "- 2021: EU MiCA proposed \u2014 institutional framework begins\n" +
+        "- 2023: MiCA passed \u2014 regulatory clarity for 27 EU nations\n" +
+        "PRESENT \u2014 The Window Opens (bright teal, highlighted section):\n" +
+        "- 2024: SEC ETF approvals \u2014 institutional legitimacy\n" +
+        "- 2025 Q1: Basel III crypto provisions \u2014 banks can hold crypto assets\n" +
+        "- July 18, 2025: GENIUS Act signed into law \u2014 first comprehensive US federal stablecoin framework\n" +
+        "  \u2192 Federal framework for dollar-backed stablecoins\n" +
+        "  \u2192 Treasury oversight \u2014 institutional-grade legitimacy\n" +
+        "  \u2192 Clear issuer requirements for banks, fintechs, and neobanks\n" +
+        "  \u2192 Level playing field: traditional FIs and crypto-native compete equally\n" +
+        "FUTURE \u2014 Where This Leads (gradient teal fading right):\n" +
+        "- 2026: GENIUS Act implementation \u2014 20+ bank-issued stablecoins expected (e.g. JPM Coin expansion)\n" +
+        "- 2026\u20132027: State MTL consolidation \u2014 federal preemption likely\n" +
+        "- 2027+: CBDCs and stablecoin interoperability \u2014 cross-border settlement transformed\n" +
+        "- 2028+: Real-time gross settlement on blockchain becomes standard for institutional finance\n" +
+        "Below the timeline add a callout: 'For " + co + ": The regulatory uncertainty that caused hesitation is now resolved. Every quarter of delay is market share ceded to crypto-ready competitors.'\n\n" +
         "Credential Slide 6 \u2014 Digital Assets vs Traditional Rails:\n" +
         "Title: 'Stablecoin Rails vs Traditional Payment Infrastructure'\n" +
         "Comparison table:\n" +
