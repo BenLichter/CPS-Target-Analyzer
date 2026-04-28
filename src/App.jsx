@@ -147,7 +147,7 @@ async function runAnalysis(company, onStep, keys) {
       tavilyRaw(company + " Fireblocks partnership integration", tKey, 5, 730),
       tavilyRaw(company + " Anchorage Digital partnership custody", tKey, 5, 730),
       tavilyRaw(company + " Coinbase Prime partnership integration", tKey, 5, 730),
-      tavilyRaw(company + " Zero Hash partnership stablecoin", tKey, 5, 730),
+      tavilyRaw(company + " Zero Hash zerohash partnership stablecoin settlement", tKey, 5, 730),
       tavilyRaw(company + " Paxos partnership settlement", tKey, 5, 730),
       tavilyRaw(company + " BitGo custody partnership", tKey, 5, 730),
       tavilyRaw(company + " Bakkt partnership crypto", tKey, 5, 730),
@@ -562,22 +562,23 @@ var FS_SUBVERTS = [
   { id:"neobanks",     label:"Neobanks",          color:"#8B5CF6" },
 ];
 var CRYPTO_INFRA_PARTNERS = [
-  { terms:["coinbase prime"],     name:"Coinbase Prime"    },
-  { terms:["coinbase"],           name:"Coinbase Prime"    },
-  { terms:["kraken"],             name:"Kraken"            },
-  { terms:["fireblocks"],         name:"Fireblocks"        },
-  { terms:["paxos"],              name:"Paxos"             },
-  { terms:["zero hash","zerohash"],name:"Zero Hash"        },
-  { terms:["bakkt"],              name:"Bakkt"             },
-  { terms:["bitgo"],              name:"BitGo"             },
-  { terms:["anchorage digital"],  name:"Anchorage Digital" },
-  { terms:["anchorage"],          name:"Anchorage Digital" },
-  { terms:["bitpay"],             name:"BitPay"            },
-  { terms:["chainalysis"],        name:"Chainalysis"       },
-  { terms:["copper"],             name:"Copper"            },
-  { terms:["talos"],              name:"Talos"             },
-  { terms:["ledger enterprise"],  name:"Ledger Enterprise" },
-  { terms:["blockdaemon"],        name:"Blockdaemon"       },
+  { terms:["coinbase prime","cb prime"],                                    name:"Coinbase Prime"    },
+  { terms:["coinbase custody"],                                             name:"Coinbase Prime"    },
+  { terms:["coinbase"],                                                     name:"Coinbase Prime"    },
+  { terms:["kraken"],                                                       name:"Kraken"            },
+  { terms:["fireblocks","fireblocks.com"],                                  name:"Fireblocks"        },
+  { terms:["paxos trust","paxos.com","paxos","paypal usd"],                 name:"Paxos"             },
+  { terms:["zero hash inc","zh liquidity","zerohash.com","zero hash","zerohash"], name:"Zero Hash"  },
+  { terms:["bakkt"],                                                        name:"Bakkt"             },
+  { terms:["bitgo trust","bitgo.com","bitgo"],                              name:"BitGo"             },
+  { terms:["anchorage digital","anchorage.com"],                            name:"Anchorage Digital" },
+  { terms:["anchorage"],                                                    name:"Anchorage Digital" },
+  { terms:["bitpay"],                                                       name:"BitPay"            },
+  { terms:["chainalysis"],                                                  name:"Chainalysis"       },
+  { terms:["copper"],                                                       name:"Copper"            },
+  { terms:["talos"],                                                        name:"Talos"             },
+  { terms:["ledger enterprise"],                                            name:"Ledger Enterprise" },
+  { terms:["blockdaemon"],                                                  name:"Blockdaemon"       },
 ];
 function detectCryptoPartners(analysisData) {
   if (!analysisData) return { cryptoPartners:[], hasCryptoPartner:false };
@@ -892,7 +893,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
-  var CRYPTO_PROVIDERS = ["fireblocks","anchorage","zero hash","paxos","bitgo","coinbase","kraken","bakkt","bitpay","chainalysis","copper","ledger","prime trust","wyre","moonpay","onramp"];
+  var CRYPTO_PROVIDERS = ["fireblocks","fireblocks.com","anchorage digital","anchorage.com","anchorage","zero hash inc","zh liquidity","zerohash.com","zero hash","zerohash","paxos trust","paxos.com","paxos","paypal usd","bitgo trust","bitgo.com","bitgo","coinbase prime","coinbase custody","cb prime","coinbase","kraken","bakkt","bitpay","chainalysis","copper","ledger","prime trust","wyre","moonpay","onramp"];
 
   function saveContact(dealId, data, editIdx) {
     setDeals(function(prev){ return prev.map(function(d){
