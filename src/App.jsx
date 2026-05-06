@@ -879,12 +879,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
   var s24 = useState("all"); var segFilter = s24[0]; var setSegFilter = s24[1];
   var s25 = useState(false); var hasMasterTemplate = s25[0]; var setHasMasterTemplate = s25[1];
-  var s26 = useState(null); var contactsDealId = s26[0]; var setContactsDealId = s26[1];
-  var s27 = useState(null); var partnersDealId = s27[0]; var setPartnersDealId = s27[1];
-  var s28 = useState(null); var contactForm = s28[0]; var setContactForm = s28[1];
-  var s29 = useState(null); var partnerForm = s29[0]; var setPartnerForm = s29[1];
-  var s30 = useState(null); var editContactIdx = s30[0]; var setEditContactIdx = s30[1];
-  var s31 = useState(null); var editPartnerIdx = s31[0]; var setEditPartnerIdx = s31[1];
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -893,49 +887,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   }, []);
 
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
-
-  var CRYPTO_PROVIDERS = ["fireblocks","fireblocks.com","anchorage digital","anchorage.com","anchorage","zero hash inc","zh liquidity","zerohash.com","zero hash","zerohash","paxos trust","paxos.com","paxos","paypal usd","bitgo trust","bitgo.com","bitgo","coinbase prime","coinbase custody","cb prime","coinbase","kraken","bakkt","bitpay","chainalysis","copper","ledger","prime trust","wyre","moonpay","onramp"];
-
-  function saveContact(dealId, data, editIdx) {
-    setDeals(function(prev){ return prev.map(function(d){
-      if (d.id !== dealId) return d;
-      var mc = (d.manualContacts||[]).slice();
-      if (editIdx !== null && editIdx >= 0) { mc[editIdx] = data; } else { mc.push(data); }
-      return Object.assign({},d,{manualContacts:mc});
-    }); });
-  }
-
-  function deleteContact(dealId, idx) {
-    setDeals(function(prev){ return prev.map(function(d){
-      if (d.id !== dealId) return d;
-      return Object.assign({},d,{manualContacts:(d.manualContacts||[]).filter(function(_,i){ return i!==idx; })});
-    }); });
-  }
-
-  function savePartner(dealId, data, editIdx) {
-    setDeals(function(prev){ return prev.map(function(d){
-      if (d.id !== dealId) return d;
-      var mp = (d.manualPartnerships||[]).slice();
-      if (editIdx !== null && editIdx >= 0) { mp[editIdx] = data; } else { mp.push(data); }
-      var updates = {manualPartnerships:mp};
-      var nameLower = (data.partnerName||"").toLowerCase();
-      var isKnown = CRYPTO_PROVIDERS.some(function(p){ return nameLower.includes(p); });
-      if (isKnown && data.status === "Active") {
-        var cp = (d.cryptoPartners||[]).slice();
-        if (!cp.includes(data.partnerName)) cp.push(data.partnerName);
-        updates.cryptoPartners = cp;
-        updates.hasCryptoPartner = true;
-      }
-      return Object.assign({},d,updates);
-    }); });
-  }
-
-  function deletePartner(dealId, idx) {
-    setDeals(function(prev){ return prev.map(function(d){
-      if (d.id !== dealId) return d;
-      return Object.assign({},d,{manualPartnerships:(d.manualPartnerships||[]).filter(function(_,i){ return i!==idx; })});
-    }); });
-  }
 
   function exportCsv(filename, headers, rows) {
     function q(v){ return '"' + String(v==null?"":v).replace(/"/g,'""') + '"'; }
@@ -1815,22 +1766,23 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           </button>
           <AnalysisView
             data={overlayAnalysis}
-            manualContacts={overlayDealId ? (deals.find(function(d){return d.id===overlayDealId;})||{}).manualContacts||[] : []}
-            manualPartnerships={overlayDealId ? (deals.find(function(d){return d.id===overlayDealId;})||{}).manualPartnerships||[] : []}
-            onUpdate={overlayDealId ? function(update) {
+            dealId={overlayDealId}
+            tKey={tKey}
+            njKey={njKey}
+            manualContacts={overlayDealId ? ((deals.find(function(d){ return d.id===overlayDealId; })||{}).manualContacts || []) : []}
+            manualPartnerships={overlayDealId ? ((deals.find(function(d){ return d.id===overlayDealId; })||{}).manualPartnerships || []) : []}
+            onManualContactsUpdate={overlayDealId ? function(contacts) {
+              setDeals(function(prev){ return prev.map(function(d){ return d.id===overlayDealId ? Object.assign({},d,{ manualContacts: contacts }) : d; }); });
+            } : null}
+            onManualPartnershipsUpdate={overlayDealId ? function(partners) {
+              setDeals(function(prev){ return prev.map(function(d){ return d.id===overlayDealId ? Object.assign({},d,{ manualPartnerships: partners }) : d; }); });
+            } : null}
+            onCryptoPartnersUpdate={overlayDealId ? function(name) {
               setDeals(function(prev){ return prev.map(function(d){
                 if (d.id !== overlayDealId) return d;
-                var merged = Object.assign({}, d);
-                if (update.manualContacts !== undefined) merged.manualContacts = update.manualContacts;
-                if (update.manualPartnerships !== undefined) merged.manualPartnerships = update.manualPartnerships;
-                if (update.analysisContacts !== undefined) merged.analysisData = Object.assign({}, merged.analysisData, { key_contacts: update.analysisContacts });
-                if (update.analysisPartnerships !== undefined) merged.analysisData = Object.assign({}, merged.analysisData, { partnerships: update.analysisPartnerships });
-                if (update.cryptoPartnerAdd) {
-                  var newPartners = (merged.cryptoPartners || []).concat([update.cryptoPartnerAdd]);
-                  merged.cryptoPartners = newPartners;
-                  merged.hasCryptoPartner = true;
-                }
-                return merged;
+                var cp = (d.cryptoPartners||[]).slice();
+                if (cp.indexOf(name) === -1) cp.push(name);
+                return Object.assign({},d,{ cryptoPartners: cp, hasCryptoPartner: true });
               }); });
             } : null}
             onEventsUpdate={overlayDealId ? function(events) {
@@ -2527,33 +2479,39 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   </select>
                                 </div>
 
-                                {/* 7. Action 2×2 grid */}
+                                {/* 7. Action 2×3 grid: View | Rerun Analysis | Financials | Rerun Deck | View Deck */}
                                 {(function(){
                                   var ds = deckStatus[deal.id] || (deal.gammaDeckUrl ? "done" : "");
                                   var deckPolling = ds.startsWith("polling:");
                                   var deckLoading = ds === "researching" || ds === "building" || ds === "reviewing" || ds === "starting" || deckPolling;
-                                  var deckDone = ds === "done" || !!(deal.gammaDeckUrl && !deckLoading && ds !== "timeout");
                                   var deckErr = ds.startsWith("error:");
                                   var deckTimeout = ds === "timeout";
                                   var pollSecs = deckPolling ? parseInt(ds.split(":")[1]||"0",10)*5 : 0;
-                                  var deckBtnLabel = ds === "researching" ? "🔍 Researching " + deal.company + "..." : ds === "building" ? "✍️ Building outline..." : ds === "reviewing" ? "🎨 Reviewing..." : ds === "starting" ? "🚀 Sending to Gamma..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : (hasMasterTemplate ? "📋 Deck" : "🎨 Deck");
+                                  var rerunDeckLabel = ds === "researching" ? "🔍 Researching..." : ds === "building" ? "✍️ Building..." : ds === "reviewing" ? "🎨 Reviewing..." : ds === "starting" ? "🚀 Sending..." : deckPolling ? "🎨 ~" + Math.max(5, 150 - pollSecs) + "s..." : (deal.gammaDeckUrl ? "🎨 Rerun Deck" : (hasMasterTemplate ? "📋 Generate Deck" : "🎨 Generate Deck"));
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
                                         <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
+                                          title="View analysis"
                                           style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
                                         <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
+                                          title="Re-run full analysis"
                                           style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun Analysis</button>
                                         <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
+                                          title="Refresh financial figures"
                                           style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
                                         <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
+                                          title="Regenerate Gamma deck using latest analysis data"
                                           style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
-                                          {deckLoading ? "🎨 Generating..." : "🎨 Rerun Deck"}
+                                          {rerunDeckLabel}
                                         </button>
-                                        {deal.gammaDeckUrl
+                                        {deal.gammaDeckUrl && !deckLoading
                                           ? <a href={deal.gammaDeckUrl} target="_blank" rel="noreferrer"
-                                              style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" })}>📊 View Deck</a>
-                                          : <div />
+                                              title="Open the generated deck in Gamma"
+                                              style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"22", borderColor:C.purple+"70", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 })}>📊 View Deck →</a>
+                                          : <button disabled
+                                              title="Generate a deck first"
+                                              style={Object.assign({},actionBtn,{ color:C.dim, background:C.surface, borderColor:C.border, opacity:0.5, cursor:"default" })}>📊 View Deck</button>
                                         }
                                       </div>
                                       {(deckErr || deckTimeout) && (
@@ -2606,235 +2564,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         </div>
       )}
 
-      {/* ─── Contacts Modal ─────────────────────────────────────────────────── */}
-      {contactsDealId && (function(){
-        var deal = deals.find(function(d){ return d.id===contactsDealId; });
-        if (!deal) return null;
-        var aContacts = (deal.analysisData&&deal.analysisData.key_contacts)||[];
-        var mContacts = deal.manualContacts||[];
-        var iStyles = { width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px", color:C.text, fontSize:12, outline:"none", boxSizing:"border-box" };
-        var lStyle = { color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:4 };
-        return (
-          <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"#000000BB", zIndex:2000, overflowY:"auto", display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"20px 16px" }}>
-            <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:14, padding:24, width:"100%", maxWidth:660, marginTop:32, marginBottom:32 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, gap:12 }}>
-                <div>
-                  <div style={{ color:C.text, fontSize:15, fontWeight:900 }}>👥 Key Contacts — {deal.company}</div>
-                  <div style={{ color:C.dim, fontSize:11, marginTop:2 }}>{aContacts.length + mContacts.length} contact{aContacts.length+mContacts.length!==1?"s":""} total</div>
-                </div>
-                <button onClick={function(){ setContactsDealId(null); setContactForm(null); setEditContactIdx(null); }}
-                  style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
-                  Close ×
-                </button>
-              </div>
-
-              {aContacts.length > 0 && (
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>From Analysis</div>
-                  {aContacts.map(function(c, i){
-                    return (
-                      <div key={i} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
-                        <div>
-                          <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{c.name}</div>
-                          {c.title && <div style={{ color:C.muted, fontSize:11, marginTop:2 }}>{c.title}</div>}
-                          {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" style={{ color:C.accent, fontSize:10, display:"block", marginTop:4, textDecoration:"none" }}>{c.linkedin}</a>}
-                        </div>
-                        <div style={{ color:C.dim, fontSize:9, background:C.surface, border:"1px solid "+C.border, borderRadius:4, padding:"2px 7px", whiteSpace:"nowrap", flexShrink:0 }}>Analysis</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {mContacts.length > 0 && (
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Manual</div>
-                  {mContacts.map(function(c, i){
-                    return (
-                      <div key={i} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", marginBottom:6 }}>
-                        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
-                          <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
-                              <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{c.name}</div>
-                              <div style={{ color:C.accent, fontSize:9, background:C.accentDim, border:"1px solid "+C.accent+"40", borderRadius:4, padding:"1px 5px" }}>✏️ Manual</div>
-                              {c.status && <div style={{ color:c.status==="Confirmed"?C.green:c.status==="Former"?C.muted:C.gold, fontSize:9, borderRadius:4, padding:"1px 5px", background:c.status==="Confirmed"?C.greenDim:c.status==="Former"?"#1a1a1a":C.goldDim, border:"1px solid "+(c.status==="Confirmed"?C.green+"40":c.status==="Former"?C.border:C.gold+"40") }}>{c.status}</div>}
-                            </div>
-                            {c.title && <div style={{ color:C.muted, fontSize:11 }}>{c.title}</div>}
-                            {c.email && <div style={{ color:C.dim, fontSize:10, marginTop:3 }}>📧 {c.email}</div>}
-                            {c.phone && <div style={{ color:C.dim, fontSize:10 }}>📞 {c.phone}</div>}
-                            {c.linkedin && <a href={c.linkedin} target="_blank" rel="noreferrer" style={{ color:C.accent, fontSize:10, display:"block", marginTop:3, textDecoration:"none" }}>{c.linkedin}</a>}
-                            {c.notes && <div style={{ color:C.muted, fontSize:10, marginTop:4, fontStyle:"italic" }}>"{c.notes}"</div>}
-                          </div>
-                          <div style={{ display:"flex", gap:5, flexShrink:0 }}>
-                            <button onClick={function(){ setContactForm(Object.assign({},c)); setEditContactIdx(i); }}
-                              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 9px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
-                            <button onClick={function(){ deleteContact(contactsDealId, i); }}
-                              style={{ background:"transparent", border:"1px solid #EF444440", color:"#EF4444", borderRadius:5, padding:"3px 9px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Del</button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {contactForm !== null ? (
-                <div style={{ background:C.surface, border:"1px solid "+C.accent+"40", borderRadius:10, padding:"16px 18px" }}>
-                  <div style={{ color:C.text, fontSize:12, fontWeight:800, marginBottom:14 }}>{editContactIdx!==null?"Edit Contact":"Add Contact"}</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
-                    <div><label style={lStyle}>Full Name *</label><input value={contactForm.name||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{name:e.target.value}); }); }} placeholder="Jane Smith" style={iStyles}/></div>
-                    <div><label style={lStyle}>Title / Role *</label><input value={contactForm.title||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{title:e.target.value}); }); }} placeholder="VP Payments" style={iStyles}/></div>
-                    <div><label style={lStyle}>Email</label><input value={contactForm.email||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{email:e.target.value}); }); }} placeholder="jane@company.com" style={iStyles}/></div>
-                    <div><label style={lStyle}>Phone</label><input value={contactForm.phone||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{phone:e.target.value}); }); }} placeholder="+1 555 000 0000" style={iStyles}/></div>
-                    <div style={{ gridColumn:"span 2" }}><label style={lStyle}>LinkedIn URL</label><input value={contactForm.linkedin||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{linkedin:e.target.value}); }); }} placeholder="https://linkedin.com/in/..." style={iStyles}/></div>
-                    <div><label style={lStyle}>Status</label>
-                      <select value={contactForm.status||"Unverified"} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{status:e.target.value}); }); }} style={Object.assign({},iStyles,{cursor:"pointer"})}>
-                        {["Confirmed","Unverified","Former"].map(function(s){ return <option key={s} value={s}>{s}</option>; })}
-                      </select>
-                    </div>
-                    <div><label style={lStyle}>Notes / Outreach Angle</label><input value={contactForm.notes||""} onChange={function(e){ setContactForm(function(f){ return Object.assign({},f,{notes:e.target.value}); }); }} placeholder="Best reached via LinkedIn" style={iStyles}/></div>
-                  </div>
-                  <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-                    <button onClick={function(){ setContactForm(null); setEditContactIdx(null); }}
-                      style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"7px 16px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-                    <button onClick={function(){
-                        if (!contactForm.name||!contactForm.title) return;
-                        saveContact(contactsDealId, contactForm, editContactIdx);
-                        setContactForm(null); setEditContactIdx(null);
-                      }}
-                      disabled={!contactForm.name||!contactForm.title}
-                      style={{ background:(!contactForm.name||!contactForm.title)?C.dim:C.accent, color:(!contactForm.name||!contactForm.title)?C.muted:"#000", border:"none", borderRadius:7, padding:"7px 18px", fontWeight:800, fontSize:11, cursor:(!contactForm.name||!contactForm.title)?"default":"pointer", fontFamily:"inherit" }}>
-                      Save Contact
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={function(){ setContactForm({ name:"", title:"", email:"", linkedin:"", phone:"", notes:"", status:"Unverified" }); setEditContactIdx(null); }}
-                  style={{ background:C.accentDim, border:"1px solid "+C.accent+"60", color:C.accent, borderRadius:7, padding:"9px 18px", fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit", width:"100%" }}>
-                  + Add Contact
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ─── Partners Modal ──────────────────────────────────────────────────── */}
-      {partnersDealId && (function(){
-        var deal = deals.find(function(d){ return d.id===partnersDealId; });
-        if (!deal) return null;
-        var aPartners = (deal.analysisData&&deal.analysisData.partnerships)||[];
-        var mPartners = deal.manualPartnerships||[];
-        var PTYPES = ["Custody","Settlement","Compliance","Trading Infrastructure","Stablecoin","Fiat Rails","Other"];
-        var PSTATUS = ["Active","Rumored","Historical","Dissolved"];
-        var iStyles = { width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"8px 10px", color:C.text, fontSize:12, outline:"none", boxSizing:"border-box" };
-        var lStyle = { color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", display:"block", marginBottom:4 };
-        return (
-          <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"#000000BB", zIndex:2000, overflowY:"auto", display:"flex", alignItems:"flex-start", justifyContent:"center", padding:"20px 16px" }}>
-            <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:14, padding:24, width:"100%", maxWidth:660, marginTop:32, marginBottom:32 }}>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:20, gap:12 }}>
-                <div>
-                  <div style={{ color:C.text, fontSize:15, fontWeight:900 }}>🤝 Partnerships — {deal.company}</div>
-                  <div style={{ color:C.dim, fontSize:11, marginTop:2 }}>{aPartners.length + mPartners.length} partnership{aPartners.length+mPartners.length!==1?"s":""} total</div>
-                </div>
-                <button onClick={function(){ setPartnersDealId(null); setPartnerForm(null); setEditPartnerIdx(null); }}
-                  style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
-                  Close ×
-                </button>
-              </div>
-
-              {aPartners.length > 0 && (
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>From Analysis</div>
-                  {aPartners.map(function(p, i){
-                    return (
-                      <div key={i} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10 }}>
-                        <div>
-                          <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{p.partner||p.partnerName||p}</div>
-                          {p.type && <div style={{ color:C.muted, fontSize:11, marginTop:2 }}>{p.type}</div>}
-                          {p.what_they_provide && <div style={{ color:C.dim, fontSize:10, marginTop:3 }}>{p.what_they_provide}</div>}
-                        </div>
-                        <div style={{ color:C.dim, fontSize:9, background:C.surface, border:"1px solid "+C.border, borderRadius:4, padding:"2px 7px", whiteSpace:"nowrap", flexShrink:0 }}>Analysis</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {mPartners.length > 0 && (
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ color:C.dim, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:8 }}>Manual</div>
-                  {mPartners.map(function(p, i){
-                    return (
-                      <div key={i} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"10px 14px", marginBottom:6 }}>
-                        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:8 }}>
-                          <div style={{ flex:1, minWidth:0 }}>
-                            <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:2 }}>
-                              <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{p.partnerName}</div>
-                              <div style={{ color:C.accent, fontSize:9, background:C.accentDim, border:"1px solid "+C.accent+"40", borderRadius:4, padding:"1px 5px" }}>✏️ Manual</div>
-                              {p.status && <div style={{ color:p.status==="Active"?C.green:p.status==="Dissolved"?"#EF4444":p.status==="Historical"?C.muted:C.gold, fontSize:9, borderRadius:4, padding:"1px 5px", background:p.status==="Active"?C.greenDim:p.status==="Dissolved"?C.redDim:p.status==="Historical"?"#1a1a1a":C.goldDim, border:"1px solid "+(p.status==="Active"?C.green+"40":p.status==="Dissolved"?"#EF444440":p.status==="Historical"?C.border:C.gold+"40") }}>{p.status}</div>}
-                              {p.type && <div style={{ color:C.muted, fontSize:9, borderRadius:4, padding:"1px 5px", background:C.surface, border:"1px solid "+C.border }}>{p.type}</div>}
-                            </div>
-                            {p.dateAnnounced && <div style={{ color:C.dim, fontSize:10 }}>📅 {p.dateAnnounced}</div>}
-                            {p.notes && <div style={{ color:C.muted, fontSize:10, marginTop:3, fontStyle:"italic" }}>"{p.notes}"</div>}
-                            {p.sourceUrl && <a href={p.sourceUrl} target="_blank" rel="noreferrer" style={{ color:C.accent, fontSize:10, display:"block", marginTop:3, textDecoration:"none" }}>Source ↗</a>}
-                          </div>
-                          <div style={{ display:"flex", gap:5, flexShrink:0 }}>
-                            <button onClick={function(){ setPartnerForm(Object.assign({},p)); setEditPartnerIdx(i); }}
-                              style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 9px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
-                            <button onClick={function(){ deletePartner(partnersDealId, i); }}
-                              style={{ background:"transparent", border:"1px solid #EF444440", color:"#EF4444", borderRadius:5, padding:"3px 9px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Del</button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {partnerForm !== null ? (
-                <div style={{ background:C.surface, border:"1px solid "+C.green+"40", borderRadius:10, padding:"16px 18px" }}>
-                  <div style={{ color:C.text, fontSize:12, fontWeight:800, marginBottom:14 }}>{editPartnerIdx!==null?"Edit Partnership":"Add Partnership"}</div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
-                    <div style={{ gridColumn:"span 2" }}><label style={lStyle}>Partner Name *</label><input value={partnerForm.partnerName||""} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{partnerName:e.target.value}); }); }} placeholder="e.g. Fireblocks, Anchorage, BitGo" style={iStyles}/></div>
-                    <div><label style={lStyle}>Partnership Type</label>
-                      <select value={partnerForm.type||"Custody"} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{type:e.target.value}); }); }} style={Object.assign({},iStyles,{cursor:"pointer"})}>
-                        {PTYPES.map(function(t){ return <option key={t} value={t}>{t}</option>; })}
-                      </select>
-                    </div>
-                    <div><label style={lStyle}>Status</label>
-                      <select value={partnerForm.status||"Active"} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{status:e.target.value}); }); }} style={Object.assign({},iStyles,{cursor:"pointer"})}>
-                        {PSTATUS.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
-                      </select>
-                    </div>
-                    <div><label style={lStyle}>Date Announced</label><input value={partnerForm.dateAnnounced||""} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{dateAnnounced:e.target.value}); }); }} placeholder="e.g. Q3 2024" style={iStyles}/></div>
-                    <div><label style={lStyle}>Notes</label><input value={partnerForm.notes||""} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{notes:e.target.value}); }); }} placeholder="Context, scope, relevance" style={iStyles}/></div>
-                    <div style={{ gridColumn:"span 2" }}><label style={lStyle}>Source URL</label><input value={partnerForm.sourceUrl||""} onChange={function(e){ setPartnerForm(function(f){ return Object.assign({},f,{sourceUrl:e.target.value}); }); }} placeholder="https://..." style={iStyles}/></div>
-                  </div>
-                  <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-                    <button onClick={function(){ setPartnerForm(null); setEditPartnerIdx(null); }}
-                      style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"7px 16px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
-                    <button onClick={function(){
-                        if (!partnerForm.partnerName) return;
-                        savePartner(partnersDealId, partnerForm, editPartnerIdx);
-                        setPartnerForm(null); setEditPartnerIdx(null);
-                      }}
-                      disabled={!partnerForm.partnerName}
-                      style={{ background:!partnerForm.partnerName?C.dim:C.green, color:!partnerForm.partnerName?C.muted:"#000", border:"none", borderRadius:7, padding:"7px 18px", fontWeight:800, fontSize:11, cursor:!partnerForm.partnerName?"default":"pointer", fontFamily:"inherit" }}>
-                      Save Partnership
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button onClick={function(){ setPartnerForm({ partnerName:"", type:"Custody", dateAnnounced:"", status:"Active", notes:"", sourceUrl:"" }); setEditPartnerIdx(null); }}
-                  style={{ background:C.greenDim, border:"1px solid "+C.green+"60", color:C.green, borderRadius:7, padding:"9px 18px", fontWeight:700, fontSize:11, cursor:"pointer", fontFamily:"inherit", width:"100%" }}>
-                  + Add Partnership
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
@@ -3770,6 +3499,16 @@ export default function App() {
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
   var sGammaH = useState(function(){ try { return JSON.parse(localStorage.getItem(GAMMA_HIST_LS)||"[]"); } catch { return []; } }); var gammaHistory = sGammaH[0]; var setGammaHistory = sGammaH[1];
   var sBulk = useState(false); var showBulk = sBulk[0]; var setShowBulk = sBulk[1];
+  var sResMC = useState([]); var resultManualContacts = sResMC[0]; var setResultManualContacts = sResMC[1];
+  var sResMP = useState([]); var resultManualPartnerships = sResMP[0]; var setResultManualPartnerships = sResMP[1];
+  var sResCp = useState({ cryptoPartners: [], hasCryptoPartner: false }); var resultCp = sResCp[0]; var setResultCp = sResCp[1];
+
+  useEffect(function() {
+    setResultManualContacts([]);
+    setResultManualPartnerships([]);
+    if (result) setResultCp(detectCryptoPartners(result));
+    else setResultCp({ cryptoPartners: [], hasCryptoPartner: false });
+  }, [result && result.company]);
 
   useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
   useEffect(function(){ localStorage.setItem(GAMMA_HIST_LS, JSON.stringify(gammaHistory)); }, [gammaHistory]);
@@ -3987,14 +3726,31 @@ export default function App() {
                       var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
                       if (already) return prev;
                       var rCp = detectCryptoPartners(result);
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true), cryptoPartners:rCp.cryptoPartners, hasCryptoPartner:rCp.hasCryptoPartner }]);
+                      var mergedCp = rCp.cryptoPartners.slice();
+                      (resultCp.cryptoPartners||[]).forEach(function(p){ if (mergedCp.indexOf(p)===-1) mergedCp.push(p); });
+                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true), cryptoPartners:mergedCp, hasCryptoPartner:mergedCp.length>0, manualContacts:resultManualContacts, manualPartnerships:resultManualPartnerships }]);
                     });
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
                     + Add to Pipeline
                   </button>
                 </div>
-                <AnalysisView data={result}/>
+                <AnalysisView
+                  data={result}
+                  manualContacts={resultManualContacts}
+                  manualPartnerships={resultManualPartnerships}
+                  onManualContactsUpdate={setResultManualContacts}
+                  onManualPartnershipsUpdate={setResultManualPartnerships}
+                  onCryptoPartnersUpdate={function(name){
+                    setResultCp(function(prev){
+                      var arr = (prev.cryptoPartners||[]).slice();
+                      if (arr.indexOf(name) === -1) arr.push(name);
+                      return { cryptoPartners: arr, hasCryptoPartner: arr.length > 0 };
+                    });
+                  }}
+                  tKey={tKey}
+                  njKey={njKey}
+                />
               </div>
             : <div style={{ textAlign:"center", padding:80, color:C.dim }}>
                 <div style={{ fontSize:32, marginBottom:16 }}>📊</div>
