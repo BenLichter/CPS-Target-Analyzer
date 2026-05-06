@@ -1812,9 +1812,30 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", marginBottom:16 }}>
             ← Back to Pipeline
           </button>
-          <AnalysisView data={overlayAnalysis} onEventsUpdate={overlayDealId ? function(events) {
-            setDeals(function(prev){ return prev.map(function(d){ return d.id===overlayDealId ? Object.assign({},d,{ analysisData: Object.assign({},d.analysisData,{ upcoming_events: events }) }) : d; }); });
-          } : null}/>
+          <AnalysisView
+            data={overlayAnalysis}
+            manualContacts={overlayDealId ? (deals.find(function(d){return d.id===overlayDealId;})||{}).manualContacts||[] : []}
+            manualPartnerships={overlayDealId ? (deals.find(function(d){return d.id===overlayDealId;})||{}).manualPartnerships||[] : []}
+            onUpdate={overlayDealId ? function(update) {
+              setDeals(function(prev){ return prev.map(function(d){
+                if (d.id !== overlayDealId) return d;
+                var merged = Object.assign({}, d);
+                if (update.manualContacts !== undefined) merged.manualContacts = update.manualContacts;
+                if (update.manualPartnerships !== undefined) merged.manualPartnerships = update.manualPartnerships;
+                if (update.analysisContacts !== undefined) merged.analysisData = Object.assign({}, merged.analysisData, { key_contacts: update.analysisContacts });
+                if (update.analysisPartnerships !== undefined) merged.analysisData = Object.assign({}, merged.analysisData, { partnerships: update.analysisPartnerships });
+                if (update.cryptoPartnerAdd) {
+                  var newPartners = (merged.cryptoPartners || []).concat([update.cryptoPartnerAdd]);
+                  merged.cryptoPartners = newPartners;
+                  merged.hasCryptoPartner = true;
+                }
+                return merged;
+              }); });
+            } : null}
+            onEventsUpdate={overlayDealId ? function(events) {
+              setDeals(function(prev){ return prev.map(function(d){ return d.id===overlayDealId ? Object.assign({},d,{ analysisData: Object.assign({},d.analysisData,{ upcoming_events: events }) }) : d; }); });
+            } : null}
+          />
         </div>
       )}
 
@@ -2521,26 +2542,18 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                         <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
                                           style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
                                         <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
-                                          style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun</button>
+                                          style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun Analysis</button>
                                         <button onClick={function(){ updateFinancials(deal); }} disabled={busy}
                                           style={Object.assign({},actionBtn,{ color:busy?C.dim:C.gold, background:C.goldDim, borderColor:C.gold+"50", opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>💰 Financials</button>
-                                        {deckDone && deal.gammaDeckUrl
-                                          ? <div style={{ display:"flex", gap:3, minWidth:0 }}>
-                                              <a href={deal.gammaDeckUrl} target="_blank" rel="noreferrer"
-                                                style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", flex:"1 1 0", minWidth:0 })}>📊 Deck</a>
-                                              <button onClick={function(){ buildGammaDeck(deal); }} disabled={deckLoading}
-                                                title="Regenerate deck"
-                                                style={Object.assign({},actionBtn,{ flex:"0 0 auto", padding:"7px 8px", color:C.dim })}>↺</button>
-                                            </div>
-                                          : <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
-                                              style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
-                                              {deckBtnLabel}
-                                            </button>
+                                        <button onClick={function(){ if(!deckLoading&&!busy) buildGammaDeck(deal); }} disabled={deckLoading||busy}
+                                          style={Object.assign({},actionBtn,{ color:deckLoading?C.dim:C.purple, background:C.purple+"15", borderColor:C.purple+"50", opacity:(deckLoading||busy)?0.5:1, cursor:(deckLoading||busy)?"default":"pointer" })}>
+                                          {deckLoading ? "🎨 Generating..." : "🎨 Rerun Deck"}
+                                        </button>
+                                        {deal.gammaDeckUrl
+                                          ? <a href={deal.gammaDeckUrl} target="_blank" rel="noreferrer"
+                                              style={Object.assign({},actionBtn,{ color:C.purple, background:C.purple+"20", borderColor:C.purple+"60", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center" })}>📊 View Deck</a>
+                                          : <div />
                                         }
-                                        <button onClick={function(){ setContactsDealId(deal.id); setContactForm(null); setEditContactIdx(null); }}
-                                          style={Object.assign({},actionBtn,{ color:C.cyan, background:C.cyan+"15", borderColor:C.cyan+"50" })}>👥 Contacts</button>
-                                        <button onClick={function(){ setPartnersDealId(deal.id); setPartnerForm(null); setEditPartnerIdx(null); }}
-                                          style={Object.assign({},actionBtn,{ color:C.green, background:C.greenDim, borderColor:C.green+"50" })}>🤝 Partners</button>
                                       </div>
                                       {(deckErr || deckTimeout) && (
                                         <div style={{ padding:"5px 12px 4px", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>

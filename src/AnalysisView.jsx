@@ -16,6 +16,39 @@ const COMPARE_ROWS = [
   ["Scalability","scalability"],["SLA & Support","sla_support"],
 ];
 
+var CRYPTO_PROVIDER_TERMS = [
+  "fireblocks","fireblocks.com","anchorage digital","anchorage.com","anchorage",
+  "zero hash inc","zh liquidity","zerohash.com","zerohash","zero hash",
+  "paxos trust","paxos.com","paxos","paypal usd",
+  "bitgo trust","bitgo.com","bitgo",
+  "coinbase prime","coinbase custody","cb prime","coinbase",
+  "kraken","bakkt","bitpay","chainalysis","copper","ledger enterprise","talos","blockdaemon"
+];
+
+function isCryptoProvider(name) {
+  var nl = (name || "").toLowerCase();
+  return CRYPTO_PROVIDER_TERMS.some(function(t) { return nl.includes(t); });
+}
+
+async function tavilySearch(query) {
+  var key = "";
+  try { key = localStorage.getItem("cp_tavily_key") || ""; } catch(e) {}
+  if (!key) return [];
+  try {
+    var res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: key, query: query, search_depth: "basic", max_results: 5, days: 730 })
+    });
+    if (!res.ok) return [];
+    var d = await res.json();
+    return d.results || [];
+  } catch(e) { return []; }
+}
+
+var PARTNER_TYPES = ["Technology","Payment","Banking","Licensing","Distribution","Other"];
+var PARTNER_STATUSES = ["Active","Announced","Rumored","Expired"];
+
 async function callAPI(system, user, maxTokens) {
   const MODEL = "claude-sonnet-4-20250514";
   const res = await fetch("/api/anthropic", {
@@ -69,8 +102,107 @@ export function Chip({ label, value, color }) {
   );
 }
 
+// ─── ContactInlineForm ────────────────────────────────────────────────────────
+function ContactInlineForm({ initial, onSave, onCancel, accentColor }) {
+  var BLANK = { name: "", title: "", email: "", linkedin: "", phone: "", notes: "", status: "Unverified" };
+  var s = useState(Object.assign({}, BLANK, initial || {})); var form = s[0]; var setForm = s[1];
+  var ac = accentColor || C.accent;
+  var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "6px 9px", color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
+  function set(k, v) { setForm(function(p) { return Object.assign({}, p, { [k]: v }); }); }
+  return (
+    <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 8, border: "1px solid " + ac + "50" }}>
+      <div style={{ color: ac, fontSize: 10, fontWeight: 700, marginBottom: 8 }}>{initial && initial.name ? "Edit Contact" : "Add Contact"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>FULL NAME *</div>
+          <input style={inp} value={form.name} onChange={function(e){ set("name", e.target.value); }} placeholder="e.g. Jane Smith" />
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>TITLE / ROLE</div>
+          <input style={inp} value={form.title} onChange={function(e){ set("title", e.target.value); }} placeholder="e.g. Chief Financial Officer" />
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>VERIFICATION STATUS</div>
+          <select style={Object.assign({}, inp, { cursor: "pointer" })} value={form.status} onChange={function(e){ set("status", e.target.value); }}>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Unverified">Unverified</option>
+            <option value="Former">Former</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>EMAIL</div>
+          <input style={inp} value={form.email} onChange={function(e){ set("email", e.target.value); }} placeholder="jane@company.com" type="email" />
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>PHONE</div>
+          <input style={inp} value={form.phone} onChange={function(e){ set("phone", e.target.value); }} placeholder="+1 555 000 0000" />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>LINKEDIN URL</div>
+          <input style={inp} value={form.linkedin} onChange={function(e){ set("linkedin", e.target.value); }} placeholder="https://linkedin.com/in/jane-smith" />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>NOTES</div>
+          <textarea style={Object.assign({}, inp, { resize: "vertical", minHeight: 44 })} value={form.notes} onChange={function(e){ set("notes", e.target.value); }} placeholder="e.g. Met at FinTech Summit, keen on stablecoins" />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={function(){ if (form.name.trim()) onSave(form); }} style={{ background: ac, color: "#000", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        <button onClick={onCancel} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 6, padding: "6px 12px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── PartnershipInlineForm ────────────────────────────────────────────────────
+function PartnershipInlineForm({ initial, onSave, onCancel }) {
+  var BLANK = { partnerName: "", type: "Other", dateAnnounced: "", status: "Active", notes: "", sourceUrl: "" };
+  var s = useState(Object.assign({}, BLANK, initial || {})); var form = s[0]; var setForm = s[1];
+  var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "6px 9px", color: C.text, fontSize: 11, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
+  function set(k, v) { setForm(function(p) { return Object.assign({}, p, { [k]: v }); }); }
+  return (
+    <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 8, border: "1px solid " + C.purple + "50" }}>
+      <div style={{ color: C.purple, fontSize: 10, fontWeight: 700, marginBottom: 8 }}>{initial && initial.partnerName ? "Edit Partnership" : "Add Partnership"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>PARTNER NAME *</div>
+          <input style={inp} value={form.partnerName} onChange={function(e){ set("partnerName", e.target.value); }} placeholder="e.g. Fireblocks" />
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>PARTNERSHIP TYPE</div>
+          <select style={Object.assign({}, inp, { cursor: "pointer" })} value={form.type} onChange={function(e){ set("type", e.target.value); }}>
+            {PARTNER_TYPES.map(function(t){ return <option key={t} value={t}>{t}</option>; })}
+          </select>
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>STATUS</div>
+          <select style={Object.assign({}, inp, { cursor: "pointer" })} value={form.status} onChange={function(e){ set("status", e.target.value); }}>
+            {PARTNER_STATUSES.map(function(s){ return <option key={s} value={s}>{s}</option>; })}
+          </select>
+        </div>
+        <div>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>DATE ANNOUNCED</div>
+          <input style={inp} value={form.dateAnnounced} onChange={function(e){ set("dateAnnounced", e.target.value); }} placeholder="e.g. Jan 2025" />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>SOURCE URL</div>
+          <input style={inp} value={form.sourceUrl} onChange={function(e){ set("sourceUrl", e.target.value); }} placeholder="https://..." />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, marginBottom: 3 }}>NOTES</div>
+          <textarea style={Object.assign({}, inp, { resize: "vertical", minHeight: 44 })} value={form.notes} onChange={function(e){ set("notes", e.target.value); }} placeholder="e.g. Deep tech integration, affects pricing" />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={function(){ if (form.partnerName.trim()) onSave(form); }} style={{ background: C.purple, color: "#fff", border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        <button onClick={onCancel} style={{ background: "transparent", border: "1px solid " + C.border, color: C.muted, borderRadius: 6, padding: "6px 12px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── ContactCard ──────────────────────────────────────────────────────────────
-export function ContactCard({ contact, company, onRemove }) {
+export function ContactCard({ contact, company, onRemove, onEdit, enriching }) {
   var s1 = useState(false); var showPaste = s1[0]; var setShowPaste = s1[1];
   var s2 = useState(contact.linkedin || ""); var liPaste = s2[0]; var setLiPaste = s2[1];
 
@@ -88,17 +220,36 @@ export function ContactCard({ contact, company, onRemove }) {
   var sq = [contact.name, company, contact.title].filter(Boolean).join(" ");
   var liSearch = "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(sq);
 
+  if (enriching) {
+    return (
+      <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 8, border: "1px solid " + C.accent + "40" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{contact.name}</span>
+          {contact.title && <span style={{ color: C.muted, fontSize: 11 }}>{contact.title}</span>}
+          <span style={{ color: C.accent, fontSize: 10, fontStyle: "italic" }}>🔍 Enriching contact...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: C.surface, borderRadius: 8, padding: "12px 14px", marginBottom: 8, border: "1px solid " + (contact.verification_confidence === "HIGH" ? C.green + "30" : contact.verification_confidence === "MEDIUM" ? C.accent + "30" : C.border) }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 3 }}>
             <span style={{ color: C.text, fontWeight: 700, fontSize: 13 }}>{contact.name}</span>
-            <Badge color={cc} sm>{contact.category}</Badge>
-            <Badge color={vBadge.color} sm>{vBadge.label}</Badge>
+            {contact.category && <Badge color={cc} sm>{contact.category}</Badge>}
+            {contact.manual
+              ? <Badge color="purple" sm>✏️ Manual</Badge>
+              : <Badge color={vBadge.color} sm>{vBadge.label}</Badge>
+            }
+            {contact.status === "Former" && <Badge color="red" sm>Former</Badge>}
           </div>
           {contact.title && <div style={{ color: C.muted, fontSize: 11, marginBottom: 2 }}>{contact.title}</div>}
           {contact.outreach_angle && <div style={{ color: C.accent, fontSize: 10 }}>💬 {contact.outreach_angle}</div>}
+          {contact.notes && <div style={{ color: C.dim, fontSize: 10, marginTop: 3, fontStyle: "italic" }}>{contact.notes}</div>}
+          {contact.email && <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>✉ {contact.email}</div>}
+          {contact.phone && <div style={{ color: C.muted, fontSize: 10 }}>📞 {contact.phone}</div>}
         </div>
         <div style={{ display: "flex", gap: 5, alignItems: "flex-start", flexShrink: 0 }}>
           {liUrl
@@ -112,8 +263,14 @@ export function ContactCard({ contact, company, onRemove }) {
                 🔍 Search LI
               </a>
           }
-          <button onClick={function() { setShowPaste(!showPaste); }}
-            style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✏</button>
+          {!contact.manual && (
+            <button onClick={function() { setShowPaste(!showPaste); }}
+              style={{ background: "transparent", border: "1px solid " + C.border, color: C.dim, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✏</button>
+          )}
+          {onEdit && (
+            <button onClick={onEdit}
+              style={{ background: "transparent", border: "1px solid " + C.accent + "60", color: C.accent, borderRadius: 6, padding: "5px 8px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✏ Edit</button>
+          )}
           {onRemove && (
             <button onClick={onRemove}
               title="Remove this contact"
@@ -126,7 +283,7 @@ export function ContactCard({ contact, company, onRemove }) {
           Found at: <a href={contact.source_url} target="_blank" rel="noreferrer" style={{ color: C.dim, textDecoration: "underline" }}>{contact.source_url.replace(/https?:\/\/(www\.)?/, "").split("/")[0]}</a>
         </div>
       )}
-      {(contact.verification_confidence === "LOW" || contact.verified_source === "scraped") && (
+      {(contact.verification_confidence === "LOW" || contact.verified_source === "scraped") && !contact.manual && (
         <div style={{ marginTop: 8, background: "#F59E0B0E", border: "1px solid #F59E0B40", borderRadius: 6, padding: "6px 10px", display: "flex", gap: 6, alignItems: "flex-start" }}>
           <span style={{ fontSize: 13, flexShrink: 0 }}>⚠️</span>
           <div style={{ color: "#F59E0B", fontSize: 10, lineHeight: 1.5 }}>
@@ -403,18 +560,44 @@ function EventsSection({ initEvents, contactNames, onEventsUpdate }) {
 }
 
 // ─── AnalysisView ─────────────────────────────────────────────────────────────
-export default function AnalysisView({ data, onEventsUpdate }) {
+export default function AnalysisView({ data, onEventsUpdate, manualContacts, manualPartnerships, onUpdate }) {
   // ALL hooks declared unconditionally at the very top — NEVER move these
-  var s1 = useState([]); var contacts = s1[0]; var setContacts = s1[1];
-  var s2 = useState([]); var chat = s2[0]; var setChat = s2[1];
-  var s3 = useState(""); var q = s3[0]; var setQ = s3[1];
-  var s4 = useState(false); var asking = s4[0]; var setAsking = s4[1];
+  var s1  = useState([]); var contacts = s1[0]; var setContacts = s1[1];
+  var s2  = useState([]); var chat = s2[0]; var setChat = s2[1];
+  var s3  = useState(""); var q = s3[0]; var setQ = s3[1];
+  var s4  = useState(false); var asking = s4[0]; var setAsking = s4[1];
+  // Manual contacts
+  var s5  = useState([]); var manualContactsLocal = s5[0]; var setManualContactsLocal = s5[1];
+  var s6  = useState(false); var addingContact = s6[0]; var setAddingContact = s6[1];
+  var s7  = useState(null); var editingContactIdx = s7[0]; var setEditingContactIdx = s7[1];
+  var s8  = useState(null); var enrichingContactIdx = s8[0]; var setEnrichingContactIdx = s8[1];
+  // Analysis contact editing
+  var s9  = useState(null); var editingAContactIdx = s9[0]; var setEditingAContactIdx = s9[1];
+  // Partnerships
+  var s10 = useState([]); var localPartnerships = s10[0]; var setLocalPartnerships = s10[1];
+  var s11 = useState([]); var manualPartnershipsLocal = s11[0]; var setManualPartnershipsLocal = s11[1];
+  var s12 = useState(false); var addingPartner = s12[0]; var setAddingPartner = s12[1];
+  var s13 = useState(null); var editingPartnerIdx = s13[0]; var setEditingPartnerIdx = s13[1];
+  var s14 = useState(null); var enrichingPartnerIdx = s14[0]; var setEnrichingPartnerIdx = s14[1];
+  var s15 = useState(null); var editingAPartnerIdx = s15[0]; var setEditingAPartnerIdx = s15[1];
   var chatRef = useRef(null);
 
   // Effects after ALL hooks
   useEffect(function() {
     setContacts(Array.isArray(data.key_contacts) ? data.key_contacts : []);
   }, [data.key_contacts]);
+
+  useEffect(function() {
+    setLocalPartnerships(Array.isArray(data.partnerships) ? data.partnerships : []);
+  }, [data.partnerships]);
+
+  useEffect(function() {
+    setManualContactsLocal(Array.isArray(manualContacts) ? manualContacts : []);
+  }, [manualContacts]);
+
+  useEffect(function() {
+    setManualPartnershipsLocal(Array.isArray(manualPartnerships) ? manualPartnerships : []);
+  }, [manualPartnerships]);
 
   useEffect(function() {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
@@ -427,6 +610,97 @@ export default function AnalysisView({ data, onEventsUpdate }) {
   var geo = data.geography || {};
   var ap  = data.attack_plan || {};
   var cc  = data.competitive_comparison || {};
+
+  async function saveManualContact(form, editIdx) {
+    var contact = Object.assign({}, form, { manual: true });
+    var newMC = manualContactsLocal.slice();
+    var targetIdx;
+    if (editIdx !== null && editIdx >= 0) { newMC[editIdx] = contact; targetIdx = editIdx; }
+    else { newMC.push(contact); targetIdx = newMC.length - 1; }
+    setManualContactsLocal(newMC);
+    setAddingContact(false); setEditingContactIdx(null);
+    if (onUpdate) onUpdate({ manualContacts: newMC });
+    setEnrichingContactIdx(targetIdx);
+    try {
+      var sq = '"' + contact.name + '" ' + data.company + (contact.title ? ' "' + contact.title + '"' : '');
+      var results = await tavilySearch(sq);
+      var liResult = results.find(function(r) { return r.url && r.url.toLowerCase().includes("linkedin.com/in/"); });
+      if (liResult && !contact.linkedin) {
+        var enriched = Object.assign({}, contact, { linkedin: liResult.url, verified_source: "web_confirmed" });
+        setManualContactsLocal(function(prev) {
+          var updated = prev.slice();
+          if (updated[targetIdx] && updated[targetIdx].name === contact.name) updated[targetIdx] = enriched;
+          return updated;
+        });
+        if (onUpdate) {
+          var finalMC = newMC.map(function(c, i) { return i === targetIdx ? enriched : c; });
+          onUpdate({ manualContacts: finalMC });
+        }
+      }
+    } catch(e) {}
+    setEnrichingContactIdx(null);
+  }
+
+  function deleteManualContact(idx) {
+    var newMC = manualContactsLocal.filter(function(_, i) { return i !== idx; });
+    setManualContactsLocal(newMC);
+    if (onUpdate) onUpdate({ manualContacts: newMC });
+  }
+
+  function saveAnalysisContact(form, idx) {
+    var updated = contacts.slice();
+    updated[idx] = Object.assign({}, updated[idx], form);
+    setContacts(updated);
+    setEditingAContactIdx(null);
+    if (onUpdate) onUpdate({ analysisContacts: updated });
+  }
+
+  async function saveManualPartnership(form, editIdx) {
+    var partnership = Object.assign({}, form, { manual: true });
+    var newMP = manualPartnershipsLocal.slice();
+    var targetIdx;
+    if (editIdx !== null && editIdx >= 0) { newMP[editIdx] = partnership; targetIdx = editIdx; }
+    else { newMP.push(partnership); targetIdx = newMP.length - 1; }
+    setManualPartnershipsLocal(newMP);
+    setAddingPartner(false); setEditingPartnerIdx(null);
+    var isCrypto = isCryptoProvider(partnership.partnerName);
+    var updatePayload = { manualPartnerships: newMP };
+    if (isCrypto && partnership.status === "Active") updatePayload.cryptoPartnerAdd = partnership.partnerName;
+    if (onUpdate) onUpdate(updatePayload);
+    setEnrichingPartnerIdx(targetIdx);
+    try {
+      var sq2 = '"' + data.company + '" "' + partnership.partnerName + '" partnership';
+      var results2 = await tavilySearch(sq2);
+      if (results2.length > 0) {
+        var srcResult = results2[0];
+        var enriched2 = Object.assign({}, partnership, { sourceUrl: partnership.sourceUrl || srcResult.url || "" });
+        setManualPartnershipsLocal(function(prev) {
+          var upd = prev.slice();
+          if (upd[targetIdx] && upd[targetIdx].partnerName === partnership.partnerName) upd[targetIdx] = enriched2;
+          return upd;
+        });
+        if (onUpdate) {
+          var finalMP = newMP.map(function(p, i) { return i === targetIdx ? enriched2 : p; });
+          onUpdate({ manualPartnerships: finalMP });
+        }
+      }
+    } catch(e) {}
+    setEnrichingPartnerIdx(null);
+  }
+
+  function deleteManualPartnership(idx) {
+    var newMP = manualPartnershipsLocal.filter(function(_, i) { return i !== idx; });
+    setManualPartnershipsLocal(newMP);
+    if (onUpdate) onUpdate({ manualPartnerships: newMP });
+  }
+
+  function saveAnalysisPartnership(form, idx) {
+    var updated = localPartnerships.slice();
+    updated[idx] = Object.assign({}, updated[idx], { partner: form.partnerName || updated[idx].partner, type: form.type || updated[idx].type, notes: form.notes });
+    setLocalPartnerships(updated);
+    setEditingAPartnerIdx(null);
+    if (onUpdate) onUpdate({ analysisPartnerships: updated });
+  }
 
   async function ask() {
     var question = q.trim();
@@ -443,6 +717,9 @@ export default function AnalysisView({ data, onEventsUpdate }) {
     }
     setAsking(false);
   }
+
+  var totalContacts = contacts.length + manualContactsLocal.length;
+  var totalPartnerships = localPartnerships.length + manualPartnershipsLocal.length;
 
   return (
     <div>
@@ -484,29 +761,199 @@ export default function AnalysisView({ data, onEventsUpdate }) {
       )}
 
       {/* Key Contacts */}
-      <Sec title={"👥 Key Contacts" + (contacts.length ? " (" + contacts.length + ")" : "")} accent={C.cyan} open={true}>
-        {contacts.length === 0 && <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>No contacts found. Add a NinjaPear key for verified executives.</div>}
-        {contacts.map(function(c, i) { return <ContactCard key={i} contact={c} company={data.company} onRemove={function(){ setContacts(function(prev){ return prev.filter(function(_,j){ return j!==i; }); }); }} />; })}
+      <Sec title={"👥 Key Contacts" + (totalContacts ? " (" + totalContacts + ")" : "")} accent={C.cyan} open={true}>
+        {/* Analysis contacts */}
+        {contacts.length === 0 && manualContactsLocal.length === 0 && !addingContact && (
+          <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: 20 }}>No contacts found. Add a NinjaPear key for verified executives, or add manually below.</div>
+        )}
+        {contacts.map(function(c, i) {
+          return (function(){
+            if (editingAContactIdx === i) {
+              return (
+                <ContactInlineForm
+                  key={"edit-ac-" + i}
+                  initial={{ name: c.name, title: c.title, email: c.email || "", linkedin: c.linkedin || "", phone: c.phone || "", notes: c.outreach_angle || "", status: c.verified_source === "ninjapear" ? "Confirmed" : "Unverified" }}
+                  onSave={function(form) { saveAnalysisContact(form, i); }}
+                  onCancel={function() { setEditingAContactIdx(null); }}
+                  accentColor={C.cyan}
+                />
+              );
+            }
+            return (
+              <ContactCard
+                key={i}
+                contact={c}
+                company={data.company}
+                onRemove={function(){ setContacts(function(prev){ return prev.filter(function(_,j){ return j!==i; }); }); }}
+                onEdit={function() { setEditingAContactIdx(i); setEditingContactIdx(null); setAddingContact(false); }}
+              />
+            );
+          })();
+        })}
+
+        {/* Manual contacts */}
+        {manualContactsLocal.length > 0 && contacts.length > 0 && (
+          <div style={{ borderTop: "1px solid " + C.border, marginTop: 8, paddingTop: 8, marginBottom: 4 }}>
+            <div style={{ color: C.purple, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>✏️ Added Manually</div>
+          </div>
+        )}
+        {manualContactsLocal.map(function(c, i) {
+          return (function(){
+            if (editingContactIdx === i) {
+              return (
+                <ContactInlineForm
+                  key={"edit-mc-" + i}
+                  initial={c}
+                  onSave={function(form) { saveManualContact(form, i); }}
+                  onCancel={function() { setEditingContactIdx(null); }}
+                />
+              );
+            }
+            return (
+              <ContactCard
+                key={"mc-" + i}
+                contact={c}
+                company={data.company}
+                enriching={enrichingContactIdx === i}
+                onEdit={function() { setEditingContactIdx(i); setEditingAContactIdx(null); setAddingContact(false); }}
+                onRemove={function() { deleteManualContact(i); }}
+              />
+            );
+          })();
+        })}
+
+        {/* Add contact form */}
+        {addingContact && (
+          <ContactInlineForm
+            onSave={function(form) { saveManualContact(form, null); }}
+            onCancel={function() { setAddingContact(false); }}
+          />
+        )}
+
+        {!addingContact && editingContactIdx === null && editingAContactIdx === null && (
+          <button
+            onClick={function() { setAddingContact(true); }}
+            style={{ background: "transparent", border: "1px dashed " + C.border, color: C.dim, borderRadius: 7, padding: "7px 14px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: (totalContacts > 0) ? 8 : 0 }}>
+            + Add Contact
+          </button>
+        )}
       </Sec>
 
       {/* Partnerships */}
-      {(data.partnerships || []).length > 0 && (
-        <Sec title="🤝 Partnerships" accent={C.purple} open={false}>
-          {(data.partnerships || []).map(function(p, i) {
+      <Sec title={"🤝 Partnerships" + (totalPartnerships ? " (" + totalPartnerships + ")" : "")} accent={C.purple} open={totalPartnerships > 0}>
+        {/* Analysis partnerships */}
+        {localPartnerships.map(function(p, i) {
+          return (function(){
+            if (editingAPartnerIdx === i) {
+              return (
+                <PartnershipInlineForm
+                  key={"edit-ap-" + i}
+                  initial={{ partnerName: p.partner || "", type: p.type || "Other", status: "Active", dateAnnounced: "", sourceUrl: "", notes: p.cp_angle || p.what_they_provide || "" }}
+                  onSave={function(form) { saveAnalysisPartnership(form, i); }}
+                  onCancel={function() { setEditingAPartnerIdx(null); }}
+                />
+              );
+            }
             return (
               <div key={i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
-                  <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partner}</span>
-                  <Badge color="purple" sm>{p.type}</Badge>
-                  {p.dependency && <Badge color={p.dependency === "Critical" ? "red" : p.dependency === "Important" ? "gold" : "muted"} sm>{p.dependency}</Badge>}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partner}</span>
+                      <Badge color="purple" sm>{p.type}</Badge>
+                      {p.dependency && <Badge color={p.dependency === "Critical" ? "red" : p.dependency === "Important" ? "gold" : "muted"} sm>{p.dependency}</Badge>}
+                    </div>
+                    {p.what_they_provide && <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>{p.what_they_provide}</div>}
+                    {p.cp_angle && <div style={{ color: C.accent, fontSize: 11 }}>🎯 {p.cp_angle}</div>}
+                  </div>
+                  <button onClick={function() { setEditingAPartnerIdx(i); setEditingPartnerIdx(null); setAddingPartner(false); }}
+                    style={{ background: "transparent", border: "1px solid " + C.purple + "60", color: C.purple, borderRadius: 6, padding: "4px 8px", fontSize: 9, cursor: "pointer", fontFamily: "inherit", flexShrink: 0, marginLeft: 8 }}>
+                    ✏ Edit
+                  </button>
                 </div>
-                {p.what_they_provide && <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>{p.what_they_provide}</div>}
-                {p.cp_angle && <div style={{ color: C.accent, fontSize: 11 }}>🎯 {p.cp_angle}</div>}
               </div>
             );
-          })}
-        </Sec>
-      )}
+          })();
+        })}
+
+        {/* Manual partnerships */}
+        {manualPartnershipsLocal.length > 0 && localPartnerships.length > 0 && (
+          <div style={{ borderTop: "1px solid " + C.border, marginTop: 8, paddingTop: 8, marginBottom: 4 }}>
+            <div style={{ color: C.purple, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>✏️ Added Manually</div>
+          </div>
+        )}
+        {manualPartnershipsLocal.map(function(p, i) {
+          return (function(){
+            if (editingPartnerIdx === i) {
+              return (
+                <PartnershipInlineForm
+                  key={"edit-mp-" + i}
+                  initial={p}
+                  onSave={function(form) { saveManualPartnership(form, i); }}
+                  onCancel={function() { setEditingPartnerIdx(null); }}
+                />
+              );
+            }
+            if (enrichingPartnerIdx === i) {
+              return (
+                <div key={"enrich-mp-" + i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.purple + "40" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partnerName}</span>
+                    <span style={{ color: C.purple, fontSize: 10, fontStyle: "italic" }}>🔍 Verifying partnership...</span>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={"mp-" + i} style={{ background: C.surface, borderRadius: 8, padding: "10px 14px", marginBottom: 8, border: "1px solid " + C.border }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+                      <span style={{ color: C.text, fontWeight: 700, fontSize: 12 }}>{p.partnerName}</span>
+                      <Badge color="purple" sm>{p.type}</Badge>
+                      <Badge color={p.status === "Active" ? "green" : p.status === "Expired" ? "red" : "muted"} sm>{p.status}</Badge>
+                      <Badge color="purple" sm>✏️ Manual</Badge>
+                      {isCryptoProvider(p.partnerName) && <Badge color="cyan" sm>🔐 Crypto</Badge>}
+                    </div>
+                    {p.dateAnnounced && <div style={{ color: C.dim, fontSize: 10, marginBottom: 2 }}>📅 {p.dateAnnounced}</div>}
+                    {p.notes && <div style={{ color: C.muted, fontSize: 11, marginBottom: 4 }}>{p.notes}</div>}
+                    {p.sourceUrl && <a href={p.sourceUrl} target="_blank" rel="noreferrer" style={{ color: C.accent, fontSize: 10, textDecoration: "none" }}>🔗 Source</a>}
+                  </div>
+                  <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                    <button onClick={function() { setEditingPartnerIdx(i); setEditingAPartnerIdx(null); setAddingPartner(false); }}
+                      style={{ background: "transparent", border: "1px solid " + C.purple + "60", color: C.purple, borderRadius: 6, padding: "4px 8px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✏ Edit
+                    </button>
+                    <button onClick={function() { deleteManualPartnership(i); }}
+                      style={{ background: "transparent", border: "1px solid " + C.red + "40", color: C.red, borderRadius: 6, padding: "4px 8px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })();
+        })}
+
+        {totalPartnerships === 0 && !addingPartner && (
+          <div style={{ color: C.dim, fontSize: 11, textAlign: "center", padding: "12px 0" }}>No partnerships found in analysis. Add manually below.</div>
+        )}
+
+        {addingPartner && (
+          <PartnershipInlineForm
+            onSave={function(form) { saveManualPartnership(form, null); }}
+            onCancel={function() { setAddingPartner(false); }}
+          />
+        )}
+
+        {!addingPartner && editingPartnerIdx === null && editingAPartnerIdx === null && (
+          <button
+            onClick={function() { setAddingPartner(true); }}
+            style={{ background: "transparent", border: "1px dashed " + C.border, color: C.dim, borderRadius: 7, padding: "7px 14px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: totalPartnerships > 0 ? 8 : 0 }}>
+            + Add Partnership
+          </button>
+        )}
+      </Sec>
 
       {/* Upcoming Events */}
       <EventsSection
