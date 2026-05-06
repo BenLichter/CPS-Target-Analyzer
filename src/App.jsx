@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import AnalysisView, { Badge, Chip, Sec, ContactCard } from "./AnalysisView";
+import BulkAnalyze from "./BulkAnalyze";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -3768,6 +3769,7 @@ export default function App() {
   var pipelineDeals= s11[0]; var setPipelineDeals= s11[1];
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
   var sGammaH = useState(function(){ try { return JSON.parse(localStorage.getItem(GAMMA_HIST_LS)||"[]"); } catch { return []; } }); var gammaHistory = sGammaH[0]; var setGammaHistory = sGammaH[1];
+  var sBulk = useState(false); var showBulk = sBulk[0]; var setShowBulk = sBulk[1];
 
   useEffect(function(){ localStorage.setItem(HIST_LS, JSON.stringify(history)); }, [history]);
   useEffect(function(){ localStorage.setItem(GAMMA_HIST_LS, JSON.stringify(gammaHistory)); }, [gammaHistory]);
@@ -3811,6 +3813,32 @@ export default function App() {
   }, [pipelineDeals, pipeLoaded]);
 
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
+
+  function addResultsToPipeline(items) {
+    setPipelineDeals(function(prev) {
+      var next = prev.slice();
+      items.forEach(function(item) {
+        var result = item.result; var seg = item.segment || ""; var pri = item.priority || "p1";
+        if (!result || !result.company) return;
+        var already = next.find(function(d) { return d.company.toLowerCase() === result.company.toLowerCase(); });
+        if (already) return;
+        var segLower = (result.segment || "").toLowerCase();
+        var vert = seg || "financial_services";
+        if (!seg) {
+          if (segLower.includes("travel")||segLower.includes("hotel")||segLower.includes("airline")||segLower.includes("hospitality")) vert="luxury_travel";
+          else if (segLower.includes("luxury")||segLower.includes("fashion")||segLower.includes("retail")) vert="luxury_goods";
+          else if (segLower.includes("gaming")||segLower.includes("casino")||segLower.includes("gambling")||segLower.includes("betting")) vert="gaming_casinos";
+          else vert="financial_services";
+        }
+        var arr = (result.tam_som_arr && (result.tam_som_arr.projected_arr || result.tam_som_arr.likely_arr_usd)) || "";
+        var tam = (result.tam_som_arr && result.tam_som_arr.tam_usd) || "";
+        var geo = detectGeo(result.hq || "");
+        var rCp = detectCryptoPartners(result);
+        next.push({ id: Date.now() + Math.random(), company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: rCp.cryptoPartners, hasCryptoPartner: rCp.hasCryptoPartner });
+      });
+      return next;
+    });
+  }
 
   async function go() {
     if (!company.trim() || loading) return;
@@ -3895,26 +3923,48 @@ export default function App() {
         {/* Analyze */}
         {page==="analyze" && (
           <div>
-            <div style={{ marginBottom:24 }}>
-              <div style={{ color:C.text, fontSize:22, fontWeight:900, marginBottom:4 }}>Sales Intelligence</div>
-              <div style={{ color:C.muted, fontSize:12 }}>Full B2B sales intelligence report for any target.</div>
-            </div>
-            <div style={{ display:"flex", gap:8, marginBottom:12 }}>
-              <input value={company} onChange={function(e){setCompany(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")go();}} placeholder="e.g. Bellagio, Saks Fifth Avenue, DraftKings, Amex..." style={{ flex:1, background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", color:C.text, fontSize:14, outline:"none" }}/>
-              <button onClick={go} disabled={loading||!company.trim()} style={{ padding:"12px 28px", borderRadius:8, background:loading?"transparent":C.accent, color:loading?C.muted:"#000", border:"1px solid "+(loading?C.border:C.accent), fontWeight:800, fontSize:13, cursor:loading?"wait":"pointer", whiteSpace:"nowrap" }}>
-                {loading?"Analyzing...":"⚡ Analyze"}
-              </button>
-            </div>
-            {loading&&step&&<div style={{ color:C.accent, fontSize:11, padding:"10px 14px", background:C.accentDim, borderRadius:8, marginBottom:12 }}>⟳ {step}</div>}
-            {error&&<div style={{ background:C.redDim, border:"1px solid "+C.red+"40", borderRadius:8, padding:"12px 16px", color:C.red, fontSize:11 }}><div style={{ fontWeight:700, marginBottom:4 }}>Error</div>{error}</div>}
-            {!loading&&!error&&(
-              <div style={{ marginTop:24, color:C.dim, fontSize:11, lineHeight:1.9 }}>
-                <div style={{ marginBottom:6, color:C.muted, fontWeight:700 }}>What you get:</div>
-                {["🚨 Missed opportunity + competitor threat","💰 Bottoms-up ARR projection ($750K-$2M typical range)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison: CoinPayments vs target","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
-                  return <div key={f}>• {f}</div>;
-                })}
+            {!showBulk && (
+              <div style={{ marginBottom:24 }}>
+                <div style={{ color:C.text, fontSize:22, fontWeight:900, marginBottom:4 }}>Sales Intelligence</div>
+                <div style={{ color:C.muted, fontSize:12 }}>Full B2B sales intelligence report for any target.</div>
               </div>
             )}
+            <div style={{ display:"flex", gap:8, marginBottom:12, alignItems:"center" }}>
+              {!showBulk && (
+                <>
+                  <input value={company} onChange={function(e){setCompany(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")go();}} placeholder="e.g. Bellagio, Saks Fifth Avenue, DraftKings, Amex..." style={{ flex:1, background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", color:C.text, fontSize:14, outline:"none" }}/>
+                  <button onClick={go} disabled={loading||!company.trim()} style={{ padding:"12px 28px", borderRadius:8, background:loading?"transparent":C.accent, color:loading?C.muted:"#000", border:"1px solid "+(loading?C.border:C.accent), fontWeight:800, fontSize:13, cursor:loading?"wait":"pointer", whiteSpace:"nowrap" }}>
+                    {loading?"Analyzing...":"⚡ Analyze"}
+                  </button>
+                </>
+              )}
+              <button onClick={function(){ setShowBulk(!showBulk); }}
+                style={{ padding:"10px 18px", borderRadius:8, background:showBulk?C.accent:C.surface, color:showBulk?"#000":C.muted, border:"1px solid "+(showBulk?C.accent:C.border), fontWeight:700, fontSize:12, cursor:"pointer", whiteSpace:"nowrap" }}>
+                {showBulk ? "← Single Analyze" : "📋 Bulk Analyze"}
+              </button>
+            </div>
+            {showBulk
+              ? <BulkAnalyze
+                  runAnalysis={runAnalysis}
+                  tKey={tKey}
+                  njKey={njKey}
+                  addResultsToPipeline={addResultsToPipeline}
+                />
+              : (
+                <>
+                  {loading&&step&&<div style={{ color:C.accent, fontSize:11, padding:"10px 14px", background:C.accentDim, borderRadius:8, marginBottom:12 }}>⟳ {step}</div>}
+                  {error&&<div style={{ background:C.redDim, border:"1px solid "+C.red+"40", borderRadius:8, padding:"12px 16px", color:C.red, fontSize:11 }}><div style={{ fontWeight:700, marginBottom:4 }}>Error</div>{error}</div>}
+                  {!loading&&!error&&(
+                    <div style={{ marginTop:24, color:C.dim, fontSize:11, lineHeight:1.9 }}>
+                      <div style={{ marginBottom:6, color:C.muted, fontWeight:700 }}>What you get:</div>
+                      {["🚨 Missed opportunity + competitor threat","💰 Bottoms-up ARR projection ($750K-$2M typical range)","👥 Verified executives via NinjaPear (12 roles)","🤝 Partnership intelligence","⚔️ Competitive comparison: CoinPayments vs target","🗺️ GTM plan + sequenced timeline","📰 Live news from last 6 months","💬 AI chat for account questions","📋 Pipeline with 4 verticals & stage tracking"].map(function(f){
+                        return <div key={f}>• {f}</div>;
+                      })}
+                    </div>
+                  )}
+                </>
+              )
+            }
           </div>
         )}
 
