@@ -137,14 +137,15 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
     } catch(e) {}
   }, [companies]);
 
-  var totalCount = companies.length;
-  var doneCount   = companies.filter(function(c) { return c.status === "done"; }).length;
-  var failedCount = companies.filter(function(c) { return c.status === "failed"; }).length;
+  var totalCount    = companies.length;
+  var doneCount     = companies.filter(function(c) { return c.status === "done"; }).length;
+  var failedCount   = companies.filter(function(c) { return c.status === "failed"; }).length;
   var analyzingCount = companies.filter(function(c) { return c.status === "analyzing"; }).length;
-  var queuedCount = companies.filter(function(c) { return c.status === "queued"; }).length;
-  var allDone     = companies.filter(function(c) { return c.status === "done"; });
-  var checkedDone = companies.filter(function(c) { return c.status === "done" && checked[c.id]; });
-  var canStart    = queuedCount > 0 && !running;
+  var queuedCount   = companies.filter(function(c) { return c.status === "queued"; }).length;
+  var allDone       = companies.filter(function(c) { return c.status === "done"; });
+  var checkedDone   = companies.filter(function(c) { return c.status === "done" && checked[c.id]; });
+  var checkedQueued = companies.filter(function(c) { return c.status === "queued" && checked[c.id]; });
+  var canStart      = checkedQueued.length > 0 && !running;
 
   function loadRows(rows) {
     var withDefaults = rows.map(function(r) {
@@ -157,7 +158,9 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
       });
     });
     setCompanies(withDefaults);
-    setChecked({});
+    var allChecked = {};
+    withDefaults.forEach(function(r) { allChecked[r.id] = true; });
+    setChecked(allChecked);
   }
 
   function handleFileChange(e) {
@@ -215,16 +218,17 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
   }
 
   async function startBulk() {
-    if (runningRef.current || queuedCount === 0) return;
+    if (runningRef.current || checkedQueued.length === 0) return;
     runningRef.current = true;
     stopRef.current = false;
     setRunning(true);
     setMultiFailWarn(false);
 
     var snapshot = companies.slice();
+    var checkedSnap = checked;
     var queue = [];
     snapshot.forEach(function(c, idx) {
-      if (c.status === "queued") queue.push({ idx: idx, name: c.name });
+      if (c.status === "queued" && checkedSnap[c.id]) queue.push({ idx: idx, name: c.name });
     });
 
     for (var i = 0; i < queue.length; i += BATCH_SIZE) {
@@ -366,10 +370,10 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
           </div>
           {totalCount > 0 && (
             <div style={{ color: C.muted, fontSize: 10, paddingBottom: 2 }}>
-              <strong style={{ color: C.text }}>{totalCount}</strong> companies loaded
+              <strong style={{ color: C.text }}>{totalCount}</strong> loaded
+              {queuedCount > 0 && <span> · <strong style={{ color: checkedQueued.length > 0 ? C.accent : C.red }}>{checkedQueued.length}</strong> of {queuedCount} selected to analyze</span>}
               {doneCount > 0 && <span style={{ color: C.green }}> · {doneCount} done</span>}
               {failedCount > 0 && <span style={{ color: C.red }}> · {failedCount} failed</span>}
-              {queuedCount > 0 && <span> · {queuedCount} queued</span>}
             </div>
           )}
         </div>
@@ -424,15 +428,25 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
           <button onClick={startBulk} disabled={!canStart}
             style={Object.assign({}, btn, { background: canStart ? C.accent : C.surface, color: canStart ? "#000" : C.dim, border: "1px solid " + (canStart ? C.accent : C.border), opacity: canStart ? 1 : 0.5, cursor: canStart ? "pointer" : "default" })}>
-            {running ? "⟳ Running…" : ("▶ Start Bulk Analysis" + (queuedCount > 0 ? " (" + queuedCount + ")" : ""))}
+            {running ? "⟳ Running…" : ("▶ Analyze Selected (" + checkedQueued.length + ")")}
           </button>
+          {queuedCount > checkedQueued.length && !running && (
+            <button onClick={function() {
+              var all = {};
+              companies.forEach(function(c) { all[c.id] = true; });
+              setChecked(all);
+            }}
+              style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.muted, padding: "5px 10px", fontSize: 10 })}>
+              ☑ Select All ({queuedCount})
+            </button>
+          )}
           {allDone.length > 0 && (
             <button onClick={handleAddAll}
               style={Object.assign({}, btn, { background: C.greenDim, color: C.green, border: "1px solid " + C.green + "50" })}>
               ✚ Add All to Pipeline ({allDone.length})
             </button>
           )}
-          {checkedDone.length > 0 && (
+          {checkedDone.length > 0 && checkedDone.length < allDone.length && (
             <button onClick={handleAddSelected}
               style={Object.assign({}, btn, { background: C.surface, color: C.accent, border: "1px solid " + C.accent + "50" })}>
               ✚ Add Selected ({checkedDone.length})
@@ -450,10 +464,11 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
               <tr style={{ background: C.surface }}>
                 <th style={{ width: 36, padding: "8px 10px", borderBottom: "1px solid " + C.border, textAlign: "center" }}>
                   <input type="checkbox"
-                    checked={allDone.length > 0 && checkedDone.length === allDone.length}
+                    checked={totalCount > 0 && companies.every(function(c) { return checked[c.id]; })}
+                    ref={function(el) { if (el) el.indeterminate = totalCount > 0 && companies.some(function(c) { return checked[c.id]; }) && !companies.every(function(c) { return checked[c.id]; }); }}
                     onChange={function(e) {
                       var next = {};
-                      if (e.target.checked) allDone.forEach(function(c) { next[c.id] = true; });
+                      if (e.target.checked) companies.forEach(function(c) { next[c.id] = true; });
                       setChecked(next);
                     }} />
                 </th>
@@ -466,14 +481,11 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
               {companies.map(function(c, idx) {
                 return (function() {
                   var arr = c.result && c.result.tam_som_arr ? (c.result.tam_som_arr.projected_arr || c.result.tam_som_arr.likely_arr_usd || "") : "";
-                  var isChecked = !!(checked[c.id] && c.status === "done");
                   return (
                     <tr key={c.id} style={{ borderBottom: "1px solid " + C.border, background: idx % 2 === 0 ? "transparent" : C.surface + "50" }}>
                       <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                        {c.status === "done" && (
-                          <input type="checkbox" checked={isChecked}
-                            onChange={function(e) { setChecked(function(prev) { return Object.assign({}, prev, { [c.id]: e.target.checked }); }); }} />
-                        )}
+                        <input type="checkbox" checked={!!checked[c.id]}
+                          onChange={function(e) { setChecked(function(prev) { return Object.assign({}, prev, { [c.id]: e.target.checked }); }); }} />
                       </td>
                       <td style={{ padding: "8px 12px", minWidth: 160 }}>
                         {c.status === "done"
