@@ -112,10 +112,12 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
   var s8 = useState(false); var multiFailWarn = s8[0]; var setMultiFailWarn = s8[1];
   var s9 = useState(false); var showPaste = s9[0]; var setShowPaste = s9[1];
   var s10 = useState(false); var addedMsg = s10[0]; var setAddedMsg = s10[1];
+  var s11 = useState(null); var addingProgress = s11[0]; var setAddingProgress = s11[1];
 
   var runningRef = useRef(false);
   var stopRef = useRef(false);
   var fileRef = useRef(null);
+  var pendingItemsRef = useRef([]);
 
   useEffect(function() {
     try {
@@ -265,18 +267,45 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
     await processOne(idx, companies[idx].name);
   }
 
-  function handleAddSelected() {
-    var toAdd = checkedDone.map(function(c) { return { result: c.result, segment: c.segment, priority: c.priority }; });
-    addResultsToPipeline(toAdd);
+  var PIPE_BATCH_SIZE = 5;
+
+  async function batchAddToPipeline(items, startIdx) {
+    var from = startIdx || 0;
+    pendingItemsRef.current = items;
+    var total = items.length;
+    setAddingProgress({ current: from, total: total, failedAt: null });
+    for (var i = from; i < total; i += PIPE_BATCH_SIZE) {
+      try {
+        var batch = items.slice(i, i + PIPE_BATCH_SIZE);
+        addResultsToPipeline(batch);
+        var current = Math.min(i + PIPE_BATCH_SIZE, total);
+        setAddingProgress({ current: current, total: total, failedAt: null });
+        if (current < total) {
+          await new Promise(function(r) { setTimeout(r, 800); });
+        }
+      } catch(e) {
+        setAddingProgress({ current: i, total: total, failedAt: i });
+        return;
+      }
+    }
+    pendingItemsRef.current = [];
+    setAddingProgress(null);
     setAddedMsg(true);
     setTimeout(function() { setAddedMsg(false); }, 2500);
   }
 
+  function handleAddSelected() {
+    var toAdd = checkedDone.filter(function(c) { return c.result; }).map(function(c) {
+      return { result: c.result, segment: c.segment, priority: c.priority };
+    });
+    if (toAdd.length) batchAddToPipeline(toAdd, 0);
+  }
+
   function handleAddAll() {
-    var toAdd = allDone.map(function(c) { return { result: c.result, segment: c.segment, priority: c.priority }; });
-    addResultsToPipeline(toAdd);
-    setAddedMsg(true);
-    setTimeout(function() { setAddedMsg(false); }, 2500);
+    var toAdd = allDone.filter(function(c) { return c.result; }).map(function(c) {
+      return { result: c.result, segment: c.segment, priority: c.priority };
+    });
+    if (toAdd.length) batchAddToPipeline(toAdd, 0);
   }
 
   var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "5px 8px", color: C.text, fontSize: 10, fontFamily: "inherit", outline: "none" };
@@ -423,11 +452,40 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
         </div>
       )}
 
+      {/* Pipeline add progress bar */}
+      {addingProgress && (
+        <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            {addingProgress.failedAt !== null
+              ? <span style={{ color: C.red, fontSize: 11, fontWeight: 700 }}>⚠ Failed at batch {addingProgress.failedAt + 1} — {addingProgress.current} of {addingProgress.total} added</span>
+              : <span style={{ color: C.text, fontSize: 11, fontWeight: 700 }}>Adding to pipeline… {addingProgress.current} of {addingProgress.total}</span>
+            }
+            {addingProgress.failedAt !== null && (
+              <button onClick={function() { batchAddToPipeline(pendingItemsRef.current, addingProgress.failedAt); }}
+                style={Object.assign({}, btn, { background: C.gold, color: "#000", padding: "4px 12px", fontSize: 10 })}>
+                🔄 Retry from here
+              </button>
+            )}
+          </div>
+          <div style={{ background: C.border, borderRadius: 999, height: 6, overflow: "hidden" }}>
+            <div style={{
+              background: addingProgress.failedAt !== null
+                ? "linear-gradient(90deg, " + C.red + ", " + C.gold + ")"
+                : "linear-gradient(90deg, " + C.green + ", " + C.cyan + ")",
+              height: "100%",
+              width: Math.round(addingProgress.current / Math.max(addingProgress.total, 1) * 100) + "%",
+              transition: "width 0.4s ease",
+              borderRadius: 999,
+            }} />
+          </div>
+        </div>
+      )}
+
       {/* Action buttons */}
       {totalCount > 0 && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={startBulk} disabled={!canStart}
-            style={Object.assign({}, btn, { background: canStart ? C.accent : C.surface, color: canStart ? "#000" : C.dim, border: "1px solid " + (canStart ? C.accent : C.border), opacity: canStart ? 1 : 0.5, cursor: canStart ? "pointer" : "default" })}>
+          <button onClick={startBulk} disabled={!canStart || !!addingProgress}
+            style={Object.assign({}, btn, { background: canStart && !addingProgress ? C.accent : C.surface, color: canStart && !addingProgress ? "#000" : C.dim, border: "1px solid " + (canStart && !addingProgress ? C.accent : C.border), opacity: canStart && !addingProgress ? 1 : 0.5, cursor: canStart && !addingProgress ? "pointer" : "default" })}>
             {running ? "⟳ Running…" : ("▶ Analyze Selected (" + checkedQueued.length + ")")}
           </button>
           {queuedCount > checkedQueued.length && !running && (
@@ -441,14 +499,14 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
             </button>
           )}
           {allDone.length > 0 && (
-            <button onClick={handleAddAll}
-              style={Object.assign({}, btn, { background: C.greenDim, color: C.green, border: "1px solid " + C.green + "50" })}>
-              ✚ Add All to Pipeline ({allDone.length})
+            <button onClick={handleAddAll} disabled={!!addingProgress}
+              style={Object.assign({}, btn, { background: addingProgress ? C.surface : C.greenDim, color: addingProgress ? C.dim : C.green, border: "1px solid " + (addingProgress ? C.border : C.green + "50"), opacity: addingProgress ? 0.5 : 1, cursor: addingProgress ? "default" : "pointer" })}>
+              {addingProgress && addingProgress.failedAt === null ? "⟳ Adding…" : ("✚ Add All to Pipeline (" + allDone.length + ")")}
             </button>
           )}
           {checkedDone.length > 0 && checkedDone.length < allDone.length && (
-            <button onClick={handleAddSelected}
-              style={Object.assign({}, btn, { background: C.surface, color: C.accent, border: "1px solid " + C.accent + "50" })}>
+            <button onClick={handleAddSelected} disabled={!!addingProgress}
+              style={Object.assign({}, btn, { background: addingProgress ? C.surface : C.surface, color: addingProgress ? C.dim : C.accent, border: "1px solid " + (addingProgress ? C.border : C.accent + "50"), opacity: addingProgress ? 0.5 : 1, cursor: addingProgress ? "default" : "pointer" })}>
               ✚ Add Selected ({checkedDone.length})
             </button>
           )}
