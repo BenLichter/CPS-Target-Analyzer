@@ -118,7 +118,23 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
   var fileRef = useRef(null);
 
   useEffect(function() {
-    try { localStorage.setItem(BULK_LS, JSON.stringify(companies)); } catch(e) {}
+    try {
+      var slim = companies.map(function(c) {
+        var arr = c.result && c.result.tam_som_arr
+          ? (c.result.tam_som_arr.projected_arr || c.result.tam_som_arr.likely_arr_usd || "")
+          : "";
+        return {
+          id: c.id, name: c.name, website: c.website || "",
+          segment: c.segment || "", priority: c.priority || "p1",
+          status: c.status, error: c.error || null,
+          resultSummary: c.result ? {
+            company: c.result.company, segment: c.result.segment || "",
+            hq: c.result.hq || "", arr: arr
+          } : null
+        };
+      });
+      localStorage.setItem(BULK_LS, JSON.stringify(slim));
+    } catch(e) {}
   }, [companies]);
 
   var totalCount = companies.length;

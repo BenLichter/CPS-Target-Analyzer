@@ -3542,12 +3542,14 @@ export default function App() {
   // Save pipeline to server + localStorage on every change (pipeLoaded guards against
   // overwriting server data with stale localStorage before the mount fetch resolves)
   useEffect(function() {
-    localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals));
+    try { localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); } catch(e) {}
     if (!pipeLoaded) return;
+    var body;
+    try { body = JSON.stringify({ pipeline: pipelineDeals }); } catch(e) { return; }
     fetch("/api/pipeline", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pipeline: pipelineDeals })
+      body: body
     }).catch(function(){});
   }, [pipelineDeals, pipeLoaded]);
 
