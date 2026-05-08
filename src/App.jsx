@@ -3552,25 +3552,27 @@ export default function App() {
     }).catch(function(){ setPipeLoaded(true); });
   }, []);
 
-  // Save pipeline to server + localStorage on every change (pipeLoaded guards against
-  // overwriting server data with stale localStorage before the mount fetch resolves)
+  // Save pipeline: localStorage on every change, Redis debounced 2s to limit Upstash commands
   useEffect(function() {
     try { localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); } catch(e) {}
     if (!pipeLoaded) return;
-    var body;
-    try {
-      var slim = pipelineDeals.map(function(d) {
-        var s = Object.assign({}, d);
-        delete s.analysisData;
-        return s;
-      });
-      body = JSON.stringify({ pipeline: slim });
-    } catch(e) { return; }
-    fetch("/api/pipeline", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: body
-    }).catch(function(){});
+    var timer = setTimeout(function() {
+      var body;
+      try {
+        var slim = pipelineDeals.map(function(d) {
+          var s = Object.assign({}, d);
+          delete s.analysisData;
+          return s;
+        });
+        body = JSON.stringify({ pipeline: slim });
+      } catch(e) { return; }
+      fetch("/api/pipeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body
+      }).catch(function(){});
+    }, 2000);
+    return function() { clearTimeout(timer); };
   }, [pipelineDeals, pipeLoaded]);
 
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
