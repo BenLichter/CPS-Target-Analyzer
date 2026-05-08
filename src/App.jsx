@@ -3597,7 +3597,9 @@ export default function App() {
         var tam = (result.tam_som_arr && result.tam_som_arr.tam_usd) || "";
         var geo = detectGeo(result.hq || "");
         var rCp = detectCryptoPartners(result);
-        next.push({ id: Date.now() + Math.random(), company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: rCp.cryptoPartners, hasCryptoPartner: rCp.hasCryptoPartner });
+        var mergedCp = rCp.cryptoPartners.slice();
+        (item.extraCryptoPartners || []).forEach(function(p) { if (mergedCp.indexOf(p) === -1) mergedCp.push(p); });
+        next.push({ id: Date.now() + Math.random(), company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
       });
       return next;
     });
@@ -3737,23 +3739,7 @@ export default function App() {
             ? <div>
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
                   <button onClick={function(){
-                    // Auto-detect vertical from segment
-                    var seg = (result.segment||"").toLowerCase();
-                    var vert = "financial_services";
-                    if (seg.includes("travel")||seg.includes("hotel")||seg.includes("airline")||seg.includes("hospitality")) vert="luxury_travel";
-                    else if (seg.includes("luxury")||seg.includes("fashion")||seg.includes("retail")) vert="luxury_goods";
-                    else if (seg.includes("gaming")||seg.includes("casino")||seg.includes("gambling")||seg.includes("betting")) vert="gaming_casinos";
-                    var arr = (result.tam_som_arr&&(result.tam_som_arr.projected_arr||result.tam_som_arr.likely_arr_usd))||"";
-                    var tam = (result.tam_som_arr&&result.tam_som_arr.tam_usd)||"";
-                    var geo = detectGeo(result.hq||"");
-                    setPipelineDeals(function(prev){
-                      var already = prev.find(function(d){ return d.company.toLowerCase()===(result.company||"").toLowerCase(); });
-                      if (already) return prev;
-                      var rCp = detectCryptoPartners(result);
-                      var mergedCp = rCp.cryptoPartners.slice();
-                      (resultCp.cryptoPartners||[]).forEach(function(p){ if (mergedCp.indexOf(p)===-1) mergedCp.push(p); });
-                      return prev.concat([{ id:Date.now(), company:result.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, priority:"p1", notes:(result.executive_summary||"").slice(0,120), analysisData:result, addedAt:new Date().toISOString(), financials:buildFinancials(result.tam_som_arr, arr, true), cryptoPartners:mergedCp, hasCryptoPartner:mergedCp.length>0, manualContacts:resultManualContacts, manualPartnerships:resultManualPartnerships }]);
-                    });
+                    addResultsToPipeline([{ result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
                     + Add to Pipeline
