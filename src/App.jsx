@@ -1622,7 +1622,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var meanTam = tid === "all"
       ? (vid === "financial_services"
           ? FS_SUBVERTS.reduce(function(s, sv) { return s + tMetrics(vid, sv.id, prio, geo, cp).avgTam; }, 0)
-          : td.map(getDealTam).filter(function(v){ return v>0; }).reduce(function(s,v){ return s+v; }, 0))
+          : (function() { var vals = td.map(getDealTam).filter(function(v){ return v>0; }); return vals.length ? vals.reduce(function(s,v){ return s+v; }, 0) / vals.length : 0; })())
       : ts.avgTam;
     if (tid === 'neobanks'      && meanTam < 1e12) meanTam = 9e12;
     if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
