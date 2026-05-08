@@ -95,7 +95,7 @@ function downloadTemplate() {
   XLSX.writeFile(wb, "bulk_analysis_template.xlsx");
 }
 
-export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipeline }) {
+export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, addResultsToPipeline }) {
   var s1 = useState(function() {
     try {
       var saved = JSON.parse(localStorage.getItem(BULK_LS) || "[]");
@@ -111,13 +111,14 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
   var s7 = useState(null); var viewingResult = s7[0]; var setViewingResult = s7[1];
   var s8 = useState(false); var multiFailWarn = s8[0]; var setMultiFailWarn = s8[1];
   var s9 = useState(false); var showPaste = s9[0]; var setShowPaste = s9[1];
-  var s10 = useState(false); var addedMsg = s10[0]; var setAddedMsg = s10[1];
+  var s10 = useState(null); var addedMsg = s10[0]; var setAddedMsg = s10[1];
   var s11 = useState(null); var addingProgress = s11[0]; var setAddingProgress = s11[1];
 
   var runningRef = useRef(false);
   var stopRef = useRef(false);
   var fileRef = useRef(null);
   var pendingItemsRef = useRef([]);
+  var mountChecked = useRef(false);
 
   useEffect(function() {
     try {
@@ -137,6 +138,17 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
       });
       localStorage.setItem(BULK_LS, JSON.stringify(slim));
     } catch(e) {}
+  }, [companies]);
+
+  // Restore checked state for companies loaded from localStorage on mount
+  useEffect(function() {
+    if (mountChecked.current || companies.length === 0) return;
+    mountChecked.current = true;
+    if (Object.keys(checked).length === 0) {
+      var all = {};
+      companies.forEach(function(c) { all[c.id] = true; });
+      setChecked(all);
+    }
   }, [companies]);
 
   var totalCount    = companies.length;
@@ -268,6 +280,11 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
   }
 
   var PIPE_BATCH_SIZE = 5;
+  var pipe = Array.isArray(pipelineDeals) ? pipelineDeals : [];
+
+  function pipeHas(name) {
+    return pipe.some(function(d) { return d.company && d.company.toLowerCase() === (name || "").toLowerCase(); });
+  }
 
   async function batchAddToPipeline(items, startIdx) {
     var from = startIdx || 0;
@@ -290,22 +307,40 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
     }
     pendingItemsRef.current = [];
     setAddingProgress(null);
-    setAddedMsg(true);
-    setTimeout(function() { setAddedMsg(false); }, 2500);
+    setAddedMsg("added:" + total);
+    setTimeout(function() { setAddedMsg(null); }, 3000);
+  }
+
+  function buildAddList(rows) {
+    var noResult = []; var alreadyIn = []; var toAdd = [];
+    rows.forEach(function(c) {
+      if (!c.result) { noResult.push(c.name); return; }
+      if (pipeHas(c.result.company || c.name)) { alreadyIn.push(c.name); return; }
+      toAdd.push({ result: c.result, segment: c.segment, priority: c.priority });
+    });
+    return { toAdd: toAdd, noResult: noResult, alreadyIn: alreadyIn };
   }
 
   function handleAddSelected() {
-    var toAdd = checkedDone.filter(function(c) { return c.result; }).map(function(c) {
-      return { result: c.result, segment: c.segment, priority: c.priority };
-    });
-    if (toAdd.length) batchAddToPipeline(toAdd, 0);
+    var r = buildAddList(checkedDone);
+    if (!r.toAdd.length) {
+      if (r.noResult.length) setAddedMsg("rerun");
+      else if (r.alreadyIn.length) setAddedMsg("already");
+      setTimeout(function() { setAddedMsg(null); }, 3500);
+      return;
+    }
+    batchAddToPipeline(r.toAdd, 0);
   }
 
   function handleAddAll() {
-    var toAdd = allDone.filter(function(c) { return c.result; }).map(function(c) {
-      return { result: c.result, segment: c.segment, priority: c.priority };
-    });
-    if (toAdd.length) batchAddToPipeline(toAdd, 0);
+    var r = buildAddList(allDone);
+    if (!r.toAdd.length) {
+      if (r.noResult.length) setAddedMsg("rerun");
+      else if (r.alreadyIn.length) setAddedMsg("already");
+      setTimeout(function() { setAddedMsg(null); }, 3500);
+      return;
+    }
+    batchAddToPipeline(r.toAdd, 0);
   }
 
   var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "5px 8px", color: C.text, fontSize: 10, fontFamily: "inherit", outline: "none" };
@@ -510,7 +545,9 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, addResultsToPipe
               ✚ Add Selected ({checkedDone.length})
             </button>
           )}
-          {addedMsg && <span style={{ color: C.green, fontSize: 10 }}>✅ Added to pipeline!</span>}
+          {addedMsg && addedMsg.startsWith("added:") && <span style={{ color: C.green, fontSize: 10 }}>✅ Added {addedMsg.split(":")[1]} to pipeline!</span>}
+          {addedMsg === "already" && <span style={{ color: C.gold, fontSize: 10 }}>⚠ Already in pipeline</span>}
+          {addedMsg === "rerun" && <span style={{ color: C.red, fontSize: 10 }}>⚠ Re-run analysis to add to pipeline</span>}
         </div>
       )}
 

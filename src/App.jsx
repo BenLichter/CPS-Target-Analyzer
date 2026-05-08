@@ -3533,28 +3533,20 @@ export default function App() {
           }
           return patched;
         });
-        // Redis stores slim deals (no analysisData) — hydrate analysisData back from localStorage
-        var localDeals;
-        try { localDeals = JSON.parse(localStorage.getItem(PIPE_LS) || "[]"); } catch(e) { localDeals = []; }
-        var localMap = {};
-        (Array.isArray(localDeals) ? localDeals : []).forEach(function(ld) {
-          if (ld && ld.id && ld.analysisData) localMap[String(ld.id)] = ld.analysisData;
-        });
-        var hydrated = migrated.map(function(deal) {
-          if (!deal.analysisData && localMap[String(deal.id)]) {
-            return Object.assign({}, deal, { analysisData: localMap[String(deal.id)] });
-          }
-          return deal;
-        });
-        setPipelineDeals(hydrated);
+        setPipelineDeals(migrated);
       }
       setPipeLoaded(true);
     }).catch(function(){ setPipeLoaded(true); });
   }, []);
 
-  // Save pipeline: localStorage on every change, Redis debounced 2s to limit Upstash commands
+  // Save pipeline: slim to localStorage immediately, slim to Redis debounced 2s
+  // analysisData (~50-100KB/deal) is kept in memory only — localStorage and Redis
+  // both cap out well below 215 full results (10-20MB)
   useEffect(function() {
-    try { localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); } catch(e) {}
+    try {
+      var slimLocal = pipelineDeals.map(function(d) { var s = Object.assign({}, d); delete s.analysisData; return s; });
+      localStorage.setItem(PIPE_LS, JSON.stringify(slimLocal));
+    } catch(e) {}
     if (!pipeLoaded) return;
     var timer = setTimeout(function() {
       var body;
@@ -3713,6 +3705,7 @@ export default function App() {
                   runAnalysis={runAnalysis}
                   tKey={tKey}
                   njKey={njKey}
+                  pipelineDeals={pipelineDeals}
                   addResultsToPipeline={addResultsToPipeline}
                 />
               : (
