@@ -206,7 +206,12 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   async function processOne(idx, companyName) {
     for (var attempt = 0; attempt < 3; attempt++) {
       try {
-        var data = await runAnalysis(companyName, function() {}, { tavily: tKey, ninjapear: njKey });
+        var data = await Promise.race([
+          runAnalysis(companyName, function() {}, { tavily: tKey, ninjapear: njKey }),
+          new Promise(function(_, reject) {
+            setTimeout(function() { reject(new Error("Timed out after 3 minutes")); }, 180000);
+          })
+        ]);
         setCompanies(function(prev) {
           var upd = prev.slice();
           upd[idx] = Object.assign({}, upd[idx], { status: "done", result: data, error: null });
