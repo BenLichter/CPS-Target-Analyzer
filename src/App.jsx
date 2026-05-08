@@ -3533,7 +3533,20 @@ export default function App() {
           }
           return patched;
         });
-        setPipelineDeals(migrated);
+        // Redis stores slim deals (no analysisData) — hydrate analysisData back from localStorage
+        var localDeals;
+        try { localDeals = JSON.parse(localStorage.getItem(PIPE_LS) || "[]"); } catch(e) { localDeals = []; }
+        var localMap = {};
+        (Array.isArray(localDeals) ? localDeals : []).forEach(function(ld) {
+          if (ld && ld.id && ld.analysisData) localMap[String(ld.id)] = ld.analysisData;
+        });
+        var hydrated = migrated.map(function(deal) {
+          if (!deal.analysisData && localMap[String(deal.id)]) {
+            return Object.assign({}, deal, { analysisData: localMap[String(deal.id)] });
+          }
+          return deal;
+        });
+        setPipelineDeals(hydrated);
       }
       setPipeLoaded(true);
     }).catch(function(){ setPipeLoaded(true); });
@@ -3545,7 +3558,14 @@ export default function App() {
     try { localStorage.setItem(PIPE_LS, JSON.stringify(pipelineDeals)); } catch(e) {}
     if (!pipeLoaded) return;
     var body;
-    try { body = JSON.stringify({ pipeline: pipelineDeals }); } catch(e) { return; }
+    try {
+      var slim = pipelineDeals.map(function(d) {
+        var s = Object.assign({}, d);
+        delete s.analysisData;
+        return s;
+      });
+      body = JSON.stringify({ pipeline: slim });
+    } catch(e) { return; }
     fetch("/api/pipeline", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
