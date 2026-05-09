@@ -44,18 +44,25 @@ export default async function handler(req, res) {
           kvGet(url, token, 'cp_keys'),
         ]);
 
-        // Fetch persisted analyses for deals that have analysisUpdatedAt, newest first, up to 20
+        // Fetch persisted analyses for up to 20 deals — prioritise recently-analysed
+        // deals (have analysisUpdatedAt), then fill with most-recently-added deals.
+        // kvGet returns null for keys that don't exist, so no-analysis deals are a no-op.
         const analyses = {};
         if (Array.isArray(pipeline)) {
-          const dealsWithAnalysis = pipeline
-            .filter(function(d) { return d && d.analysisUpdatedAt && d.id; })
-            .sort(function(a, b) { return new Date(b.analysisUpdatedAt) - new Date(a.analysisUpdatedAt); })
+          const dealsToCheck = pipeline
+            .filter(function(d) { return d && d.id; })
+            .sort(function(a, b) {
+              // analysisUpdatedAt first (these definitely have a key)
+              if (a.analysisUpdatedAt && !b.analysisUpdatedAt) return -1;
+              if (!a.analysisUpdatedAt && b.analysisUpdatedAt) return 1;
+              return new Date(b.analysisUpdatedAt || b.addedAt || 0) - new Date(a.analysisUpdatedAt || a.addedAt || 0);
+            })
             .slice(0, 20);
-          if (dealsWithAnalysis.length > 0) {
+          if (dealsToCheck.length > 0) {
             const results = await Promise.all(
-              dealsWithAnalysis.map(function(d) { return kvGet(url, token, 'cp_analysis_' + d.id); })
+              dealsToCheck.map(function(d) { return kvGet(url, token, 'cp_analysis_' + d.id); })
             );
-            dealsWithAnalysis.forEach(function(d, i) {
+            dealsToCheck.forEach(function(d, i) {
               if (results[i]) analyses[d.id] = results[i];
             });
           }
