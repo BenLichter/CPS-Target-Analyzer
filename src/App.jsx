@@ -1518,9 +1518,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
         return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner, analysisUpdatedAt:now });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
-      // Save analysis + pipeline atomically so analysisUpdatedAt is in Redis before any refresh
-      var updatedSlim = deals.map(function(d){ var s=Object.assign({},d); delete s.analysisData; if(d.id===deal.id) s.analysisUpdatedAt=now; return s; });
-      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:updatedSlim, analysisId:deal.id, analysisData:data }) }).catch(function(){});
+      // Save only the analysis — do NOT include pipeline here. Parallel reruns all
+      // close over the same stale `deals` prop, so including pipeline would cause
+      // last-write-wins: each rerun overwrites cp_pipeline with analysisUpdatedAt
+      // only for itself, erasing all prior reruns. The debounced pipeline save (2s
+      // after the last setDeals) reads the latest React state which has analysisUpdatedAt
+      // on every completed rerun — that's the correct place to persist cp_pipeline.
+      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:deal.id, analysisData:data }) }).catch(function(){});
     }).catch(function(err) {
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
       setTimeout(function(){ setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
