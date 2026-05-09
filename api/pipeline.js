@@ -1,4 +1,4 @@
-let memoryStore = { pipeline: [], keys: null };
+let memoryStore = { pipeline: [], keys: null, analyses: {} };
 
 async function kvGet(url, token, key) {
   const r = await fetch(`${url}/get/${key}`, {
@@ -33,21 +33,49 @@ export default async function handler(req, res) {
 
     if (url && token) {
       if (req.method === 'GET') {
+        const analysisId = req.query && req.query.analysis;
+        if (analysisId) {
+          const analysisData = await kvGet(url, token, 'cp_analysis_' + analysisId);
+          return res.status(200).json({ analysisData: analysisData || null });
+        }
+
         const [pipeline, keys] = await Promise.all([
           kvGet(url, token, 'cp_pipeline'),
           kvGet(url, token, 'cp_keys'),
         ]);
+
+        // Fetch persisted analyses for deals that have analysisUpdatedAt, newest first, up to 20
+        const analyses = {};
+        if (Array.isArray(pipeline)) {
+          const dealsWithAnalysis = pipeline
+            .filter(function(d) { return d && d.analysisUpdatedAt && d.id; })
+            .sort(function(a, b) { return new Date(b.analysisUpdatedAt) - new Date(a.analysisUpdatedAt); })
+            .slice(0, 20);
+          if (dealsWithAnalysis.length > 0) {
+            const results = await Promise.all(
+              dealsWithAnalysis.map(function(d) { return kvGet(url, token, 'cp_analysis_' + d.id); })
+            );
+            dealsWithAnalysis.forEach(function(d, i) {
+              if (results[i]) analyses[d.id] = results[i];
+            });
+          }
+        }
+
         return res.status(200).json({
           pipeline: Array.isArray(pipeline) ? pipeline : [],
-          keys: keys || null
+          keys: keys || null,
+          analyses
         });
       }
 
       if (req.method === 'POST') {
-        const { pipeline, keys } = req.body;
+        const { pipeline, keys, analysisId, analysisData } = req.body;
         const ops = [];
         if (pipeline !== undefined) ops.push(kvSet(url, token, 'cp_pipeline', pipeline));
         if (keys !== undefined) ops.push(kvSet(url, token, 'cp_keys', keys));
+        if (analysisId !== undefined && analysisData !== undefined) {
+          ops.push(kvSet(url, token, 'cp_analysis_' + analysisId, analysisData));
+        }
         await Promise.all(ops);
         return res.status(200).json({ ok: true });
       }
@@ -55,12 +83,24 @@ export default async function handler(req, res) {
 
     // Fallback: in-memory
     if (req.method === 'GET') {
-      return res.status(200).json(memoryStore);
+      const analysisId = req.query && req.query.analysis;
+      if (analysisId) {
+        return res.status(200).json({ analysisData: (memoryStore.analyses && memoryStore.analyses[analysisId]) || null });
+      }
+      return res.status(200).json({
+        pipeline: memoryStore.pipeline,
+        keys: memoryStore.keys,
+        analyses: memoryStore.analyses || {}
+      });
     }
     if (req.method === 'POST') {
-      const { pipeline, keys } = req.body;
+      const { pipeline, keys, analysisId, analysisData } = req.body;
       if (pipeline !== undefined) memoryStore.pipeline = pipeline;
       if (keys !== undefined) memoryStore.keys = keys;
+      if (analysisId !== undefined && analysisData !== undefined) {
+        if (!memoryStore.analyses) memoryStore.analyses = {};
+        memoryStore.analyses[analysisId] = analysisData;
+      }
       return res.status(200).json({ ok: true });
     }
 

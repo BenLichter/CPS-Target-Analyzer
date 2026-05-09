@@ -1514,9 +1514,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var freshCp = detectCryptoPartners(data);
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner });
+        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner, analysisUpdatedAt:new Date().toISOString() });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
+      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:deal.id, analysisData:data }) }).catch(function(){});
     }).catch(function(err) {
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
       setTimeout(function(){ setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
@@ -3565,6 +3566,7 @@ export default function App() {
   useEffect(function() {
     fetch("/api/pipeline").then(function(r){ return r.json(); }).then(function(d) {
       if (Array.isArray(d.pipeline) && d.pipeline.length > 0) {
+        var analyses = d.analyses || {};
         // Migrate any deals where the old label was stored as the tier value
         var migrated = d.pipeline.filter(function(d){ return d && d.company; }).map(function(d) {
           var patched = d;
@@ -3573,6 +3575,10 @@ export default function App() {
           }
           if (d.tier === "Regional / Middle Market Banks") {
             patched = Object.assign({}, patched, { tier: "regional_bank" });
+          }
+          // Attach persisted analysis if available from server
+          if (analyses[patched.id]) {
+            patched = Object.assign({}, patched, { analysisData: analyses[patched.id] });
           }
           // One-time crypto partner detection migration for deals that predate this field
           if (patched.hasCryptoPartner === undefined && patched.analysisData) {
@@ -3639,7 +3645,8 @@ export default function App() {
         var rCp = detectCryptoPartners(result);
         var mergedCp = rCp.cryptoPartners.slice();
         (item.extraCryptoPartners || []).forEach(function(p) { if (mergedCp.indexOf(p) === -1) mergedCp.push(p); });
-        next.push({ id: Date.now() + Math.random(), company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
+        var newId = item.id || (Date.now() + Math.random());
+        next.push({ id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), analysisUpdatedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
       });
       return next;
     });
@@ -3653,6 +3660,12 @@ export default function App() {
       setResult(data);
       setHistory(function(h){ return [{ company:data.company, analyzedAt:data.analyzedAt, data:data }].concat(h.slice(0,9)); });
       setPage("result");
+      // If company is already in pipeline, update its analysisData and persist to Redis
+      var pipeMatch = pipelineDeals.find(function(d){ return d.company.toLowerCase() === (data.company||"").toLowerCase(); });
+      if (pipeMatch) {
+        setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:new Date().toISOString() }) : d; }); });
+        fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
+      }
     } catch(e) { setError(e.message); }
     setLoading(false); setStep("");
   }
@@ -3780,7 +3793,9 @@ export default function App() {
             ? <div>
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
                   <button onClick={function(){
-                    addResultsToPipeline([{ result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
+                    var newId = Date.now() + Math.random();
+                    addResultsToPipeline([{ id: newId, result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
+                    fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:newId, analysisData:result }) }).catch(function(){});
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
                     + Add to Pipeline
