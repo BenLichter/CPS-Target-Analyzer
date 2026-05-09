@@ -1512,12 +1512,15 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var freshFin = buildFinancials(t, freshArr, false);
       freshFin.updatedByRerun = true;
       var freshCp = detectCryptoPartners(data);
+      var now = new Date().toISOString();
       setDeals(function(prev){ return prev.map(function(d){
         if (d.id!==deal.id) return d;
-        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner, analysisUpdatedAt:new Date().toISOString() });
+        return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner, analysisUpdatedAt:now });
       }); });
       setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; });
-      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:deal.id, analysisData:data }) }).catch(function(){});
+      // Save analysis + pipeline atomically so analysisUpdatedAt is in Redis before any refresh
+      var updatedSlim = deals.map(function(d){ var s=Object.assign({},d); delete s.analysisData; if(d.id===deal.id) s.analysisUpdatedAt=now; return s; });
+      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:updatedSlim, analysisId:deal.id, analysisData:data }) }).catch(function(){});
     }).catch(function(err) {
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Error: "+err.message}); });
       setTimeout(function(){ setRerunStatus(function(prev){ var n=Object.assign({},prev); delete n[deal.id]; return n; }); }, 4000);
@@ -1586,8 +1589,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
     var hCp = detectCryptoPartners(h.data);
-    var d = { id:Date.now(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
+    var d = { id:Date.now()+Math.random(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, analysisUpdatedAt:new Date().toISOString(), financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
     setDeals(function(prev){ return prev.concat([d]); });
+    var slimNext = deals.concat([d]).map(function(pd){ var s=Object.assign({},pd); delete s.analysisData; return s; });
+    fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:slimNext, analysisId:d.id, analysisData:d.analysisData }) }).catch(function(){});
   }
 
   // Metrics helpers
@@ -3624,32 +3629,39 @@ export default function App() {
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
   function addResultsToPipeline(items) {
-    setPipelineDeals(function(prev) {
-      var next = prev.slice();
-      items.forEach(function(item) {
-        var result = item.result; var seg = item.segment || ""; var pri = item.priority || "p1";
-        if (!result || !result.company) return;
-        var already = next.find(function(d) { return d.company.toLowerCase() === result.company.toLowerCase(); });
-        if (already) return;
-        var segLower = (result.segment || "").toLowerCase();
-        var vert = seg || "financial_services";
-        if (!seg) {
-          if (segLower.includes("travel")||segLower.includes("hotel")||segLower.includes("airline")||segLower.includes("hospitality")) vert="luxury_travel";
-          else if (segLower.includes("luxury")||segLower.includes("fashion")||segLower.includes("retail")) vert="luxury_goods";
-          else if (segLower.includes("gaming")||segLower.includes("casino")||segLower.includes("gambling")||segLower.includes("betting")) vert="gaming_casinos";
-          else vert="financial_services";
-        }
-        var arr = (result.tam_som_arr && (result.tam_som_arr.projected_arr || result.tam_som_arr.likely_arr_usd)) || "";
-        var tam = (result.tam_som_arr && result.tam_som_arr.tam_usd) || "";
-        var geo = detectGeo(result.hq || "");
-        var rCp = detectCryptoPartners(result);
-        var mergedCp = rCp.cryptoPartners.slice();
-        (item.extraCryptoPartners || []).forEach(function(p) { if (mergedCp.indexOf(p) === -1) mergedCp.push(p); });
-        var newId = item.id || (Date.now() + Math.random());
-        next.push({ id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: new Date().toISOString(), analysisUpdatedAt: new Date().toISOString(), financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
-      });
-      return next;
+    var next = pipelineDeals.slice();
+    var toSave = [];
+    items.forEach(function(item) {
+      var result = item.result; var seg = item.segment || ""; var pri = item.priority || "p1";
+      if (!result || !result.company) return;
+      var already = next.find(function(d) { return d.company.toLowerCase() === result.company.toLowerCase(); });
+      if (already) return;
+      var segLower = (result.segment || "").toLowerCase();
+      var vert = seg || "financial_services";
+      if (!seg) {
+        if (segLower.includes("travel")||segLower.includes("hotel")||segLower.includes("airline")||segLower.includes("hospitality")) vert="luxury_travel";
+        else if (segLower.includes("luxury")||segLower.includes("fashion")||segLower.includes("retail")) vert="luxury_goods";
+        else if (segLower.includes("gaming")||segLower.includes("casino")||segLower.includes("gambling")||segLower.includes("betting")) vert="gaming_casinos";
+        else vert="financial_services";
+      }
+      var arr = (result.tam_som_arr && (result.tam_som_arr.projected_arr || result.tam_som_arr.likely_arr_usd)) || "";
+      var tam = (result.tam_som_arr && result.tam_som_arr.tam_usd) || "";
+      var geo = detectGeo(result.hq || "");
+      var rCp = detectCryptoPartners(result);
+      var mergedCp = rCp.cryptoPartners.slice();
+      (item.extraCryptoPartners || []).forEach(function(p) { if (mergedCp.indexOf(p) === -1) mergedCp.push(p); });
+      var newId = item.id || (Date.now() + Math.random());
+      var now = new Date().toISOString();
+      next.push({ id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
+      toSave.push({ id: newId, data: result });
     });
+    setPipelineDeals(next);
+    if (toSave.length > 0) {
+      // Save pipeline (with analysisUpdatedAt) + all analyses in one atomic POST so
+      // both are in Redis before any refresh — eliminates the debounce race condition.
+      var slimNext = next.map(function(d) { var s = Object.assign({}, d); delete s.analysisData; return s; });
+      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ pipeline: slimNext, analyses: toSave.map(function(e){ return { id: e.id, data: e.data }; }) }) }).catch(function(){});
+    }
   }
 
   async function go() {
@@ -3660,11 +3672,14 @@ export default function App() {
       setResult(data);
       setHistory(function(h){ return [{ company:data.company, analyzedAt:data.analyzedAt, data:data }].concat(h.slice(0,9)); });
       setPage("result");
-      // If company is already in pipeline, update its analysisData and persist to Redis
+      // If company is already in pipeline, update its analysisData and persist atomically
+      // (pipeline + analysis in one POST so analysisUpdatedAt is in Redis before any refresh)
       var pipeMatch = pipelineDeals.find(function(d){ return d.company.toLowerCase() === (data.company||"").toLowerCase(); });
       if (pipeMatch) {
-        setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:new Date().toISOString() }) : d; }); });
-        fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
+        var now = new Date().toISOString();
+        setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:now }) : d; }); });
+        var updatedSlim = pipelineDeals.map(function(d){ var s=Object.assign({},d); delete s.analysisData; if(d.id===pipeMatch.id) s.analysisUpdatedAt=now; return s; });
+        fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:updatedSlim, analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
       }
     } catch(e) { setError(e.message); }
     setLoading(false); setStep("");
@@ -3793,9 +3808,7 @@ export default function App() {
             ? <div>
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
                   <button onClick={function(){
-                    var newId = Date.now() + Math.random();
-                    addResultsToPipeline([{ id: newId, result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
-                    fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:newId, analysisData:result }) }).catch(function(){});
+                    addResultsToPipeline([{ result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
                     + Add to Pipeline
