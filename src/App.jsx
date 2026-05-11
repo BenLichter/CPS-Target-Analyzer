@@ -880,6 +880,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s23 = useState({}); var csvDlState = s23[0]; var setCsvDlState = s23[1];
   var s24 = useState("all"); var segFilter = s24[0]; var setSegFilter = s24[1];
   var s25 = useState(false); var hasMasterTemplate = s25[0]; var setHasMasterTemplate = s25[1];
+  var s26 = useState({}); var loadingAnalysis = s26[0]; var setLoadingAnalysis = s26[1];
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -2475,6 +2476,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                               </div>
                             )}
 
+                            {/* 5b. Last analyzed timestamp */}
+                            {deal.analysisUpdatedAt && (
+                              <div style={{ padding:"4px 12px", borderBottom:"1px solid "+C.border }}>
+                                <div style={{ color:C.dim, fontSize:9 }}>🕐 Last analyzed: {new Date(deal.analysisUpdatedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                              </div>
+                            )}
+
                             {/* Edit form replaces bottom sections when active */}
                             {isEditing ? (
                               <div style={{ padding:"12px" }}>
@@ -2549,9 +2557,31 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   return (
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
-                                        <button onClick={function(){ if(deal.analysisData&&!busy){ setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); } }} disabled={!deal.analysisData||busy}
-                                          title="View analysis"
-                                          style={Object.assign({},actionBtn,{ color:deal.analysisData&&!busy?C.accent:C.dim, background:deal.analysisData&&!busy?C.accentDim:C.surface, borderColor:deal.analysisData&&!busy?C.accent+"50":C.border, opacity:(!deal.analysisData||busy)?0.4:1, cursor:(!deal.analysisData||busy)?"default":"pointer" })}>👁 View</button>
+                                        {(function(){
+                                          var hasAnalyzed = !!deal.analysisUpdatedAt;
+                                          var isFetching = !!loadingAnalysis[deal.id];
+                                          var canView = hasAnalyzed && !busy && !isFetching;
+                                          function openView() {
+                                            if (!canView) return;
+                                            if (deal.analysisData) { setOverlayAnalysis(deal.analysisData); setOverlayDealId(deal.id); return; }
+                                            setLoadingAnalysis(function(p){ var n=Object.assign({},p); n[deal.id]=true; return n; });
+                                            fetch("/api/analysis?id="+deal.id)
+                                              .then(function(r){ return r.json(); })
+                                              .then(function(j){
+                                                if (j.data) {
+                                                  setDeals(function(prev){ return prev.map(function(d){ return d.id===deal.id ? Object.assign({},d,{ analysisData:j.data }) : d; }); });
+                                                  setOverlayAnalysis(j.data); setOverlayDealId(deal.id);
+                                                }
+                                              })
+                                              .catch(function(){})
+                                              .finally(function(){ setLoadingAnalysis(function(p){ var n=Object.assign({},p); delete n[deal.id]; return n; }); });
+                                          }
+                                          return <button onClick={openView} disabled={!canView}
+                                            title={hasAnalyzed ? "View analysis" : "Run analysis first"}
+                                            style={Object.assign({},actionBtn,{ color:canView?C.accent:C.dim, background:canView?C.accentDim:C.surface, borderColor:canView?C.accent+"50":C.border, opacity:(!hasAnalyzed||busy)?0.4:1, cursor:canView?"pointer":"default" })}>
+                                            {isFetching ? "⟳" : "👁 View"}
+                                          </button>;
+                                        })()}
                                         <button onClick={function(){ rerunAnalysis(deal); }} disabled={busy}
                                           title="Re-run full analysis"
                                           style={Object.assign({},actionBtn,{ opacity:busy?0.4:1, cursor:busy?"default":"pointer" })}>🔄 Rerun Analysis</button>
