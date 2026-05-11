@@ -1595,8 +1595,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var hCp = detectCryptoPartners(h.data);
     var d = { id:Date.now()+Math.random(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, analysisUpdatedAt:new Date().toISOString(), financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
     setDeals(function(prev){ return prev.concat([d]); });
-    var slimNext = deals.concat([d]).map(function(pd){ var s=Object.assign({},pd); delete s.analysisData; return s; });
-    fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:slimNext, analysisId:d.id, analysisData:d.analysisData }) }).catch(function(){});
+    // Save analysis only — no pipeline; debounced save reads latest state for cp_pipeline
+    fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:d.id, analysisData:d.analysisData }) }).catch(function(){});
   }
 
   // Metrics helpers
@@ -3633,13 +3633,11 @@ export default function App() {
   function saveKey(lsKey, val, fn) { fn(val); localStorage.setItem(lsKey, val); }
 
   function addResultsToPipeline(items) {
-    var next = pipelineDeals.slice();
-    var toSave = [];
+    // Pre-generate IDs outside the state updater so we can reference them for Redis saves
+    var entries = [];
     items.forEach(function(item) {
       var result = item.result; var seg = item.segment || ""; var pri = item.priority || "p1";
       if (!result || !result.company) return;
-      var already = next.find(function(d) { return d.company.toLowerCase() === result.company.toLowerCase(); });
-      if (already) return;
       var segLower = (result.segment || "").toLowerCase();
       var vert = seg || "financial_services";
       if (!seg) {
@@ -3656,16 +3654,26 @@ export default function App() {
       (item.extraCryptoPartners || []).forEach(function(p) { if (mergedCp.indexOf(p) === -1) mergedCp.push(p); });
       var newId = item.id || (Date.now() + Math.random());
       var now = new Date().toISOString();
-      next.push({ id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] });
-      toSave.push({ id: newId, data: result });
+      entries.push({
+        id: newId,
+        deal: { id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] },
+        data: result
+      });
     });
-    setPipelineDeals(next);
-    if (toSave.length > 0) {
-      // Save pipeline (with analysisUpdatedAt) + all analyses in one atomic POST so
-      // both are in Redis before any refresh — eliminates the debounce race condition.
-      var slimNext = next.map(function(d) { var s = Object.assign({}, d); delete s.analysisData; return s; });
-      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ pipeline: slimNext, analyses: toSave.map(function(e){ return { id: e.id, data: e.data }; }) }) }).catch(function(){});
-    }
+    if (entries.length === 0) return;
+    // Functional updater guarantees correct prev even when called from async batch callbacks
+    setPipelineDeals(function(prev) {
+      var next = prev.slice();
+      entries.forEach(function(entry) {
+        var alreadyExists = next.find(function(d) { return d.company.toLowerCase() === entry.deal.company.toLowerCase(); });
+        if (!alreadyExists) next.push(entry.deal);
+      });
+      return next;
+    });
+    // Save each analysis individually — no pipeline in POST; debounced save handles cp_pipeline
+    entries.forEach(function(entry) {
+      fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ analysisId: entry.id, analysisData: entry.data }) }).catch(function(){});
+    });
   }
 
   async function go() {
@@ -3682,8 +3690,8 @@ export default function App() {
       if (pipeMatch) {
         var now = new Date().toISOString();
         setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:now }) : d; }); });
-        var updatedSlim = pipelineDeals.map(function(d){ var s=Object.assign({},d); delete s.analysisData; if(d.id===pipeMatch.id) s.analysisUpdatedAt=now; return s; });
-        fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ pipeline:updatedSlim, analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
+        // Save analysis only — no pipeline; debounced save reads latest state for cp_pipeline
+        fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
       }
     } catch(e) { setError(e.message); }
     setLoading(false); setStep("");
