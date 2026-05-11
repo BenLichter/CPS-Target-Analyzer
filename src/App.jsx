@@ -3430,7 +3430,9 @@ function CompeteTab({ deals }) {
         <div style={{ color:C.dim, fontSize:10 }}>{filtered.length} / {competitors.length} competitors</div>
       </div>
 
-      {/* Column headers */}
+      {/* Column headers + rows in a horizontal-scroll container for narrow screens */}
+      <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+      <div style={{ minWidth:600 }}>
       {filtered.length > 0 && (
         <div style={{ display:"grid", gridTemplateColumns:"2fr 1fr 3fr 2fr 1fr 3fr 1fr", gap:8, padding:"4px 14px", marginBottom:4 }}>
           {["Competitor","Category","Description","Segments","Pipeline","Differentiation","Position"].map(function(h){
@@ -3528,6 +3530,9 @@ function CompeteTab({ deals }) {
         );
       })}
 
+      </div>{/* end minWidth wrapper */}
+      </div>{/* end overflowX scroll wrapper */}
+
       {/* Empty state */}
       {filtered.length===0 && seedStatus!=="loading" && (
         <div style={{ textAlign:"center", padding:60, color:C.dim }}>
@@ -3560,6 +3565,13 @@ export default function App() {
   var sResMC = useState([]); var resultManualContacts = sResMC[0]; var setResultManualContacts = sResMC[1];
   var sResMP = useState([]); var resultManualPartnerships = sResMP[0]; var setResultManualPartnerships = sResMP[1];
   var sResCp = useState({ cryptoPartners: [], hasCryptoPartner: false }); var resultCp = sResCp[0]; var setResultCp = sResCp[1];
+  var sWinW = useState(typeof window !== "undefined" ? window.innerWidth : 1200); var winW = sWinW[0]; var setWinW = sWinW[1];
+
+  useEffect(function() {
+    function onResize() { setWinW(window.innerWidth); }
+    window.addEventListener("resize", onResize);
+    return function() { window.removeEventListener("resize", onResize); };
+  }, []);
 
   useEffect(function() {
     setResultManualContacts([]);
@@ -3697,8 +3709,10 @@ export default function App() {
     setLoading(false); setStep("");
   }
 
+  var isMob = winW < 640;
   var keyColor = (tKey&&njKey)?C.green:(tKey||njKey)?C.gold:C.red;
   var keyLabel = (tKey&&njKey)?"🟢 Full Intel":(tKey||njKey)?"🟡 Partial":"🔑 Add Keys";
+  var keyLabelShort = (tKey&&njKey)?"🟢":(tKey||njKey)?"🟡":"🔑";
 
   var pipeCount = history.length; // pipeline uses history-imported deals, no separate count needed in nav
   var NAV = [
@@ -3712,24 +3726,35 @@ export default function App() {
 
   return (
     <div style={{ background:C.bg, minHeight:"100vh", fontFamily:"ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace", fontSize:12 }}>
-      <style>{`*{box-sizing:border-box;margin:0;padding:0}button,input,select,textarea{font-family:inherit}input::placeholder,textarea::placeholder{color:#334155}`}</style>
+      <style>{`*{box-sizing:border-box;margin:0;padding:0}button,input,select,textarea{font-family:inherit;touch-action:manipulation}input::placeholder,textarea::placeholder{color:#334155}.mob-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}`}</style>
 
       {/* Nav */}
-      <div style={{ background:C.surface, borderBottom:"1px solid "+C.border, padding:"0 16px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52, position:"sticky", top:0, zIndex:100, gap:8 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
-          <div style={{ width:28, height:28, borderRadius:7, background:"linear-gradient(135deg,"+C.accent+","+C.purple+")", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>₿</div>
-          <div>
-            <div style={{ color:C.text, fontWeight:800, fontSize:11, letterSpacing:"0.05em" }}>COINPAYMENTS</div>
-            <div style={{ color:C.dim, fontSize:8, letterSpacing:"0.1em" }}>SALES INTELLIGENCE</div>
+      <div style={{ background:C.surface, borderBottom:"1px solid "+C.border, padding:isMob?"8px 12px 6px":"0 16px", display:"flex", flexDirection:isMob?"column":"row", alignItems:isMob?"stretch":"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100, gap:isMob?6:8 }}>
+        {/* Logo row — on mobile also hosts the keys button */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:28, height:28, borderRadius:7, background:"linear-gradient(135deg,"+C.accent+","+C.purple+")", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>₿</div>
+            <div>
+              <div style={{ color:C.text, fontWeight:800, fontSize:11, letterSpacing:"0.05em" }}>COINPAYMENTS</div>
+              <div style={{ color:C.dim, fontSize:8, letterSpacing:"0.1em" }}>SALES INTELLIGENCE</div>
+            </div>
           </div>
+          {isMob && <button onClick={function(){setShowKeys(!showKeys);}} style={{ padding:"5px 10px", borderRadius:7, background:"transparent", color:keyColor, border:"1px solid "+keyColor+"50", fontSize:13, cursor:"pointer", lineHeight:1 }}>{keyLabelShort}</button>}
         </div>
-        <div style={{ display:"flex", gap:4, alignItems:"center", overflowX:"auto" }}>
+        {/* Tab row */}
+        <div style={{ display:"flex", gap:4, alignItems:"center", overflowX:"auto", paddingBottom:isMob?2:0 }}>
           {NAV.map(function(n){
-            var id=n[0]; var label=n[1];
-            return <button key={id} onClick={function(){setPage(id);}} style={{ padding:"5px 12px", borderRadius:7, background:page===id?C.accent:"transparent", color:page===id?"#000":C.muted, border:"1px solid "+(page===id?C.accent:"transparent"), fontWeight:page===id?800:500, fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>{label}</button>;
+            var id=n[0]; var label=n[1]; var emoji=label.split(" ")[0];
+            return <button key={id} onClick={function(){setPage(id);}} style={{ padding:isMob?"6px 9px":"5px 12px", borderRadius:7, background:page===id?C.accent:"transparent", color:page===id?"#000":C.muted, border:"1px solid "+(page===id?C.accent:"transparent"), fontWeight:page===id?800:500, fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>
+              {isMob ? <span title={label}>{emoji}</span> : label}
+            </button>;
           })}
-          <div style={{ width:1, height:22, background:C.border, margin:"0 4px" }}/>
-          <button onClick={function(){setShowKeys(!showKeys);}} style={{ padding:"4px 10px", borderRadius:7, background:"transparent", color:keyColor, border:"1px solid "+keyColor+"50", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>{keyLabel}</button>
+          {!isMob && (
+            <>
+              <div style={{ width:1, height:22, background:C.border, margin:"0 4px" }}/>
+              <button onClick={function(){setShowKeys(!showKeys);}} style={{ padding:"4px 10px", borderRadius:7, background:"transparent", color:keyColor, border:"1px solid "+keyColor+"50", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>{keyLabel}</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -3740,7 +3765,7 @@ export default function App() {
             <span style={{ color:C.text, fontSize:12, fontWeight:700 }}>🔑 API Keys</span>
             <button onClick={function(){setShowKeys(false);}} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11 }}>Done</button>
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))", gap:12 }}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax("+( isMob ? 220 : 320 )+"px,1fr))", gap:12 }}>
             {[{ label:"🌐 Tavily Search",  desc:"Live news · app.tavily.com ($35/mo Starter)",   lsk:TKEY_LS,  val:tKey,  fn:function(v){saveKey(TKEY_LS,v,setTKey);},   ph:"tvly-xxxx" },
               { label:"🎯 NinjaPear",      desc:"Executive profiles · nubela.co/dashboard",      lsk:NJKEY_LS, val:njKey, fn:function(v){saveKey(NJKEY_LS,v,setNjKey);}, ph:"api key from nubela.co" }
             ].map(function(k){
@@ -3763,7 +3788,7 @@ export default function App() {
       )}
 
       {/* Main */}
-      <div style={{ padding:"20px 16px", maxWidth:960, margin:"0 auto" }}>
+      <div style={{ padding:isMob?"12px 10px":"20px 16px", maxWidth:960, margin:"0 auto" }}>
 
         {/* Analyze */}
         {page==="analyze" && (
@@ -3774,10 +3799,10 @@ export default function App() {
                 <div style={{ color:C.muted, fontSize:12 }}>Full B2B sales intelligence report for any target.</div>
               </div>
             )}
-            <div style={{ display:"flex", gap:8, marginBottom:12, alignItems:"center" }}>
+            <div style={{ display:"flex", gap:8, marginBottom:12, alignItems:"center", flexWrap:"wrap" }}>
               {!showBulk && (
                 <>
-                  <input value={company} onChange={function(e){setCompany(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")go();}} placeholder="e.g. Bellagio, Saks Fifth Avenue, DraftKings, Amex..." style={{ flex:1, background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", color:C.text, fontSize:14, outline:"none" }}/>
+                  <input value={company} onChange={function(e){setCompany(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")go();}} placeholder="e.g. Bellagio, Saks Fifth Avenue, DraftKings, Amex..." style={{ flex:"1 1 200px", background:C.surface, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", color:C.text, fontSize:14, outline:"none" }}/>
                   <button onClick={go} disabled={loading||!company.trim()} style={{ padding:"12px 28px", borderRadius:8, background:loading?"transparent":C.accent, color:loading?C.muted:"#000", border:"1px solid "+(loading?C.border:C.accent), fontWeight:800, fontSize:13, cursor:loading?"wait":"pointer", whiteSpace:"nowrap" }}>
                     {loading?"Analyzing...":"⚡ Analyze"}
                   </button>
