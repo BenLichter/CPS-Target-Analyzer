@@ -559,7 +559,8 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
       {/* Companies table */}
       {totalCount > 0 && (
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 540 }}>
             <thead>
               <tr style={{ background: C.surface }}>
                 <th style={{ width: 36, padding: "8px 10px", borderBottom: "1px solid " + C.border, textAlign: "center" }}>
@@ -646,6 +647,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
