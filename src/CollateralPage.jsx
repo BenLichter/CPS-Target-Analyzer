@@ -164,7 +164,37 @@ function DocLibrary({ docs, onDelete, onRefresh }) {
 }
 
 // ─── Conversation History Pane ────────────────────────────────────────────────
-function ConvHistory({ conversations, activeId, onSelect, onNew }) {
+function ConvHistory({ conversations, activeId, onSelect, onNew, onDelete, onClearAll }) {
+  var sDeleting = useState({}); var deleting = sDeleting[0]; var setDeleting = sDeleting[1];
+  var sClearing = useState(false); var clearing = sClearing[0]; var setClearing = sClearing[1];
+
+  async function handleDelete(e, conv) {
+    e.stopPropagation();
+    if (!window.confirm('Delete this conversation?')) return;
+    setDeleting(function(p) { var n = Object.assign({}, p); n[conv.id] = true; return n; });
+    try {
+      var r = await fetch('/api/collateral/conversation?id=' + conv.id, { method: 'DELETE' });
+      if (!r.ok) { var d = await r.json(); throw new Error(d.error); }
+      onDelete(conv.id);
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    }
+    setDeleting(function(p) { var n = Object.assign({}, p); delete n[conv.id]; return n; });
+  }
+
+  async function handleClearAll() {
+    if (!window.confirm('Delete all ' + conversations.length + ' conversation' + (conversations.length === 1 ? '' : 's') + '? This cannot be undone.')) return;
+    setClearing(true);
+    try {
+      var r = await fetch('/api/collateral/conversations', { method: 'DELETE' });
+      if (!r.ok) { var d = await r.json(); throw new Error(d.error); }
+      onClearAll();
+    } catch (err) {
+      alert('Clear failed: ' + err.message);
+    }
+    setClearing(false);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 8 }}>
       <button onClick={onNew}
@@ -177,17 +207,30 @@ function ConvHistory({ conversations, activeId, onSelect, onNew }) {
         )}
         {conversations.map(function(conv) {
           var isActive = conv.id === activeId;
+          var isDel = deleting[conv.id];
           return (
-            <div key={conv.id} onClick={function() { onSelect(conv.id); }}
-              style={{ background: isActive ? C.accentDim : C.card, border: '1px solid ' + (isActive ? C.accent : C.border), borderRadius: 8, padding: '9px 10px', cursor: 'pointer', transition: 'all 0.1s' }}>
-              <div style={{ color: isActive ? C.accent : C.text, fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.title || 'Untitled'}</div>
-              <div style={{ color: C.dim, fontSize: 9, marginTop: 2 }}>
-                {conv.messageCount || 0} msgs · {fmtRelTime(conv.lastMessageAt)}
+            <div key={conv.id} onClick={function() { if (!isDel) onSelect(conv.id); }}
+              style={{ background: isActive ? C.accentDim : C.card, border: '1px solid ' + (isActive ? C.accent : C.border), borderRadius: 8, padding: '9px 10px', cursor: isDel ? 'default' : 'pointer', transition: 'all 0.1s', display: 'flex', alignItems: 'flex-start', gap: 6, opacity: isDel ? 0.5 : 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: isActive ? C.accent : C.text, fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conv.title || 'Untitled'}</div>
+                <div style={{ color: C.dim, fontSize: 9, marginTop: 2 }}>
+                  {conv.messageCount || 0} msgs · {fmtRelTime(conv.lastMessageAt)}
+                </div>
               </div>
+              <button onClick={function(e) { handleDelete(e, conv); }} disabled={isDel}
+                style={{ flexShrink: 0, background: 'transparent', border: 'none', color: isDel ? C.dim : C.red, cursor: isDel ? 'default' : 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, opacity: isDel ? 0.4 : 1, marginTop: 1 }}>
+                {isDel ? '⟳' : '🗑'}
+              </button>
             </div>
           );
         })}
       </div>
+      {conversations.length > 0 && (
+        <button onClick={handleClearAll} disabled={clearing}
+          style={{ flexShrink: 0, background: 'transparent', border: 'none', color: clearing ? C.dim : C.muted, fontSize: 10, cursor: clearing ? 'default' : 'pointer', fontFamily: 'inherit', padding: '4px 0', textAlign: 'center', textDecoration: 'underline', opacity: clearing ? 0.5 : 0.7 }}>
+          {clearing ? 'Clearing…' : 'Clear all'}
+        </button>
+      )}
     </div>
   );
 }
@@ -400,6 +443,17 @@ export default function CollateralPage() {
     if (isMob) setMobPane('right');
   }
 
+  function handleConvDeleted(convId) {
+    setConvs(function(prev) { return prev.filter(function(c) { return c.id !== convId; }); });
+    if (activeConvId === convId) { setActiveConvId(null); setMessages([]); }
+  }
+
+  function handleConvsCleared() {
+    setConvs([]);
+    setActiveConvId(null);
+    setMessages([]);
+  }
+
   async function sendMessage(text) {
     var userMsg = { role: 'user', content: text };
     var assistantMsg = { role: 'assistant', content: '', streaming: true, citations: [] };
@@ -526,6 +580,8 @@ export default function CollateralPage() {
               activeId={activeConvId}
               onSelect={loadConversation}
               onNew={newChat}
+              onDelete={handleConvDeleted}
+              onClearAll={handleConvsCleared}
             />
           </div>
         )}
