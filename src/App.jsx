@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import AnalysisView, { Badge, Chip, Sec, ContactCard } from "./AnalysisView";
 import BulkAnalyze from "./BulkAnalyze";
+import CollateralPage from "./CollateralPage";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -3746,12 +3747,13 @@ export default function App() {
 
   var pipeCount = history.length; // pipeline uses history-imported deals, no separate count needed in nav
   var NAV = [
-    ["analyze", "🔍 Analyze"],
-    ["result",  "📊 Result"+(result?" ✓":"")],
-    ["pipeline","📋 Pipeline"],
-    ["deck",    "🎨 Deck Builder"],
-    ["compete", "⚔️ Compete"],
-    ["history", "🕐 History"+(history.length?" ("+history.length+")":"")],
+    ["analyze",    "🔍 Analyze"],
+    ["result",     "📊 Result"+(result?" ✓":"")],
+    ["pipeline",   "📋 Pipeline"],
+    ["deck",       "🎨 Deck Builder"],
+    ["compete",    "⚔️ Compete"],
+    ["history",    "🕐 History"+(history.length?" ("+history.length+")":"")],
+    ["collateral", "📚 Collateral"],
   ];
 
   return (
@@ -3942,6 +3944,10 @@ export default function App() {
             }
           </div>
         )}
+
+        {/* Collateral */}
+        {page==="collateral" && <CollateralPage />}
+
       </div>
     </div>
   );
