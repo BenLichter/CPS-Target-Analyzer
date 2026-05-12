@@ -3750,10 +3750,10 @@ export default function App() {
     ["analyze",    "🔍 Analyze"],
     ["result",     "📊 Result"+(result?" ✓":"")],
     ["pipeline",   "📋 Pipeline"],
+    ["collateral", "📚 Sales Collateral"],
     ["deck",       "🎨 Deck Builder"],
     ["compete",    "⚔️ Compete"],
     ["history",    "🕐 History"+(history.length?" ("+history.length+")":"")],
-    ["collateral", "📚 Collateral"],
   ];
 
   return (
