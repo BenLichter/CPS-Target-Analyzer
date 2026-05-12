@@ -1,4 +1,10 @@
+import { put } from '@vercel/blob';
+import { IncomingForm } from 'formidable';
+import { readFileSync } from 'fs';
 import { Index } from '@upstash/vector';
+
+export const config = { api: { bodyParser: false } };
+export const maxDuration = 300;
 
 async function kvGet(url, token, key) {
   const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
@@ -33,7 +39,6 @@ async function extractText(buffer, filename) {
   var ext = (filename.split('.').pop() || '').toLowerCase();
 
   if (ext === 'pdf') {
-    // Import from lib path to avoid pdf-parse test-file loading issue
     var pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default;
     var pdfData = await pdfParse(buffer);
     return pdfData.text || '';
@@ -76,7 +81,6 @@ async function extractText(buffer, filename) {
     return parsed.data.map(function(row) { return Object.values(row).join(', '); }).join('\n');
   }
 
-  // txt, md, and all other text formats
   return buffer.toString('utf8');
 }
 
@@ -87,41 +91,64 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  var body = req.body || {};
-  var blobUrl = body.blobUrl;
-  var filename = body.filename;
-  var size = body.size;
-  var type = body.type;
-  if (!blobUrl || !filename) return res.status(400).json({ error: 'Missing blobUrl or filename' });
-
   var kvUrl = process.env.KV_REST_API_URL;
   var kvToken = process.env.KV_REST_API_TOKEN;
-  if (!kvUrl || !kvToken) return res.status(500).json({ error: 'KV not configured' });
-  if (!process.env.UPSTASH_VECTOR_REST_URL) return res.status(500).json({ error: 'Vector not configured' });
+  if (!kvUrl || !kvToken) return res.status(500).json({ error: 'KV not configured', step: 'init' });
+  if (!process.env.UPSTASH_VECTOR_REST_URL) return res.status(500).json({ error: 'Vector not configured', step: 'init' });
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return res.status(500).json({ error: 'Blob token not configured', step: 'init' });
 
+  var step = 'init';
   try {
-    // Fetch file from Vercel Blob
-    var fileRes = await fetch(blobUrl);
-    if (!fileRes.ok) return res.status(500).json({ error: 'Failed to fetch blob: ' + fileRes.status });
-    var arrayBuf = await fileRes.arrayBuffer();
-    var buffer = Buffer.from(arrayBuf);
+    // ── Step 1: Parse multipart form ─────────────────────────────────────────
+    step = 'parse';
+    console.log('Parsing form...');
+    var form = new IncomingForm({ maxFileSize: 50 * 1024 * 1024, keepExtensions: true });
+    var parsed = await new Promise(function(resolve, reject) {
+      form.parse(req, function(err, fields, files) {
+        if (err) return reject(err);
+        resolve({ fields: fields, files: files });
+      });
+    });
 
-    // Extract text
+    var uploadedFile = parsed.files.file;
+    if (Array.isArray(uploadedFile)) uploadedFile = uploadedFile[0];
+    if (!uploadedFile) return res.status(400).json({ error: 'No file uploaded', step: step });
+
+    var filename = uploadedFile.originalFilename || uploadedFile.newFilename || 'upload';
+    var size = uploadedFile.size;
+    console.log('File received: ' + filename + ', ' + size + ' bytes');
+
+    // ── Step 2: Read file buffer ──────────────────────────────────────────────
+    step = 'read';
+    var buffer = readFileSync(uploadedFile.filepath);
+
+    // ── Step 3: Upload to Vercel Blob ─────────────────────────────────────────
+    step = 'blob';
+    var blob = await put(filename, buffer, {
+      access: 'public',
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      addRandomSuffix: true,
+    });
+    console.log('Uploaded to blob: ' + blob.url);
+
+    // ── Step 4: Extract text ──────────────────────────────────────────────────
+    step = 'extract';
     var text = await extractText(buffer, filename);
-    if (!text || !text.trim()) return res.status(400).json({ error: 'No text could be extracted from this file' });
+    console.log('Extracted ' + text.length + ' chars from ' + filename);
+    if (!text || !text.trim()) return res.status(400).json({ error: 'No text could be extracted from this file', step: step });
 
-    // Chunk into ~500-word segments with 50-word overlap
+    // ── Step 5: Chunk ─────────────────────────────────────────────────────────
+    step = 'chunk';
     var chunks = chunkText(text.trim());
+    console.log('Chunked into ' + chunks.length + ' segments');
 
-    // Generate a unique docId
+    // ── Step 6: Upsert to Upstash Vector ──────────────────────────────────────
+    step = 'vector';
     var docId = crypto.randomUUID();
-
-    // Upsert chunks into Upstash Vector (built-in embedding — pass data: text)
     var index = new Index({
       url: process.env.UPSTASH_VECTOR_REST_URL,
       token: process.env.UPSTASH_VECTOR_REST_TOKEN,
     });
-
     var batchSize = 10;
     for (var b = 0; b < chunks.length; b += batchSize) {
       var batch = [];
@@ -129,35 +156,32 @@ export default async function handler(req, res) {
         batch.push({
           id: docId + ':' + j,
           data: chunks[j],
-          metadata: {
-            docId: docId,
-            filename: filename,
-            chunkIndex: j,
-            text: chunks[j],
-            totalChunks: chunks.length,
-          },
+          metadata: { docId: docId, filename: filename, chunkIndex: j, text: chunks[j], totalChunks: chunks.length },
         });
       }
       await index.upsert(batch);
     }
+    console.log('Upserted vectors for ' + docId);
 
-    // Save doc metadata to Redis
+    // ── Step 7: Save metadata to Redis ────────────────────────────────────────
+    step = 'redis';
     var existingDocs = (await kvGet(kvUrl, kvToken, 'collateral:docs')) || [];
     var newDoc = {
       id: docId,
       filename: filename,
-      type: type || filename.split('.').pop(),
-      size: size || buffer.length,
+      type: filename.split('.').pop(),
+      size: size,
       uploadedAt: new Date().toISOString(),
-      blobUrl: blobUrl,
+      blobUrl: blob.url,
       chunkCount: chunks.length,
     };
     existingDocs.unshift(newDoc);
     await kvSet(kvUrl, kvToken, 'collateral:docs', existingDocs);
+    console.log('Saved to redis: ' + docId);
 
     return res.status(200).json({ ok: true, docId: docId, chunkCount: chunks.length });
   } catch (error) {
-    console.error('[collateral/process]', error.message, error.stack);
-    return res.status(500).json({ error: error.message });
+    console.error('[collateral/process] step=' + step, error.message, error.stack);
+    return res.status(500).json({ error: error.message, stack: error.stack, step: step });
   }
 }

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { upload } from '@vercel/blob/client';
 
 const C = {
   bg: '#07090F', surface: '#0D1117', card: '#111827', border: '#1F2937',
@@ -49,21 +48,11 @@ function DocLibrary({ docs, onDelete, onRefresh }) {
   async function processFile(file) {
     if (!file) return;
     setUploadStatus('uploading');
-    setUploadMsg('Uploading ' + file.name + '…');
+    setUploadMsg('Uploading & indexing ' + file.name + '…');
     try {
-      var blob = await upload(file.name, file, {
-        access: 'public',
-        handleUploadUrl: '/api/collateral/upload-url',
-      });
-
-      setUploadStatus('processing');
-      setUploadMsg('Extracting text & embedding…');
-
-      var r = await fetch('/api/collateral/process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobUrl: blob.url, filename: file.name, size: file.size, type: file.type }),
-      });
+      var formData = new FormData();
+      formData.append('file', file);
+      var r = await fetch('/api/collateral/process', { method: 'POST', body: formData });
       var data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Processing failed');
 
