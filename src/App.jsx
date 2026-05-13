@@ -11,7 +11,7 @@ import "leaflet/dist/leaflet.css";
   var _fetch = window.fetch.bind(window);
   window.fetch = function(url, opts) {
     return _fetch(url, opts).then(function(r) {
-      if (r.status === 401 && typeof url === 'string' && !url.includes('/api/auth/')) {
+      if (r.status === 401 && typeof url === 'string' && !url.startsWith('/api/auth')) {
         window.location.reload();
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
       }

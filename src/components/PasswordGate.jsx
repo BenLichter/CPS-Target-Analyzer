@@ -12,8 +12,11 @@ export default function PasswordGate({ children }) {
   var sError = useState(''); var error = sError[0]; var setError = sError[1];
   var sSubmitting = useState(false); var submitting = sSubmitting[0]; var setSubmitting = sSubmitting[1];
   var inputRef = useRef(null);
+  var checkedRef = useRef(false);
 
   useEffect(function() {
+    if (checkedRef.current) return;
+    checkedRef.current = true;
     fetch('/api/auth/check')
       .then(function(r) { return r.json(); })
       .then(function(d) { setStatus(d.authenticated ? 'authed' : 'login'); })
