@@ -1,3 +1,4 @@
+import { verifyAuth } from './_lib/auth.js';
 const GAMMA_BASE = 'https://public-api.gamma.app/v1.0';
 
 async function pollGeneration(generationId, apiKey, maxAttempts = 12, intervalMs = 4000) {
@@ -21,6 +22,8 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
+
+  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
