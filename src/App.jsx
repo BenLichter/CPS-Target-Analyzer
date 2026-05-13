@@ -2,8 +2,23 @@ import React, { useState, useRef, useEffect } from "react";
 import AnalysisView, { Badge, Chip, Sec, ContactCard } from "./AnalysisView";
 import BulkAnalyze from "./BulkAnalyze";
 import CollateralPage from "./CollateralPage";
+import PasswordGate from "./components/PasswordGate";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+
+// Reload the page (re-triggering PasswordGate) on any 401 from non-auth endpoints
+(function() {
+  var _fetch = window.fetch.bind(window);
+  window.fetch = function(url, opts) {
+    return _fetch(url, opts).then(function(r) {
+      if (r.status === 401 && typeof url === 'string' && !url.includes('/api/auth/')) {
+        window.location.reload();
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+      }
+      return r;
+    });
+  };
+})();
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL    = "claude-sonnet-4-20250514";
@@ -3757,6 +3772,7 @@ export default function App() {
   ];
 
   return (
+    <PasswordGate>
     <div style={{ background:C.bg, minHeight:"100vh", fontFamily:"ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace", fontSize:12 }}>
       <style>{`*{box-sizing:border-box;margin:0;padding:0}button,input,select,textarea{font-family:inherit;touch-action:manipulation}input::placeholder,textarea::placeholder{color:#334155}.mob-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}`}</style>
 
@@ -3785,6 +3801,7 @@ export default function App() {
             <>
               <div style={{ width:1, height:22, background:C.border, margin:"0 4px" }}/>
               <button onClick={function(){setShowKeys(!showKeys);}} style={{ padding:"4px 10px", borderRadius:7, background:"transparent", color:keyColor, border:"1px solid "+keyColor+"50", fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>{keyLabel}</button>
+              <button onClick={function(){ fetch('/api/auth/logout',{method:'POST'}).finally(function(){ window.location.reload(); }); }} style={{ padding:"4px 10px", borderRadius:7, background:"transparent", color:C.dim, border:"1px solid "+C.border, fontSize:10, cursor:"pointer", whiteSpace:"nowrap" }}>Sign Out</button>
             </>
           )}
         </div>
@@ -3950,5 +3967,6 @@ export default function App() {
 
       </div>
     </div>
+    </PasswordGate>
   );
 }

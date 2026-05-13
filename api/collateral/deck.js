@@ -1,3 +1,4 @@
+import { verifyAuth } from '../_lib/auth.js';
 async function kvGet(url, token, key) {
   var r = await fetch(url + '/get/' + encodeURIComponent(key), { headers: { Authorization: 'Bearer ' + token } });
   var data = await r.json();
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
+  if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
 
   var id = req.query && req.query.id;
   if (!id) return res.status(400).json({ error: 'Missing id' });

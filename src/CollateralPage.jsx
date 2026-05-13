@@ -618,41 +618,18 @@ function BuildModal({ docs, onClose, onSuccess }) {
 }
 
 // ─── Deck Card ────────────────────────────────────────────────────────────────
-function DeckCard({ deck, onClick }) {
-  var styleLabel = { pitch: 'Pitch', pricing: 'Pricing', overview: 'Overview', custom: 'Custom' }[deck.style] || deck.style;
-  return (
-    <div onClick={onClick}
-      style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, cursor: 'pointer', overflow: 'hidden', transition: 'border-color 0.15s' }}
-      onMouseEnter={function(e) { e.currentTarget.style.borderColor = C.accent; }}
-      onMouseLeave={function(e) { e.currentTarget.style.borderColor = C.border; }}>
-      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d2244 50%, #0a1628 100%)', height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid ' + C.border }}>
-        <span style={{ fontSize: 34 }}>🎨</span>
-      </div>
-      <div style={{ padding: '10px 12px' }}>
-        <div style={{ color: C.text, fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }} title={deck.title}>{deck.title}</div>
-        <div style={{ color: C.dim, fontSize: 9 }}>{styleLabel} · {deck.cardCount} slides · {fmtRelTime(deck.createdAt)}</div>
-        {deck.sourceDocs && deck.sourceDocs.length > 0 && (
-          <div style={{ color: C.dim, fontSize: 9, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            📄 {deck.sourceDocs.slice(0, 2).join(', ')}{deck.sourceDocs.length > 2 ? ' +' + (deck.sourceDocs.length - 2) : ''}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Deck Viewer ──────────────────────────────────────────────────────────────
-function DeckViewer({ deck, onBack, onDelete }) {
-  var sDeleting = useState(false); var deleting = sDeleting[0]; var setDeleting = sDeleting[1];
+function DeckCard({ deck, onDeleteDeck }) {
+  var sDel = useState(false); var deleting = sDel[0]; var setDeleting = sDel[1];
   var styleLabel = { pitch: 'Pitch', pricing: 'Pricing', overview: 'Overview', custom: 'Custom' }[deck.style] || deck.style;
 
-  async function handleDelete() {
+  async function handleDelete(e) {
+    e.stopPropagation();
     if (!window.confirm('Delete "' + deck.title + '"?')) return;
     setDeleting(true);
     try {
       var r = await fetch('/api/collateral/deck?id=' + deck.id, { method: 'DELETE' });
       if (!r.ok) { var d = await r.json(); throw new Error(d.error); }
-      onDelete(deck.id);
+      onDeleteDeck(deck.id);
     } catch (err) {
       alert('Delete failed: ' + err.message);
       setDeleting(false);
@@ -660,35 +637,27 @@ function DeckViewer({ deck, onBack, onDelete }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Top bar */}
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-        <button onClick={onBack} style={{ flexShrink: 0, background: 'transparent', border: '1px solid ' + C.border, borderRadius: 6, padding: '5px 10px', color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>← Back</button>
-        <div style={{ flex: 1, color: C.text, fontWeight: 700, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{deck.title}</div>
-        <a href={deck.gammaUrl} target="_blank" rel="noreferrer"
-          style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 6, background: 'transparent', color: C.accent, border: '1px solid ' + C.accent, fontSize: 11, fontWeight: 700, textDecoration: 'none' }}>
-          Open in Gamma ↗
-        </a>
+    <div onClick={function() { window.open(deck.gammaUrl, '_blank', 'noreferrer'); }}
+      style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, cursor: 'pointer', overflow: 'hidden', transition: 'border-color 0.15s', opacity: deleting ? 0.5 : 1 }}
+      onMouseEnter={function(e) { e.currentTarget.style.borderColor = C.accent; }}
+      onMouseLeave={function(e) { e.currentTarget.style.borderColor = C.border; }}>
+      <div style={{ background: 'linear-gradient(135deg, #0a1628 0%, #0d2244 50%, #0a1628 100%)', height: 96, display: 'flex', alignItems: 'center', justifyContent: 'center', borderBottom: '1px solid ' + C.border }}>
+        <span style={{ fontSize: 34 }}>🎨</span>
+      </div>
+      <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: C.text, fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 3 }} title={deck.title}>{deck.title}</div>
+          <div style={{ color: C.dim, fontSize: 9 }}>{styleLabel} · {deck.cardCount} slides · {fmtRelTime(deck.createdAt)}</div>
+          {deck.sourceDocs && deck.sourceDocs.length > 0 && (
+            <div style={{ color: C.dim, fontSize: 9, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              📄 {deck.sourceDocs.slice(0, 2).join(', ')}{deck.sourceDocs.length > 2 ? ' +' + (deck.sourceDocs.length - 2) : ''}
+            </div>
+          )}
+        </div>
         <button onClick={handleDelete} disabled={deleting}
-          style={{ flexShrink: 0, padding: '5px 10px', borderRadius: 6, background: 'transparent', border: '1px solid ' + C.border, color: deleting ? C.dim : C.red, fontSize: 11, cursor: deleting ? 'default' : 'pointer', fontFamily: 'inherit', opacity: deleting ? 0.5 : 1 }}>
-          {deleting ? '⟳' : '🗑 Delete'}
+          style={{ flexShrink: 0, background: 'transparent', border: 'none', color: deleting ? C.dim : C.red, cursor: deleting ? 'default' : 'pointer', fontSize: 13, padding: '0 2px', lineHeight: 1, opacity: deleting ? 0.4 : 1, marginTop: 1 }}>
+          {deleting ? '⟳' : '🗑'}
         </button>
-      </div>
-
-      {/* Metadata chips */}
-      <div style={{ flexShrink: 0, display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, padding: '2px 8px', fontSize: 9, color: C.muted }}>{styleLabel}</span>
-        <span style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, padding: '2px 8px', fontSize: 9, color: C.muted }}>{deck.cardCount} slides</span>
-        <span style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, padding: '2px 8px', fontSize: 9, color: C.muted }}>{deck.chunkCount} chunks</span>
-        <span style={{ background: C.card, border: '1px solid ' + C.border, borderRadius: 10, padding: '2px 8px', fontSize: 9, color: C.muted }}>{fmtRelTime(deck.createdAt)}</span>
-        {(deck.sourceDocs || []).map(function(f) {
-          return <span key={f} style={{ background: C.accentDim, border: '1px solid ' + C.accent + '30', borderRadius: 10, padding: '2px 8px', fontSize: 9, color: C.accent }}>📄 {f}</span>;
-        })}
-      </div>
-
-      {/* Iframe viewer */}
-      <div style={{ flex: 1, borderRadius: 8, overflow: 'hidden', border: '1px solid ' + C.border, background: '#000', minHeight: 0 }}>
-        <iframe src={deck.gammaUrl} style={{ width: '100%', height: '100%', border: 'none' }} title={deck.title} allow="fullscreen" />
       </div>
     </div>
   );
@@ -696,22 +665,6 @@ function DeckViewer({ deck, onBack, onDelete }) {
 
 // ─── Deck Pane ────────────────────────────────────────────────────────────────
 function DeckPane({ decks, onDeckDeleted }) {
-  var sActive = useState(null); var activeDeck = sActive[0]; var setActiveDeck = sActive[1];
-
-  if (activeDeck && !decks.find(function(d) { return d.id === activeDeck.id; })) {
-    setActiveDeck(null);
-  }
-
-  if (activeDeck) {
-    return (
-      <DeckViewer
-        deck={activeDeck}
-        onBack={function() { setActiveDeck(null); }}
-        onDelete={function(id) { onDeckDeleted(id); setActiveDeck(null); }}
-      />
-    );
-  }
-
   return (
     <div style={{ height: '100%', overflowY: 'auto' }}>
       {decks.length === 0 && (
@@ -724,7 +677,7 @@ function DeckPane({ decks, onDeckDeleted }) {
       {decks.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 12 }}>
           {decks.map(function(deck) {
-            return <DeckCard key={deck.id} deck={deck} onClick={function() { setActiveDeck(deck); }} />;
+            return <DeckCard key={deck.id} deck={deck} onDeleteDeck={onDeckDeleted} />;
           })}
         </div>
       )}
