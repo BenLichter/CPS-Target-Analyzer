@@ -6,19 +6,6 @@ import PasswordGate from "./components/PasswordGate";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Reload the page (re-triggering PasswordGate) on any 401 from non-auth endpoints
-(function() {
-  var _fetch = window.fetch.bind(window);
-  window.fetch = function(url, opts) {
-    return _fetch(url, opts).then(function(r) {
-      if (r.status === 401 && typeof url === 'string' && !url.startsWith('/api/auth')) {
-        window.location.reload();
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
-      }
-      return r;
-    });
-  };
-})();
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MODEL    = "claude-sonnet-4-20250514";

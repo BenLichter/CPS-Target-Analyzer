@@ -17,10 +17,17 @@ export default function PasswordGate({ children }) {
   useEffect(function() {
     if (checkedRef.current) return;
     checkedRef.current = true;
+    console.log('[PasswordGate] mount, checking auth');
     fetch('/api/auth/check')
       .then(function(r) { return r.json(); })
-      .then(function(d) { setStatus(d.authenticated ? 'authed' : 'login'); })
-      .catch(function() { setStatus('login'); });
+      .then(function(d) {
+        console.log('[PasswordGate] check result:', d);
+        setStatus(d.authenticated ? 'authed' : 'login');
+      })
+      .catch(function(e) {
+        console.log('[PasswordGate] check error:', e);
+        setStatus('login');
+      });
   }, []);
 
   useEffect(function() {
@@ -41,7 +48,7 @@ export default function PasswordGate({ children }) {
       });
       var data = await r.json();
       if (r.ok && data.ok) {
-        window.location.reload();
+        setStatus('authed');
       } else if (r.status === 429) {
         setError('Too many attempts. Please wait a minute.');
         setSubmitting(false);
