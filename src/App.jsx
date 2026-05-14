@@ -29,6 +29,13 @@ const C = {
 
 const BLOCKED = ["bloomberg.com","wsj.com","ft.com","economist.com","nytimes.com","washingtonpost.com","barrons.com","hbr.org"];
 
+const VERTICAL_WIN_RATES = {
+  financial_services: 1.0,
+  luxury_travel: 0.333,
+  luxury_goods: 1.0,
+  gaming_casinos: 1.0,
+};
+
 const COMPARE_ROWS = [
   ["Merchant Acceptance","merchant_acceptance"],["Fiat On-Ramp","fiat_on_ramp"],
   ["Fiat Off-Ramp","fiat_off_ramp"],["Crypto Breadth","crypto_breadth"],
@@ -1863,6 +1870,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
             {VERTICALS.map(function(v) {
               var m = vMetrics(v.id, geoFilter, cryptoFilter);
+              var wr = VERTICAL_WIN_RATES[v.id] !== undefined ? VERTICAL_WIN_RATES[v.id] : 1;
+              var adjArr = m.totalArr * wr;
+              var adjTam = m.avgTam * wr;
               return (
                 <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s" }}>
@@ -1870,11 +1880,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     <span style={{ fontSize:20 }}>{v.icon}</span>
                     <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
-                  <div style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
-                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:4 }}>Total ARR</div>
-                  {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
-                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
-                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
+                  <div title={wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined}
+                    style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(adjArr):"—"}</div>
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:wr<1?1:4 }}>Total ARR</div>
+                  {wr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:4, lineHeight:1.3 }}>({Math.round(wr*1000)/10}% win-adjusted)</div>}
+                  {adjTam > 0 && <div style={{ marginBottom:6 }}>
+                    <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(adjTam)}</div>
+                    <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(adjTam*0.125)}</div>
                   </div>}
                   <div style={{ color:C.muted, fontSize:12, fontWeight:600, marginBottom:10 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr)+" avg":"—"}</div>
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
@@ -2012,6 +2024,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             var buckets = getBuckets(pipeView.vertical);
             if (pipeView.vertical === "financial_services") {
               var fsAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
+              var fsWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1;
+              var fsAdjArr = fsAll.totalArr * fsWr;
+              var fsAdjTam = fsAll.avgTam * fsWr;
               var fsSegments = FS_ORDER.map(function(id){ return buckets.find(function(b){ return b.id===id; }); }).filter(Boolean);
               return (
                 <div style={{ marginBottom:20 }}>
@@ -2032,15 +2047,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     </div>
                     <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                       <div>
-                        <div style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAll.totalArr) : "—"}</div>
+                        <div title={fsWr < 1 ? "Total potential: "+fmtMoney(fsAll.totalArr)+" · Win-adjusted at "+Math.round(fsWr*1000)/10+"%: "+fmtMoney(fsAdjArr) : undefined}
+                          style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAdjArr) : "—"}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
+                        {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
                       </div>
-                      {fsAll.avgTam > 0 && <div>
-                        <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(fsAll.avgTam)}</div>
+                      {fsAdjTam > 0 && <div>
+                        <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(fsAdjTam)}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>TAM</div>
                       </div>}
-                      {fsAll.avgTam > 0 && <div>
-                        <div style={{ color:C.cyan, fontSize:13, fontWeight:700 }}>{fmtMoney(fsAll.avgTam*0.125)}</div>
+                      {fsAdjTam > 0 && <div>
+                        <div style={{ color:C.cyan, fontSize:13, fontWeight:700 }}>{fmtMoney(fsAdjTam*0.125)}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Crypto SAM</div>
                       </div>}
                       <div>
@@ -2123,6 +2140,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             }
             var ordered = buckets.slice().sort(function(a,b){ return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr; });
             var vertAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
+            var vWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1;
+            var vAdjArr = vertAll.totalArr * vWr;
+            var vAdjTam = vertAll.avgTam * vWr;
             return (
               <div style={{ marginBottom:20 }}>
                 {/* Full-width vertical summary card — clickable to show all targets */}
@@ -2160,15 +2180,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   </div>
                   <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                     <div>
-                      <div style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{vertAll.total ? fmtMoney(vertAll.totalArr) : "—"}</div>
+                      <div title={vWr < 1 ? "Total potential: "+fmtMoney(vertAll.totalArr)+" · Win-adjusted at "+Math.round(vWr*1000)/10+"%: "+fmtMoney(vAdjArr) : undefined}
+                        style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{vertAll.total ? fmtMoney(vAdjArr) : "—"}</div>
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
+                      {vWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(vWr*1000)/10}% win-adjusted)</div>}
                     </div>
-                    {vertAll.avgTam > 0 && <div>
-                      <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(vertAll.avgTam)}</div>
+                    {vAdjTam > 0 && <div>
+                      <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(vAdjTam)}</div>
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>TAM</div>
                     </div>}
-                    {vertAll.avgTam > 0 && <div>
-                      <div style={{ color:C.cyan, fontSize:13, fontWeight:700 }}>{fmtMoney(vertAll.avgTam*0.125)}</div>
+                    {vAdjTam > 0 && <div>
+                      <div style={{ color:C.cyan, fontSize:13, fontWeight:700 }}>{fmtMoney(vAdjTam*0.125)}</div>
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Crypto SAM</div>
                     </div>}
                     <div>
