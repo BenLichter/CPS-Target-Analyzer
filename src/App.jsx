@@ -891,6 +891,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s24 = useState("all"); var segFilter = s24[0]; var setSegFilter = s24[1];
   var s25 = useState(false); var hasMasterTemplate = s25[0]; var setHasMasterTemplate = s25[1];
   var s26 = useState({}); var loadingAnalysis = s26[0]; var setLoadingAnalysis = s26[1];
+  var sExCl = useState("all"); var existingClientFilter = sExCl[0]; var setExistingClientFilter = sExCl[1];
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -1656,10 +1657,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     if (geo && geo!=="all") vd = vd.filter(function(d){ return (d.geography||"")===geo; });
     vd = applyCryptoFilter(vd, cp);
-    var wa = vd.filter(function(d){ return d.arr; });
+    var oppVd = vd.filter(function(d){ return !d.isExistingClient; });
+    var wa = oppVd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var sumTam = tMetrics(vid, "all", null, geo, cp).avgTam;
-    return { total:vd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
+    return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
@@ -1667,19 +1669,20 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
     if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
     td = applyCryptoFilter(td, cp);
-    var wa = td.filter(function(d){ return d.arr; });
+    var oppTd = td.filter(function(d){ return !d.isExistingClient; });
+    var wa = oppTd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-    var ts = calcTamStats(td);
+    var ts = calcTamStats(oppTd);
     var meanTam = tid === "all"
       ? (vid === "financial_services"
           ? FS_SUBVERTS.reduce(function(s, sv) { return s + tMetrics(vid, sv.id, prio, geo, cp).avgTam; }, 0)
-          : (function() { var vals = td.map(getDealTam).filter(function(v){ return v>0; }); return vals.length ? vals.reduce(function(s,v){ return s+v; }, 0) / vals.length : 0; })())
+          : (function() { var vals = oppTd.map(getDealTam).filter(function(v){ return v>0; }); return vals.length ? vals.reduce(function(s,v){ return s+v; }, 0) / vals.length : 0; })())
       : ts.avgTam;
     if (tid === 'neobanks'      && meanTam < 1e12) meanTam = 9e12;
     if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
     if (tid === 'escrow'        && meanTam < 5e11) meanTam = 1e12;
     if (tid === 'regional_bank' && meanTam < 1e12) meanTam = 5e12;
-    return { total:td.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
+    return { total:td.length, opportunityCount:oppTd.length, existingCount:td.length-oppTd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
@@ -1711,6 +1714,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     }
     if (cryptoFilter==="partnered"  && !d.hasCryptoPartner) return false;
     if (cryptoFilter==="greenfield" &&  d.hasCryptoPartner) return false;
+    if (existingClientFilter==="opportunity" &&  !!d.isExistingClient) return false;
+    if (existingClientFilter==="existing"    && !d.isExistingClient)   return false;
     if (oppSizeFilter!=="all") {
       var oa = parseArr(d.arr||"0");
       if (oppSizeFilter==="enterprise" && oa<5000000) return false;
@@ -1883,7 +1888,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   <div title={wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined}
                     style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(adjArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:wr<1?1:4 }}>Total ARR</div>
-                  {wr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:4, lineHeight:1.3 }}>({Math.round(wr*1000)/10}% win-adjusted)</div>}
+                  {wr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>({Math.round(wr*1000)/10}% win-adjusted)</div>}
+                  {m.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, marginBottom:4, lineHeight:1.3 }}>{m.opportunityCount} opportunit{m.opportunityCount===1?"y":"ies"} · {m.existingCount} existing client{m.existingCount===1?"":"s"}</div>}
                   {adjTam > 0 && <div style={{ marginBottom:6 }}>
                     <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(adjTam)}</div>
                     <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(adjTam*0.125)}</div>
@@ -2051,6 +2057,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                           style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAdjArr) : "—"}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
                         {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
+                        {fsAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{fsAll.opportunityCount} opportunit{fsAll.opportunityCount===1?"y":"ies"} · {fsAll.existingCount} existing client{fsAll.existingCount===1?"":"s"}</div>}
                       </div>
                       {fsAdjTam > 0 && <div>
                         <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(fsAdjTam)}</div>
@@ -2184,6 +2191,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{vertAll.total ? fmtMoney(vAdjArr) : "—"}</div>
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
                       {vWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(vWr*1000)/10}% win-adjusted)</div>}
+                      {vertAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{vertAll.opportunityCount} opportunit{vertAll.opportunityCount===1?"y":"ies"} · {vertAll.existingCount} existing client{vertAll.existingCount===1?"":"s"}</div>}
                     </div>
                     {vAdjTam > 0 && <div>
                       <div style={{ color:C.gold, fontSize:13, fontWeight:700 }}>{fmtMoney(vAdjTam)}</div>
@@ -2349,6 +2357,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="partnered">🔗 Crypto-Partnered</option>
               <option value="greenfield">⬜ Greenfield</option>
             </select>
+            <select value={existingClientFilter} onChange={function(e){ setExistingClientFilter(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+(existingClientFilter!=="all"?C.green:C.border), borderRadius:6, padding:"6px 10px", color:existingClientFilter!=="all"?C.green:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">All Accounts</option>
+              <option value="opportunity">Opportunities Only</option>
+              <option value="existing">Existing Clients Only</option>
+            </select>
             <select value={sortOrder} onChange={function(e){ var v=e.target.value; setSortOrder(v); localStorage.setItem(SORT_KEY_LS,v); }}
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
               <option value="az">A–Z</option>
@@ -2373,6 +2387,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             if (volTierFilter!=="all"){ var vt=VOL_TIERS.find(function(v){return v.id===volTierFilter;}); chips.push({ label:vt?vt.label:volTierFilter, clear:function(){setVolTierFilter("all");} }); }
             if (geoFilter!=="all")  chips.push({ label:geoFilter, clear:function(){setGeoFilter("all");} });
             if (cryptoFilter!=="all") chips.push({ label:cryptoFilter==="partnered"?"🔗 Partnered":"⬜ Greenfield", clear:function(){setCryptoFilter("all");} });
+            if (existingClientFilter!=="all") chips.push({ label:existingClientFilter==="opportunity"?"Opportunities Only":"Existing Clients Only", clear:function(){setExistingClientFilter("all");} });
             if (segFilter!=="all"){ var sb=getBuckets(pipeView.vertical).find(function(b){return b.id===segFilter;}); chips.push({ label:"Segment: "+(sb?sb.label:segFilter), clear:function(){setSegFilter("all");} }); }
             if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
             if (!chips.length) return null;
@@ -2387,7 +2402,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   </span>;
                 })}
                 <span style={{ color:C.muted, marginLeft:"auto", flexShrink:0 }}>{tierDeals.length} account{tierDeals.length!==1?"s":""} · {fmtMoney(filteredArr)} ARR</span>
-                <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); }}
+                <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); setExistingClientFilter("all"); }}
                   style={{ background:"transparent", border:"none", color:C.gold, cursor:"pointer", fontSize:10, fontWeight:600, fontFamily:"inherit", flexShrink:0 }}>Clear All ×</button>
               </div>
             );
@@ -2429,13 +2444,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                           var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
                           var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
-                          var cardStyle = { width:"100%", boxSizing:"border-box", overflow:"hidden", background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:12, display:"flex", flexDirection:"column" };
+                          var isExisting = !!deal.isExistingClient;
+                          var cardStyle = { width:"100%", boxSizing:"border-box", overflow:"hidden", background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":isExisting?C.green+"55":C.border), borderLeft:isExisting?"4px solid "+C.green:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:12, display:"flex", flexDirection:"column" };
                           var actionBtn = { boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 4px", fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:"inherit", color:C.muted, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" };
                           return (
                           <div key={deal.id} style={cardStyle}>
 
                             {/* 1. Top accent strip */}
-                            <div style={{ height:4, background:dealVert.color, width:"100%", flexShrink:0 }}/>
+                            <div style={{ height:4, background:isExisting?C.green:dealVert.color, width:"100%", flexShrink:0 }}/>
+                            {isExisting && <div style={{ background:C.green+"1A", borderBottom:"1px solid "+C.green+"33", padding:"2px 12px", display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
+                              <span style={{ color:C.green, fontSize:8, fontWeight:800, letterSpacing:"0.1em" }}>✓ EXISTING CLIENT</span>
+                            </div>}
 
                             {/* 2. Header row: company name (left) + P1/P2 + × (right) */}
                             <div style={{ display:"flex", alignItems:"center", padding:"10px 12px 6px", gap:8, minWidth:0 }}>
@@ -2626,6 +2645,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                               title="Generate a deck first"
                                               style={Object.assign({},actionBtn,{ color:C.dim, background:C.surface, borderColor:C.border, opacity:0.5, cursor:"default" })}>📊 View Deck</button>
                                         }
+                                        <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id ? Object.assign({},x,{isExistingClient:!x.isExistingClient}) : x; }); }); }}
+                                          title={isExisting ? "Remove existing client flag — include in opportunity totals" : "Mark as existing client — exclude from opportunity totals"}
+                                          style={Object.assign({},actionBtn,{ color:isExisting?C.green:C.muted, background:isExisting?C.greenDim:C.surface, borderColor:isExisting?C.green+"50":C.border, fontWeight:isExisting?700:400 })}>
+                                          {isExisting ? "✓ Existing" : "Mark Existing"}
+                                        </button>
                                       </div>
                                       {(deckErr || deckTimeout) && (
                                         <div style={{ padding:"5px 12px 4px", display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
