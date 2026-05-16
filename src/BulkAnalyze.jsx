@@ -28,6 +28,46 @@ var PRIORITY_OPTS = [
 var STATUS_ICON = { queued: "⏳", analyzing: "🔄", done: "✅", failed: "❌" };
 var STATUS_COLOR = { queued: C.muted, analyzing: C.accent, done: C.green, failed: C.red };
 
+var FS_TIER_MAP = [
+  { id:"brokerage",    terms:["brokerage","broker","fx","fxbroker","proptrading","marketmaker","fxbroker","prop"] },
+  { id:"escrow",       terms:["escrow","trust","escrowservice"] },
+  { id:"remittance",   terms:["remittance","remittancefintech","remittancefintechs","crossborder","moneytransfer","mto","moneytransferoperator"] },
+  { id:"regional_bank",terms:["regionalbank","corporatetreasury","treasury","corporatebanking","bank","corporatebank"] },
+  { id:"neobanks",     terms:["neobanks","neobank","neobanking","digitalbank","digitalbanking","challengerbank"] },
+];
+var OTHER_TIER_MAP = [
+  { id:"tier1", terms:["tier1","t1","premium","enterprise","top"] },
+  { id:"tier2", terms:["tier2","t2","standard","midmarket","mid"] },
+  { id:"tier3", terms:["tier3","t3","growth","emerging","small"] },
+];
+
+function normalizeTier(raw, vertical, rowNum) {
+  if (!raw) return "";
+  var lower = String(raw).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!lower) return "";
+  var isFS = !vertical || vertical === "financial_services";
+  var map = isFS ? FS_TIER_MAP.concat(OTHER_TIER_MAP) : OTHER_TIER_MAP.concat(FS_TIER_MAP);
+  // Exact id match
+  for (var i = 0; i < map.length; i++) {
+    if (lower === map[i].id.replace(/_/g, "")) return map[i].id;
+  }
+  // Exact term match
+  for (var i = 0; i < map.length; i++) {
+    for (var j = 0; j < map[i].terms.length; j++) {
+      if (lower === map[i].terms[j]) return map[i].id;
+    }
+  }
+  // Partial contains
+  for (var i = 0; i < map.length; i++) {
+    for (var j = 0; j < map[i].terms.length; j++) {
+      var t = map[i].terms[j];
+      if (lower.includes(t) || t.includes(lower)) return map[i].id;
+    }
+  }
+  if (rowNum !== undefined) console.log("[BulkAnalyze] Row", rowNum + 1, "unmatched tier value:", JSON.stringify(raw));
+  return "";
+}
+
 function parseText(text) {
   var lines = text.trim().split(/\r?\n/).filter(function(l) { return l.trim(); });
   if (!lines.length) return [];
@@ -41,16 +81,23 @@ function parseText(text) {
     var websiteIdx = headers.findIndex(function(h) { return h.includes("website") || h.includes("domain"); });
     var segmentIdx = headers.findIndex(function(h) { return h.includes("segment") || h.includes("vertical"); });
     var priorityIdx = headers.findIndex(function(h) { return h.includes("priority"); });
+    var tierIdx = headers.findIndex(function(h) {
+      return h === "tier" || h.includes("tier selection") || h.includes("sub-segment") ||
+             h.includes("sub segment") || h.includes("subsegment") || h.includes("category");
+    });
     if (nameIdx < 0) nameIdx = 0;
     return lines.slice(1).map(function(line, i) {
       var cells = line.split(",").map(function(c) { return c.trim().replace(/^["']|["']$/g, ""); });
       var name = cells[nameIdx] || "";
       if (!name) return null;
+      var seg = segmentIdx >= 0 ? (cells[segmentIdx] || "") : "";
+      var rawTier = tierIdx >= 0 ? (cells[tierIdx] || "") : "";
       return {
         id: "c_" + i + "_" + Date.now(),
         name: name,
         website: websiteIdx >= 0 ? (cells[websiteIdx] || "") : "",
-        segment: segmentIdx >= 0 ? (cells[segmentIdx] || "") : "",
+        segment: seg,
+        tier: normalizeTier(rawTier, seg, i),
         priority: priorityIdx >= 0 ? (cells[priorityIdx] || "") : "",
       };
     }).filter(Boolean);
@@ -70,11 +117,14 @@ function parseXLSXBuffer(buffer) {
     return rows.map(function(row, i) {
       var name = String(row["Company Name"] || row["company_name"] || row["Company"] || row["Name"] || row["company"] || row["name"] || "").trim();
       if (!name) return null;
+      var seg = String(row["Segment"] || row["segment"] || row["Vertical"] || row["vertical"] || "");
+      var rawTier = String(row["Tier"] || row["tier"] || row["TIER"] || row["Tier Selection"] || row["Sub-segment"] || row["Sub Segment"] || row["Category"] || "");
       return {
         id: "c_" + i + "_" + Date.now(),
         name: name,
         website: String(row["Website"] || row["website"] || row["Domain"] || row["domain"] || ""),
-        segment: String(row["Segment"] || row["segment"] || row["Vertical"] || row["vertical"] || ""),
+        segment: seg,
+        tier: normalizeTier(rawTier, seg, i),
         priority: String(row["Priority"] || row["priority"] || ""),
       };
     }).filter(Boolean);
@@ -84,18 +134,18 @@ function parseXLSXBuffer(buffer) {
 function downloadTemplate() {
   var wb = XLSX.utils.book_new();
   var data = [
-    ["Company Name", "Website", "Segment", "Priority"],
-    ["Stripe", "stripe.com", "financial_services", "p1"],
-    ["Revolut", "revolut.com", "financial_services", "p1"],
-    ["MGM Resorts", "mgmresorts.com", "gaming_casinos", "p2"],
+    ["Company Name", "Website", "Segment", "Tier", "Priority"],
+    ["Stripe", "stripe.com", "financial_services", "neobanks", "p1"],
+    ["Revolut", "revolut.com", "financial_services", "neobanks", "p1"],
+    ["MGM Resorts", "mgmresorts.com", "gaming_casinos", "", "p2"],
   ];
   var ws = XLSX.utils.aoa_to_sheet(data);
-  ws["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 12 }];
+  ws["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, ws, "Companies");
   XLSX.writeFile(wb, "bulk_analysis_template.xlsx");
 }
 
-export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, addResultsToPipeline }) {
+export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, addResultsToPipeline, updateExistingInPipeline }) {
   var s1 = useState(function() {
     try {
       var saved = JSON.parse(localStorage.getItem(BULK_LS) || "[]");
@@ -113,6 +163,8 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var s9 = useState(false); var showPaste = s9[0]; var setShowPaste = s9[1];
   var s10 = useState(null); var addedMsg = s10[0]; var setAddedMsg = s10[1];
   var s11 = useState(null); var addingProgress = s11[0]; var setAddingProgress = s11[1];
+  var s12 = useState(false); var updateMode = s12[0]; var setUpdateMode = s12[1];
+  var s13 = useState(null); var updatePreview = s13[0]; var setUpdatePreview = s13[1];
 
   var runningRef = useRef(false);
   var stopRef = useRef(false);
@@ -165,6 +217,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
     var withDefaults = rows.map(function(r) {
       return Object.assign({}, r, {
         segment: r.segment || defSegment,
+        tier: r.tier || "",
         priority: r.priority || defPriority,
         status: "queued",
         result: null,
@@ -316,36 +369,42 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
     setTimeout(function() { setAddedMsg(null); }, 3000);
   }
 
-  function buildAddList(rows) {
-    var noResult = []; var alreadyIn = []; var toAdd = [];
+  function buildAddList(rows, forUpdate) {
+    var noResult = []; var toAdd = []; var toUpdate = [];
     rows.forEach(function(c) {
       if (!c.result) { noResult.push(c.name); return; }
-      if (pipeHas(c.result.company || c.name)) { alreadyIn.push(c.name); return; }
-      toAdd.push({ result: c.result, segment: c.segment, priority: c.priority });
+      var inPipe = pipeHas(c.result.company || c.name);
+      if (inPipe && forUpdate) {
+        toUpdate.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "", matchName: c.result.company || c.name });
+      } else if (!inPipe) {
+        toAdd.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "" });
+      }
     });
-    return { toAdd: toAdd, noResult: noResult, alreadyIn: alreadyIn };
+    return { toAdd: toAdd, toUpdate: toUpdate, noResult: noResult };
   }
 
   function handleAddSelected() {
-    var r = buildAddList(checkedDone);
-    if (!r.toAdd.length) {
+    var r = buildAddList(checkedDone, updateMode);
+    if (!r.toAdd.length && !r.toUpdate.length) {
       if (r.noResult.length) setAddedMsg("rerun");
-      else if (r.alreadyIn.length) setAddedMsg("already");
+      else setAddedMsg("already");
       setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    batchAddToPipeline(r.toAdd, 0);
+    if (updateMode && r.toUpdate.length > 0) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate }); }
+    else { batchAddToPipeline(r.toAdd, 0); }
   }
 
   function handleAddAll() {
-    var r = buildAddList(allDone);
-    if (!r.toAdd.length) {
+    var r = buildAddList(allDone, updateMode);
+    if (!r.toAdd.length && !r.toUpdate.length) {
       if (r.noResult.length) setAddedMsg("rerun");
-      else if (r.alreadyIn.length) setAddedMsg("already");
+      else setAddedMsg("already");
       setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    batchAddToPipeline(r.toAdd, 0);
+    if (updateMode && r.toUpdate.length > 0) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate }); }
+    else { batchAddToPipeline(r.toAdd, 0); }
   }
 
   var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "5px 8px", color: C.text, fontSize: 10, fontFamily: "inherit", outline: "none" };
@@ -437,6 +496,10 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
               {PRIORITY_OPTS.map(function(o) { return <option key={o.id} value={o.id}>{o.label}</option>; })}
             </select>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, paddingBottom: 2 }}>
+            <input type="checkbox" id="updateModeChk" checked={updateMode} onChange={function(e) { setUpdateMode(e.target.checked); setUpdatePreview(null); }} style={{ cursor: "pointer" }} />
+            <label htmlFor="updateModeChk" style={{ color: C.muted, fontSize: 10, cursor: "pointer" }}>Update existing targets (match by company name, fill empty fields)</label>
+          </div>
           {totalCount > 0 && (
             <div style={{ color: C.muted, fontSize: 10, paddingBottom: 2 }}>
               <strong style={{ color: C.text }}>{totalCount}</strong> loaded
@@ -474,6 +537,29 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
               ⬛ Stop
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Update preview confirmation */}
+      {updatePreview && (
+        <div style={{ background: C.greenDim, border: "1px solid " + C.green + "50", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ color: C.green, fontSize: 11, fontWeight: 700, flex: 1 }}>
+            {updatePreview.toUpdate.length > 0 && <span>{updatePreview.toUpdate.length} target{updatePreview.toUpdate.length !== 1 ? "s" : ""} will be updated</span>}
+            {updatePreview.toUpdate.length > 0 && updatePreview.toAdd.length > 0 && <span style={{ color: C.dim }}> · </span>}
+            {updatePreview.toAdd.length > 0 && <span>{updatePreview.toAdd.length} new will be added</span>}
+          </span>
+          <button onClick={function() {
+            if (updatePreview.toUpdate.length && updateExistingInPipeline) updateExistingInPipeline(updatePreview.toUpdate);
+            if (updatePreview.toAdd.length) batchAddToPipeline(updatePreview.toAdd, 0);
+            setUpdatePreview(null);
+          }}
+            style={Object.assign({}, btn, { background: C.green, color: "#000", padding: "5px 12px", fontSize: 10 })}>
+            ✓ Confirm
+          </button>
+          <button onClick={function() { setUpdatePreview(null); }}
+            style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.muted, padding: "5px 10px", fontSize: 10 })}>
+            ✕ Cancel
+          </button>
         </div>
       )}
 

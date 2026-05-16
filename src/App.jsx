@@ -892,6 +892,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s25 = useState(false); var hasMasterTemplate = s25[0]; var setHasMasterTemplate = s25[1];
   var s26 = useState({}); var loadingAnalysis = s26[0]; var setLoadingAnalysis = s26[1];
   var sExCl = useState("all"); var existingClientFilter = sExCl[0]; var setExistingClientFilter = sExCl[1];
+  var sAT = useState(null); var autoTagState = sAT[0]; var setAutoTagState = sAT[1];
+  var sATM = useState(false); var autoTagModal = sATM[0]; var setAutoTagModal = sATM[1];
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -1592,6 +1594,46 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     setTimeout(function(){ setBulkFinProgress(null); }, 4000);
   }
 
+  async function autoTagUntagged() {
+    var untagged = deals.filter(function(d){ return !d.tier && d.vertical; });
+    if (!untagged.length) return;
+    setAutoTagState({ status:'running', done:0, total:untagged.length, results:[] });
+    var results = [];
+    for (var i = 0; i < untagged.length; i++) {
+      var deal = untagged[i];
+      var tierOptions = deal.vertical === 'financial_services'
+        ? 'brokerage (FX/Broker firms), escrow (escrow services), remittance (money transfer fintechs), regional_bank (corporate treasury/banks), neobanks (digital banks/neobanks)'
+        : 'tier1 (Tier 1 — largest/premium), tier2 (Tier 2 — mid-market), tier3 (Tier 3 — growth/emerging)';
+      try {
+        var r = await fetch('/api/anthropic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 120,
+            messages: [{ role: 'user', content: 'Classify this company into ONE tier. Company: "' + deal.company + '". Vertical: ' + deal.vertical + '. Notes: "' + (deal.notes||'').slice(0,200) + '".\n\nTier options: ' + tierOptions + '.\n\nReturn ONLY valid JSON (no markdown): {"tier":"tier_id","confidence":0.0-1.0,"reasoning":"one sentence"}' }]
+          })
+        });
+        var d = await r.json();
+        var text = ((d.content && d.content[0] && d.content[0].text) || '').replace(/```json?|```/g,'').trim();
+        var parsed = JSON.parse(text);
+        if (parsed.tier) {
+          var conf = typeof parsed.confidence === 'number' ? parsed.confidence : 1;
+          results.push({ id:deal.id, company:deal.company, tier:parsed.tier, confidence:conf, reasoning:parsed.reasoning||'' });
+          var capturedId = deal.id; var capturedTier = parsed.tier; var capturedConf = conf;
+          setDeals(function(prev){ return prev.map(function(x){ return x.id===capturedId ? Object.assign({},x,{ tier:capturedTier, tierConfidence:capturedConf }) : x; }); });
+        }
+      } catch(e) {
+        results.push({ id:deal.id, company:deal.company, tier:null, confidence:0, error:(e&&e.message)||String(e) });
+      }
+      var snap = results.slice();
+      setAutoTagState(function(prev){ return prev ? Object.assign({},prev,{ done:i+1, results:snap }) : null; });
+      if (i < untagged.length-1) await new Promise(function(res){ setTimeout(res, 400); });
+    }
+    setAutoTagState({ status:'done', done:untagged.length, total:untagged.length, results:results });
+    setAutoTagModal(true);
+  }
+
   function importFromHistory(h) {
     var already = deals.find(function(d){ return d.company.toLowerCase()===(h.company||"").toLowerCase(); });
     if (already) return;
@@ -1810,8 +1852,53 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     );
   }
 
+  var untaggedCount = deals.filter(function(d){ return !d.tier && d.vertical; }).length;
+
   return (
     <div>
+
+      {/* ── Auto-tag results modal ──────────────────────────────────────────── */}
+      {autoTagModal && autoTagState && autoTagState.status === 'done' && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:14, padding:"24px 28px", maxWidth:480, width:"100%", maxHeight:"80vh", overflowY:"auto" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div style={{ color:C.text, fontWeight:800, fontSize:14 }}>🏷 Auto-tag Results</div>
+              <button onClick={function(){ setAutoTagModal(false); setAutoTagState(null); }}
+                style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:16, padding:"0 2px" }}>✕</button>
+            </div>
+            {(function(){
+              var tagged = autoTagState.results.filter(function(r){ return r.tier; });
+              var lowConf = tagged.filter(function(r){ return r.confidence < 0.7; });
+              var errors = autoTagState.results.filter(function(r){ return !r.tier; });
+              return (
+                <div>
+                  <div style={{ display:"flex", gap:16, marginBottom:14, flexWrap:"wrap" }}>
+                    <div style={{ color:C.green, fontWeight:700, fontSize:13 }}>{tagged.length} tagged</div>
+                    {lowConf.length > 0 && <div style={{ color:C.gold, fontWeight:700, fontSize:13 }}>⚠ {lowConf.length} low confidence</div>}
+                    {errors.length > 0 && <div style={{ color:C.red, fontWeight:700, fontSize:13 }}>{errors.length} failed</div>}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    {autoTagState.results.map(function(r, i){
+                      return (
+                        <div key={i} style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:7, padding:"8px 10px" }}>
+                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                            <span style={{ color:C.text, fontWeight:700, fontSize:11 }}>{r.company}</span>
+                            {r.tier ? <span style={{ color:r.confidence<0.7?C.gold:C.green, fontSize:10, fontWeight:700 }}>{r.tier} ({Math.round(r.confidence*100)}%)</span>
+                              : <span style={{ color:C.red, fontSize:10 }}>failed</span>}
+                          </div>
+                          {r.reasoning && <div style={{ color:C.dim, fontSize:9, marginTop:2 }}>{r.reasoning}</div>}
+                          {r.error && <div style={{ color:C.red, fontSize:9, marginTop:2 }}>{r.error.slice(0,80)}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {lowConf.length > 0 && <div style={{ color:C.gold, fontSize:10, marginTop:10, lineHeight:1.5 }}>Targets with &lt;70% confidence are marked ⚠ Verify tier on their cards.</div>}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ── Analysis overlay ─────────────────────────────────────────────── */}
       {overlayAnalysis && (
@@ -1872,6 +1959,19 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               })}
             </div>
           </div>
+          {/* Auto-tag banner */}
+          {untaggedCount > 0 && (
+            <div style={{ background:C.goldDim, border:"1px solid "+C.gold+"50", borderRadius:8, padding:"8px 14px", marginBottom:12, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <span style={{ color:C.gold, fontSize:10, flex:1 }}><strong>{untaggedCount}</strong> target{untaggedCount!==1?"s":""} {untaggedCount!==1?"have":"has"} no tier tag — tier data improves segmentation and ARR accuracy.</span>
+              {autoTagState && autoTagState.status==='running'
+                ? <span style={{ color:C.gold, fontSize:10, fontWeight:700 }}>🏷 Tagging… {autoTagState.done}/{autoTagState.total}</span>
+                : <button onClick={autoTagUntagged}
+                    style={{ background:C.gold, color:"#000", border:"none", borderRadius:5, padding:"4px 10px", fontSize:10, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    🏷 Auto-tag with AI
+                  </button>
+              }
+            </div>
+          )}
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:10, marginBottom:16 }}>
             {VERTICALS.map(function(v) {
               var m = vMetrics(v.id, geoFilter, cryptoFilter);
@@ -2672,6 +2772,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                     style={{ background:"transparent", border:"none", padding:0, color:dt?dt.color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", fontWeight:600, textDecoration:"underline", textUnderlineOffset:2 }}>
                                     {dt?"Change":"+"} {deal.vertical==="financial_services"?"Segment":"Tier"}
                                   </button>
+                                  {deal.tierConfidence !== undefined && deal.tierConfidence < 0.7 && (
+                                    <span title={"AI confidence: "+Math.round((deal.tierConfidence||0)*100)+"% — please verify this tier assignment"}
+                                      style={{ color:C.gold, fontSize:8, fontWeight:700, background:C.goldDim, border:"1px solid "+C.gold+"44", borderRadius:4, padding:"1px 5px", cursor:"default" }}>
+                                      ⚠ Verify tier
+                                    </span>
+                                  )}
                                   <button onClick={function(){ setEditId(deal.id); }}
                                     style={{ background:"transparent", border:"none", padding:0, color:C.dim, fontSize:9, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", textUnderlineOffset:2 }}>✏ Edit</button>
                                 </div>
@@ -3747,7 +3853,7 @@ export default function App() {
       var now = new Date().toISOString();
       entries.push({
         id: newId,
-        deal: { id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] },
+        deal: { id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, tier: item.tier || "", priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] },
         data: result
       });
     });
@@ -3764,6 +3870,24 @@ export default function App() {
     // Save each analysis individually — no pipeline in POST; debounced save handles cp_pipeline
     entries.forEach(function(entry) {
       fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ analysisId: entry.id, analysisData: entry.data }) }).catch(function(){});
+    });
+  }
+
+  function updateExistingInPipeline(items) {
+    setPipelineDeals(function(prev) {
+      var next = prev.slice();
+      items.forEach(function(item) {
+        var idx = next.findIndex(function(d) {
+          return d.company && d.company.toLowerCase().trim() === (item.matchName || "").toLowerCase().trim();
+        });
+        if (idx < 0) return;
+        var existing = next[idx];
+        var patch = {};
+        if (item.tier && !existing.tier) patch.tier = item.tier;
+        if (item.priority && !existing.priority) patch.priority = item.priority;
+        if (Object.keys(patch).length > 0) next[idx] = Object.assign({}, existing, patch);
+      });
+      return next;
     });
   }
 
@@ -3902,6 +4026,7 @@ export default function App() {
                   njKey={njKey}
                   pipelineDeals={pipelineDeals}
                   addResultsToPipeline={addResultsToPipeline}
+                  updateExistingInPipeline={updateExistingInPipeline}
                 />
               : (
                 <>
