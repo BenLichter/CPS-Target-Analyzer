@@ -2966,7 +2966,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             <div style={{ color:C.text, fontSize:15, fontWeight:800, marginBottom:6 }}>Confirm Bulk Analysis</div>
             <div style={{ color:C.muted, fontSize:11, lineHeight:1.8, marginBottom:20 }}>
               <div><strong style={{ color:C.text }}>{bulkRunConfirm.deals.length}</strong> targets will be analyzed</div>
-              <div>Estimated cost: ~$2 × {bulkRunConfirm.deals.length} = <strong style={{ color:C.gold }}>~${bulkRunConfirm.deals.length * 2} total</strong></div>
               <div>Estimated time: ~{Math.ceil(bulkRunConfirm.deals.length / 3 * 30 / 60)} min at concurrency 3</div>
             </div>
             <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>

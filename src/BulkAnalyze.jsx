@@ -511,7 +511,6 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
             <div style={{ color: C.text, fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Confirm Analysis Run</div>
             <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.8, marginBottom: 16 }}>
               <div><strong style={{ color: C.text }}>{confirmModal.count}</strong> targets will be analyzed</div>
-              <div>Estimated cost: ~$2 × {confirmModal.count} = <strong style={{ color: C.gold }}>~${confirmModal.count * 2} total</strong></div>
               <div>Estimated time: ~{Math.ceil(confirmModal.count / BATCH_SIZE * 30 / 60)} min at concurrency {BATCH_SIZE}</div>
             </div>
             {confirmModal.count > 25 && (
