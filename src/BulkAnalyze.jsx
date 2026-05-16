@@ -184,12 +184,15 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var s11 = useState(null); var addingProgress = s11[0]; var setAddingProgress = s11[1];
   var s12 = useState(false); var updateMode = s12[0]; var setUpdateMode = s12[1];
   var s13 = useState(null); var updatePreview = s13[0]; var setUpdatePreview = s13[1];
+  var s14 = useState(null); var confirmModal = s14[0]; var setConfirmModal = s14[1];
+  var s15 = useState(""); var capInput = s15[0]; var setCapInput = s15[1];
 
   var runningRef = useRef(false);
   var stopRef = useRef(false);
   var fileRef = useRef(null);
   var pendingItemsRef = useRef([]);
   var mountChecked = useRef(false);
+  var abortControllersRef = useRef({});
 
   useEffect(function() {
     try {
@@ -230,6 +233,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var allDone       = companies.filter(function(c) { return c.status === "done"; });
   var checkedDone   = companies.filter(function(c) { return c.status === "done" && checked[c.id]; });
   var checkedQueued = companies.filter(function(c) { return c.status === "queued" && checked[c.id]; });
+  var checkedAll    = companies.filter(function(c) { return !!checked[c.id]; });
   var canStart      = checkedQueued.length > 0 && !running;
 
   function loadRows(rows) {
@@ -276,14 +280,22 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   }
 
   async function processOne(idx, companyName) {
+    var controller = new AbortController();
+    abortControllersRef.current[idx] = controller;
     for (var attempt = 0; attempt < 3; attempt++) {
+      if (controller.signal.aborted) break;
       try {
+        var abortPromise = new Promise(function(_, reject) {
+          controller.signal.addEventListener('abort', function() { reject(new Error('Aborted')); }, { once: true });
+        });
         var data = await Promise.race([
           runAnalysis(companyName, function() {}, { tavily: tKey, ninjapear: njKey }),
           new Promise(function(_, reject) {
             setTimeout(function() { reject(new Error("Timed out after 3 minutes")); }, 180000);
-          })
+          }),
+          abortPromise,
         ]);
+        delete abortControllersRef.current[idx];
         setCompanies(function(prev) {
           var upd = prev.slice();
           upd[idx] = Object.assign({}, upd[idx], { status: "done", result: data, error: null });
@@ -292,11 +304,21 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
         return true;
       } catch(e) {
         var msg = (e && e.message) || String(e);
+        if (msg === 'Aborted' || controller.signal.aborted) {
+          delete abortControllersRef.current[idx];
+          setCompanies(function(prev) {
+            var upd = prev.slice();
+            if (upd[idx]) upd[idx] = Object.assign({}, upd[idx], { status: "queued", error: null });
+            return upd;
+          });
+          return false;
+        }
         var isRateLimit = msg.includes("429") || msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("too many");
         if (isRateLimit && attempt < 2) {
           await new Promise(function(resolve) { setTimeout(resolve, 30000); });
           continue;
         }
+        delete abortControllersRef.current[idx];
         setCompanies(function(prev) {
           var upd = prev.slice();
           upd[idx] = Object.assign({}, upd[idx], { status: "failed", error: msg.slice(0, 140), result: null });
@@ -305,6 +327,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
         return false;
       }
     }
+    delete abortControllersRef.current[idx];
     return false;
   }
 
@@ -418,30 +441,50 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
     return { toAdd: toAdd, toUpdate: toUpdate, noResult: noResult, unmatched: unmatched };
   }
 
+  function buildUpdateList(rows) {
+    var matched = []; var unmatched = [];
+    rows.forEach(function(c) {
+      var deal = pipeMatchNorm(c.name, "");
+      if (deal) {
+        matched.push({ matchName: deal.company, tier: c.tier || "", priority: c.priority || "", segment: c.segment || "", website: c.website || "" });
+      } else {
+        unmatched.push(c.name);
+      }
+    });
+    return { matched: matched, unmatched: unmatched };
+  }
+
+  function handleUpdateExisting() {
+    var r = buildUpdateList(checkedAll);
+    setUpdatePreview({ matched: r.matched, unmatched: r.unmatched });
+  }
+
+  function triggerAnalysisConfirm(n) {
+    if (n === 0) return;
+    setConfirmModal({ count: n });
+    setCapInput("");
+  }
+
   function handleAddSelected() {
-    var r = buildAddList(checkedDone, updateMode);
-    if (!r.toAdd.length && !r.toUpdate.length) {
+    var r = buildAddList(checkedDone, false);
+    if (!r.toAdd.length) {
       if (r.noResult.length) setAddedMsg("rerun");
-      else if (updateMode && r.unmatched.length) setUpdatePreview({ toAdd: [], toUpdate: [], unmatched: r.unmatched });
       else setAddedMsg("already");
-      if (!updateMode || !r.unmatched.length) setTimeout(function() { setAddedMsg(null); }, 3500);
+      setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    if (updateMode) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate, unmatched: r.unmatched || [] }); }
-    else { batchAddToPipeline(r.toAdd, 0); }
+    batchAddToPipeline(r.toAdd, 0);
   }
 
   function handleAddAll() {
-    var r = buildAddList(allDone, updateMode);
-    if (!r.toAdd.length && !r.toUpdate.length) {
+    var r = buildAddList(allDone, false);
+    if (!r.toAdd.length) {
       if (r.noResult.length) setAddedMsg("rerun");
-      else if (updateMode && r.unmatched.length) setUpdatePreview({ toAdd: [], toUpdate: [], unmatched: r.unmatched });
       else setAddedMsg("already");
-      if (!updateMode || !r.unmatched.length) setTimeout(function() { setAddedMsg(null); }, 3500);
+      setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    if (updateMode) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate, unmatched: r.unmatched || [] }); }
-    else { batchAddToPipeline(r.toAdd, 0); }
+    batchAddToPipeline(r.toAdd, 0);
   }
 
   var inp = { background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "5px 8px", color: C.text, fontSize: 10, fontFamily: "inherit", outline: "none" };
@@ -461,6 +504,55 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
 
   return (
     <div>
+      {/* Confirmation modal */}
+      {confirmModal && (
+        <div style={{ position: "fixed", inset: 0, background: "#000000BB", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 14, padding: "28px 32px", maxWidth: 440, width: "90%", boxShadow: "0 20px 60px #000" }}>
+            <div style={{ color: C.text, fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Confirm Analysis Run</div>
+            <div style={{ color: C.muted, fontSize: 11, lineHeight: 1.8, marginBottom: 16 }}>
+              <div><strong style={{ color: C.text }}>{confirmModal.count}</strong> targets will be analyzed</div>
+              <div>Estimated cost: ~$2 × {confirmModal.count} = <strong style={{ color: C.gold }}>~${confirmModal.count * 2} total</strong></div>
+              <div>Estimated time: ~{Math.ceil(confirmModal.count / BATCH_SIZE * 30 / 60)} min at concurrency {BATCH_SIZE}</div>
+            </div>
+            {confirmModal.count > 25 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ color: C.red, fontSize: 11, marginBottom: 6 }}>⚠ More than 25 targets. Type <strong>{confirmModal.count}</strong> to confirm:</div>
+                <input
+                  autoFocus
+                  value={capInput}
+                  onChange={function(e) { setCapInput(e.target.value); }}
+                  placeholder={"Type " + confirmModal.count + " to confirm"}
+                  style={Object.assign({}, inp, { width: "100%", boxSizing: "border-box" })}
+                />
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button
+                autoFocus={confirmModal.count <= 25}
+                onClick={function() { setConfirmModal(null); setCapInput(""); }}
+                style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.text })}>
+                Cancel
+              </button>
+              <button
+                disabled={confirmModal.count > 25 && capInput.trim() !== String(confirmModal.count)}
+                onClick={function() {
+                  if (confirmModal.count > 25 && capInput.trim() !== String(confirmModal.count)) return;
+                  setConfirmModal(null);
+                  setCapInput("");
+                  startBulk();
+                }}
+                style={Object.assign({}, btn, {
+                  background: (confirmModal.count <= 25 || capInput.trim() === String(confirmModal.count)) ? C.accent : C.surface,
+                  color: (confirmModal.count <= 25 || capInput.trim() === String(confirmModal.count)) ? "#000" : C.dim,
+                  opacity: (confirmModal.count <= 25 || capInput.trim() === String(confirmModal.count)) ? 1 : 0.5,
+                  cursor: (confirmModal.count <= 25 || capInput.trim() === String(confirmModal.count)) ? "pointer" : "default",
+                })}>
+                Confirm &amp; Analyze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div>
@@ -582,14 +674,14 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
         <div style={{ background: C.greenDim, border: "1px solid " + C.green + "50", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: (updatePreview.unmatched && updatePreview.unmatched.length > 0) ? 10 : 0 }}>
             <span style={{ color: C.green, fontSize: 11, fontWeight: 700, flex: 1 }}>
-              {updatePreview.toUpdate.length > 0 && <span>{updatePreview.toUpdate.length} matched · </span>}
-              {(updatePreview.unmatched && updatePreview.unmatched.length > 0) && <span style={{ color: C.gold }}>{updatePreview.unmatched.length} unmatched (will be skipped)</span>}
-              {updatePreview.toUpdate.length === 0 && (!updatePreview.unmatched || updatePreview.unmatched.length === 0) && <span>Nothing to update</span>}
+              {(updatePreview.matched || []).length > 0 && <span>{(updatePreview.matched || []).length} matched · 0 will be analyzed</span>}
+              {(updatePreview.unmatched && updatePreview.unmatched.length > 0) && <span style={{ color: C.gold }}> · {updatePreview.unmatched.length} unmatched (will be skipped)</span>}
+              {(updatePreview.matched || []).length === 0 && (!updatePreview.unmatched || updatePreview.unmatched.length === 0) && <span>Nothing to update</span>}
             </span>
-            {updatePreview.toUpdate.length > 0 && (
+            {(updatePreview.matched || []).length > 0 && (
               <button onClick={function() {
-                var n = updatePreview.toUpdate.length;
-                if (updateExistingInPipeline) updateExistingInPipeline(updatePreview.toUpdate);
+                var n = (updatePreview.matched || []).length;
+                if (updateExistingInPipeline) updateExistingInPipeline(updatePreview.matched);
                 setUpdatePreview(null);
                 setAddedMsg("updated:" + n);
                 setTimeout(function() { setAddedMsg(null); }, 4000);
@@ -661,27 +753,34 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
       {/* Action buttons */}
       {totalCount > 0 && (
         <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={startBulk} disabled={!canStart || !!addingProgress}
-            style={Object.assign({}, btn, { background: canStart && !addingProgress ? C.accent : C.surface, color: canStart && !addingProgress ? "#000" : C.dim, border: "1px solid " + (canStart && !addingProgress ? C.accent : C.border), opacity: canStart && !addingProgress ? 1 : 0.5, cursor: canStart && !addingProgress ? "pointer" : "default" })}>
-            {running ? "⟳ Running…" : ("▶ Analyze Selected (" + checkedQueued.length + ")")}
-          </button>
-          {queuedCount > checkedQueued.length && !running && (
+          {updateMode ? (
+            <button onClick={handleUpdateExisting} disabled={checkedAll.length === 0 || !!addingProgress}
+              style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.green + "70", color: C.green, opacity: (checkedAll.length > 0 && !addingProgress) ? 1 : 0.5, cursor: (checkedAll.length > 0 && !addingProgress) ? "pointer" : "default" })}>
+              ✓ Update Existing ({checkedAll.length})
+            </button>
+          ) : (
+            <button onClick={function() { triggerAnalysisConfirm(checkedQueued.length); }} disabled={!canStart || !!addingProgress}
+              style={Object.assign({}, btn, { background: canStart && !addingProgress ? C.accent : C.surface, color: canStart && !addingProgress ? "#000" : C.dim, border: "1px solid " + (canStart && !addingProgress ? C.accent : C.border), opacity: canStart && !addingProgress ? 1 : 0.5, cursor: canStart && !addingProgress ? "pointer" : "default" })}>
+              {running ? "⟳ Running…" : ("▶ Analyze Selected (" + checkedQueued.length + ")")}
+            </button>
+          )}
+          {totalCount > checkedAll.length && !running && (
             <button onClick={function() {
               var all = {};
               companies.forEach(function(c) { all[c.id] = true; });
               setChecked(all);
             }}
               style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.muted, padding: "5px 10px", fontSize: 10 })}>
-              ☑ Select All ({queuedCount})
+              ☑ Select All ({totalCount})
             </button>
           )}
-          {allDone.length > 0 && (
+          {!updateMode && allDone.length > 0 && (
             <button onClick={handleAddAll} disabled={!!addingProgress}
               style={Object.assign({}, btn, { background: addingProgress ? C.surface : C.greenDim, color: addingProgress ? C.dim : C.green, border: "1px solid " + (addingProgress ? C.border : C.green + "50"), opacity: addingProgress ? 0.5 : 1, cursor: addingProgress ? "default" : "pointer" })}>
               {addingProgress && addingProgress.failedAt === null ? "⟳ Adding…" : ("✚ Add All to Pipeline (" + allDone.length + ")")}
             </button>
           )}
-          {checkedDone.length > 0 && checkedDone.length < allDone.length && (
+          {!updateMode && checkedDone.length > 0 && checkedDone.length < allDone.length && (
             <button onClick={handleAddSelected} disabled={!!addingProgress}
               style={Object.assign({}, btn, { background: addingProgress ? C.surface : C.surface, color: addingProgress ? C.dim : C.accent, border: "1px solid " + (addingProgress ? C.border : C.accent + "50"), opacity: addingProgress ? 0.5 : 1, cursor: addingProgress ? "default" : "pointer" })}>
               ✚ Add Selected ({checkedDone.length})
@@ -773,6 +872,11 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
                             style={{ background: "transparent", border: "1px solid " + C.border, color: C.accent, borderRadius: 5, padding: "3px 8px", fontSize: 9, cursor: "pointer", fontFamily: "inherit" }}>
                             🔄 Retry
                           </button>
+                        )}
+                        {c.status === "analyzing" && (
+                          <button onClick={function() { var ctrl = abortControllersRef.current[idx]; if (ctrl) ctrl.abort(); }}
+                            title="Abort this analysis"
+                            style={{ background: "transparent", border: "none", color: C.red, padding: "3px 6px", fontSize: 10, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
                         )}
                         {c.status === "queued" && !running && (
                           <button onClick={function() { setCompanies(function(prev) { return prev.filter(function(x) { return x.id !== c.id; }); }); }}

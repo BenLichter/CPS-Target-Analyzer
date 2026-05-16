@@ -3894,14 +3894,17 @@ export default function App() {
     setPipelineDeals(function(prev) {
       var next = prev.slice();
       items.forEach(function(item) {
+        var normItem = (item.matchName || "").toLowerCase().replace(/\s+/g, " ").trim().replace(/^the\s+/, "");
         var idx = next.findIndex(function(d) {
-          return d.company && d.company.toLowerCase().trim() === (item.matchName || "").toLowerCase().trim();
+          return d.company && d.company.toLowerCase().replace(/\s+/g, " ").trim().replace(/^the\s+/, "") === normItem;
         });
         if (idx < 0) return;
         var existing = next[idx];
         var patch = {};
-        if (item.tier && !existing.tier) patch.tier = item.tier;
-        if (item.priority && !existing.priority) patch.priority = item.priority;
+        if (item.priority) patch.priority = item.priority;
+        if (item.tier) patch.tier = item.tier;
+        if (item.segment) patch.vertical = item.segment;
+        if (item.website) patch.website = item.website;
         if (Object.keys(patch).length > 0) next[idx] = Object.assign({}, existing, patch);
       });
       return next;
