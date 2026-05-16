@@ -863,6 +863,23 @@ function WorldMap({ deals }) {
   );
 }
 
+function relativeDate(iso) {
+  if (!iso) return "";
+  var d = new Date(iso);
+  var now = new Date();
+  var ms = now - d;
+  if (ms < 0) return d.toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+  var days = Math.floor(ms / 86400000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  if (days < 7) return days + " days ago";
+  if (days < 14) return "Last week";
+  if (days < 30) return Math.floor(days/7) + " weeks ago";
+  if (days < 60) return "Last month";
+  if (days < 365) return Math.floor(days/30) + " months ago";
+  return d.toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+}
+
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
 function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
@@ -897,6 +914,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var sExCl = useState("all"); var existingClientFilter = sExCl[0]; var setExistingClientFilter = sExCl[1];
   var sAT = useState(null); var autoTagState = sAT[0]; var setAutoTagState = sAT[1];
   var sATM = useState(false); var autoTagModal = sATM[0]; var setAutoTagModal = sATM[1];
+  var s27 = useState("all"); var datePreset = s27[0]; var setDatePreset = s27[1];
+  var s28 = useState({from:"",to:""}); var customRange = s28[0]; var setCustomRange = s28[1];
+  var s29 = useState({}); var selectedCards = s29[0]; var setSelectedCards = s29[1];
+  var s30 = useState(null); var bulkRunConfirm = s30[0]; var setBulkRunConfirm = s30[1];
+  var s31 = useState(null); var bulkRunProgress = s31[0]; var setBulkRunProgress = s31[1];
+  var bulkAbortRef = useRef(false);
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -1682,6 +1705,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       if (order==="vol_high") return getDealVolume(b)-getDealVolume(a);
       if (order==="vol_low")  return getDealVolume(a)-getDealVolume(b);
       if (order==="recent")   return new Date(b.addedAt||0)-new Date(a.addedAt||0);
+      if (order==="oldest") return new Date(a.addedAt||0)-new Date(b.addedAt||0);
       if (order==="priority"){ var PORD={"tier_1":0,"tier_2":1,"tier_3":2}; var pa=PORD[a.priority||"tier_1"]??3,pb=PORD[b.priority||"tier_1"]??3; return pa-pb||a.company.localeCompare(b.company); }
       if (order==="stage"){    var si=PIPE_STAGES.findIndex(function(s){return s.id===a.stage;}),sj=PIPE_STAGES.findIndex(function(s){return s.id===b.stage;}); return si-sj||a.company.localeCompare(b.company); }
       return a.company.localeCompare(b.company);
@@ -1775,8 +1799,27 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       if (volTierFilter==="t3vol" && (vv<1e10||vv>=1e11)) return false;
       if (volTierFilter==="t4vol" && vv>=1e10) return false;
     }
+    if (datePreset !== "all") {
+      var addedD = d.addedAt ? new Date(d.addedAt) : null;
+      if (!addedD) return false;
+      var now = new Date();
+      var startD = null;
+      if (datePreset === "7d")      startD = new Date(now - 7*86400000);
+      else if (datePreset === "30d")     startD = new Date(now - 30*86400000);
+      else if (datePreset === "90d")     startD = new Date(now - 90*86400000);
+      else if (datePreset === "quarter") { var q=Math.floor(now.getMonth()/3)*3; startD = new Date(now.getFullYear(), q, 1); }
+      else if (datePreset === "year")    startD = new Date(now.getFullYear(), 0, 1);
+      else if (datePreset === "custom") {
+        if (customRange.from && addedD < new Date(customRange.from)) return false;
+        if (customRange.to && addedD > new Date(customRange.to + "T23:59:59")) return false;
+      }
+      if (startD && addedD < startD) return false;
+    }
     return true;
   }), sortOrder);
+
+  var selectedCount = Object.keys(selectedCards).filter(function(id){ return !!selectedCards[id]; }).length;
+  var selectedDeals = deals.filter(function(d){ return !!selectedCards[d.id]; });
 
   // ── Shared add-form snippet ──────────────────────────────────────────────────
   function AddForm({ vert }) {
@@ -2408,7 +2451,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             <span style={{ color:C.dim, fontSize:13 }}>›</span>
             <span style={{ color:activeTier?activeTier.color:C.green, fontWeight:800, fontSize:16 }}>{activeTier?activeTier.label:"All Targets"}</span>
             <span style={{ color:C.dim, fontSize:11 }}>
-              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all"||oppSizeFilter!=="all"||volTierFilter!=="all")
+              {(dealSearch||stageFilter!=="all"||prioFilter!=="all"||arrFilter!=="all"||geoFilter!=="all"||cryptoFilter!=="all"||oppSizeFilter!=="all"||volTierFilter!=="all"||datePreset!=="all")
                 ? "(Showing "+tierDeals.length+" of "+baseTierDeals.length+")"
                 : "("+baseTierDeals.length+")"}
             </span>
@@ -2474,6 +2517,25 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="opportunity">Opportunities Only</option>
               <option value="existing">Existing Clients Only</option>
             </select>
+            <select value={datePreset} onChange={function(e){ setDatePreset(e.target.value); }}
+              style={{ background:C.surface, border:"1px solid "+(datePreset!=="all"?C.cyan:C.border), borderRadius:6, padding:"6px 10px", color:datePreset!=="all"?C.cyan:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
+              <option value="all">Added: All time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="90d">Last 90 days</option>
+              <option value="quarter">This quarter</option>
+              <option value="year">This year</option>
+              <option value="custom">Custom range…</option>
+            </select>
+            {datePreset === "custom" && (
+              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                <input type="date" value={customRange.from} onChange={function(e){ setCustomRange(function(p){ return Object.assign({},p,{from:e.target.value}); }); }}
+                  style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 8px", color:C.text, fontSize:10, fontFamily:"inherit", outline:"none", cursor:"pointer" }}/>
+                <span style={{ color:C.dim, fontSize:10 }}>–</span>
+                <input type="date" value={customRange.to} onChange={function(e){ setCustomRange(function(p){ return Object.assign({},p,{to:e.target.value}); }); }}
+                  style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 8px", color:C.text, fontSize:10, fontFamily:"inherit", outline:"none", cursor:"pointer" }}/>
+              </div>
+            )}
             <select value={sortOrder} onChange={function(e){ var v=e.target.value; setSortOrder(v); localStorage.setItem(SORT_KEY_LS,v); }}
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
               <option value="az">A–Z</option>
@@ -2483,6 +2545,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="vol_high">Volume: High → Low</option>
               <option value="vol_low">Volume: Low → High</option>
               <option value="recent">Recently Added</option>
+              <option value="oldest">Oldest Added</option>
               <option value="priority">Priority (Tier 1 first)</option>
               <option value="stage">Stage</option>
             </select>
@@ -2501,6 +2564,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             if (existingClientFilter!=="all") chips.push({ label:existingClientFilter==="opportunity"?"Opportunities Only":"Existing Clients Only", clear:function(){setExistingClientFilter("all");} });
             if (segFilter!=="all"){ var sb=getBuckets(pipeView.vertical).find(function(b){return b.id===segFilter;}); chips.push({ label:"Segment: "+(sb?sb.label:segFilter), clear:function(){setSegFilter("all");} }); }
             if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
+            if (datePreset!=="all"){ var dpLabel=datePreset==="7d"?"Last 7 days":datePreset==="30d"?"Last 30 days":datePreset==="90d"?"Last 90 days":datePreset==="quarter"?"This quarter":datePreset==="year"?"This year":(customRange.from||"?")+" – "+(customRange.to||"?"); chips.push({ label:"Added: "+dpLabel, clear:function(){setDatePreset("all");setCustomRange({from:"",to:""});} }); }
             if (!chips.length) return null;
             var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0"); },0);
             return (
@@ -2513,7 +2577,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   </span>;
                 })}
                 <span style={{ color:C.muted, marginLeft:"auto", flexShrink:0 }}>{tierDeals.length} account{tierDeals.length!==1?"s":""} · {fmtMoney(filteredArr)} ARR</span>
-                <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); setExistingClientFilter("all"); }}
+                <button onClick={function(){ setDealSearch(""); setStageFilter("all"); setPrioFilter("all"); setArrFilter("all"); setGeoFilter("all"); setCryptoFilter("all"); setOppSizeFilter("all"); setVolTierFilter("all"); setExistingClientFilter("all"); setDatePreset("all"); setCustomRange({from:"",to:""}); }}
                   style={{ background:"transparent", border:"none", color:C.gold, cursor:"pointer", fontSize:10, fontWeight:600, fontFamily:"inherit", flexShrink:0 }}>Clear All ×</button>
               </div>
             );
@@ -2640,6 +2704,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                             {deal.analysisUpdatedAt && (
                               <div style={{ padding:"4px 12px", borderBottom:"1px solid "+C.border }}>
                                 <div style={{ color:C.dim, fontSize:9 }}>🕐 Last analyzed: {new Date(deal.analysisUpdatedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
+                              </div>
+                            )}
+
+                            {/* 5c. Added to pipeline timestamp */}
+                            {deal.addedAt && (
+                              <div style={{ padding:"2px 12px 6px" }}>
+                                <div style={{ color:C.dim, fontSize:9 }}>📅 Added: {relativeDate(deal.addedAt)}</div>
                               </div>
                             )}
 
