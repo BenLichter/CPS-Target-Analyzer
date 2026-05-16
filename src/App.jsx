@@ -1591,6 +1591,54 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     });
   }
 
+  async function bulkRerunAnalysis(targetDeals) {
+    if (!targetDeals.length) return;
+    bulkAbortRef.current = false;
+    var initStatuses = {};
+    targetDeals.forEach(function(d) { initStatuses[d.id] = "pending"; });
+    setBulkRunProgress({ queue: targetDeals, statuses: initStatuses, running: true, done: 0, failed: 0 });
+    var BULK_BATCH = 3;
+    for (var i = 0; i < targetDeals.length; i += BULK_BATCH) {
+      if (bulkAbortRef.current) break;
+      var batch = targetDeals.slice(i, i + BULK_BATCH);
+      setBulkRunProgress(function(prev) {
+        var ns = Object.assign({}, prev.statuses);
+        batch.forEach(function(d) { ns[d.id] = "running"; });
+        return Object.assign({}, prev, { statuses: ns });
+      });
+      await Promise.all(batch.map(function(deal) {
+        return runAnalysis(deal.company, function(){}, { tavily:tKey||"", ninjapear:njKey||"" })
+          .then(function(data) {
+            var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
+            var t = (data && data.tam_som_arr) || {};
+            var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+            var freshFin = buildFinancials(t, freshArr, false);
+            freshFin.updatedByRerun = true;
+            var freshCp = detectCryptoPartners(data);
+            var now = new Date().toISOString();
+            setDeals(function(prev){ return prev.map(function(d){
+              if (d.id!==deal.id) return d;
+              return Object.assign({},d,{ analysisData:data, geography:freshGeo, notes:(data.executive_summary||"").slice(0,120), financials:freshFin, arr:freshArr, cryptoPartners:freshCp.cryptoPartners, hasCryptoPartner:freshCp.hasCryptoPartner, analysisUpdatedAt:now });
+            }); });
+            setBulkRunProgress(function(prev) {
+              var ns = Object.assign({}, prev.statuses);
+              ns[deal.id] = "done";
+              return Object.assign({}, prev, { statuses: ns, done: prev.done + 1 });
+            });
+            fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:deal.id, analysisData:data }) }).catch(function(){});
+          })
+          .catch(function(err) {
+            setBulkRunProgress(function(prev) {
+              var ns = Object.assign({}, prev.statuses);
+              ns[deal.id] = "failed:" + (err.message||String(err)).slice(0, 80);
+              return Object.assign({}, prev, { statuses: ns, failed: prev.failed + 1 });
+            });
+          });
+      }));
+    }
+    setBulkRunProgress(function(prev) { return Object.assign({}, prev, { running: false }); });
+  }
+
   async function bulkUpdateFinancials(vertical) {
     var targets = deals.filter(function(d){ return d.vertical === vertical; });
     if (!targets.length) return;
@@ -1880,8 +1928,21 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
   // ── Actions bar (import + add button) ───────────────────────────────────────
   function ActionsBar({ vert, defaultTier }) {
+    var allSel = tierDeals.length > 0 && tierDeals.every(function(d){ return !!selectedCards[d.id]; });
+    var anySel = tierDeals.some(function(d){ return !!selectedCards[d.id]; });
     return (
-      <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+      <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginBottom:14, flexWrap:"wrap", alignItems:"center" }}>
+        {tierDeals.length > 0 && (
+          <button onClick={function(){
+            if (allSel) {
+              setSelectedCards(function(prev){ var n=Object.assign({},prev); tierDeals.forEach(function(d){ delete n[d.id]; }); return n; });
+            } else {
+              setSelectedCards(function(prev){ var n=Object.assign({},prev); tierDeals.forEach(function(d){ n[d.id]=true; }); return n; });
+            }
+          }} style={{ background:"transparent", border:"none", color:anySel?C.cyan:C.dim, fontSize:10, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", textUnderlineOffset:2, padding:"4px 0" }}>
+            {allSel ? "☐ Deselect All" : "☑ Select All"}
+          </button>
+        )}
         {history.length > 0 && (
           <select onChange={function(e){ if(e.target.value!=="") { importFromHistory(history[parseInt(e.target.value)]); e.target.value=""; } }}
             style={{ background:C.surface, border:"1px solid "+C.accent+"50", borderRadius:7, padding:"6px 12px", color:C.accent, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
@@ -2635,6 +2696,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
                             {/* 2. Header row: company name (left) + tier badge select + × (right) */}
                             <div style={{ display:"flex", alignItems:"center", padding:"10px 12px 6px", gap:8, minWidth:0 }}>
+                              <input type="checkbox" checked={!!selectedCards[deal.id]}
+                                onChange={function(e){ setSelectedCards(function(prev){ return Object.assign({},prev,{[deal.id]:e.target.checked}); }); }}
+                                style={{ flexShrink:0, cursor:"pointer", accentColor:activeVert.color, width:14, height:14 }}/>
                               <div style={{ flex:"1 1 0", minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:C.text, fontWeight:800, fontSize:14, lineHeight:1.2 }}>{deal.company}</div>
                               <select value={dealPrio} onChange={function(e){ var v=e.target.value; setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:v}):x; }); }); }}
                                 style={{ flexShrink:0, background:prioBg, border:"1px solid "+prioColor, color:prioColor||C.dim, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4, outline:"none", appearance:"none", WebkitAppearance:"none", minWidth:32, textAlign:"center" }}>
@@ -2892,6 +2956,109 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Bulk run confirm modal */}
+      {bulkRunConfirm && (
+        <div style={{ position:"fixed", inset:0, background:"#000000BB", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:14, padding:"28px 32px", maxWidth:440, width:"90%", boxShadow:"0 20px 60px #000" }}>
+            <div style={{ color:C.text, fontSize:15, fontWeight:800, marginBottom:6 }}>Confirm Bulk Analysis</div>
+            <div style={{ color:C.muted, fontSize:11, lineHeight:1.8, marginBottom:20 }}>
+              <div><strong style={{ color:C.text }}>{bulkRunConfirm.deals.length}</strong> targets will be analyzed</div>
+              <div>Estimated cost: ~$2 × {bulkRunConfirm.deals.length} = <strong style={{ color:C.gold }}>~${bulkRunConfirm.deals.length * 2} total</strong></div>
+              <div>Estimated time: ~{Math.ceil(bulkRunConfirm.deals.length / 3 * 30 / 60)} min at concurrency 3</div>
+            </div>
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+              <button autoFocus onClick={function(){ setBulkRunConfirm(null); }}
+                style={{ background:"transparent", border:"1px solid "+C.border, color:C.text, borderRadius:7, padding:"8px 16px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
+              <button onClick={function(){ var d=bulkRunConfirm.deals; setBulkRunConfirm(null); bulkRerunAnalysis(d); }}
+                style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 16px", fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>Confirm &amp; Analyze</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk run progress modal */}
+      {bulkRunProgress && (function(){
+        var totalBulk = bulkRunProgress.queue.length;
+        var doneBulk = bulkRunProgress.done;
+        var failedBulk = bulkRunProgress.failed;
+        return (
+          <div style={{ position:"fixed", inset:0, background:"#000000BB", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+            <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:14, padding:"24px 28px", maxWidth:500, width:"90%", maxHeight:"80vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px #000" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                <div style={{ color:C.text, fontWeight:800, fontSize:14 }}>{bulkRunProgress.running ? "🔄 Running Analysis…" : "Analysis Complete"}</div>
+                {!bulkRunProgress.running && <button onClick={function(){ setBulkRunProgress(null); }} style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:16 }}>✕</button>}
+              </div>
+              <div style={{ marginBottom:12 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.muted, marginBottom:4 }}>
+                  <span>{doneBulk + failedBulk} of {totalBulk} completed</span>
+                  <span><span style={{ color:C.green }}>✅ {doneBulk}</span>{failedBulk > 0 && <span style={{ color:C.red }}> · ❌ {failedBulk}</span>}</span>
+                </div>
+                <div style={{ background:C.border, borderRadius:999, height:6, overflow:"hidden" }}>
+                  <div style={{ background:"linear-gradient(90deg, "+C.accent+", "+C.green+")", height:"100%", width:Math.round((doneBulk+failedBulk)/Math.max(totalBulk,1)*100)+"%", transition:"width 0.4s", borderRadius:999 }}/>
+                </div>
+              </div>
+              <div style={{ overflowY:"auto", flex:1, marginBottom:12 }}>
+                {bulkRunProgress.queue.map(function(d){
+                  var st = bulkRunProgress.statuses[d.id] || "pending";
+                  var isDone = st === "done"; var isFailed = st.startsWith("failed"); var isRunning = st === "running";
+                  var icon = isDone ? "✅" : isFailed ? "❌" : isRunning ? "🔄" : "⏳";
+                  var color = isDone ? C.green : isFailed ? C.red : isRunning ? C.accent : C.dim;
+                  return (
+                    <div key={d.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"5px 0", borderBottom:"1px solid "+C.border+"44" }}>
+                      <span style={{ color:color, fontSize:12, flexShrink:0 }}>{icon}</span>
+                      <span style={{ color:C.text, fontSize:11, flex:1 }}>{d.company}</span>
+                      {isFailed && <span style={{ color:C.red, fontSize:9 }}>{st.slice(7)}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {bulkRunProgress.running ? (
+                <button onClick={function(){ bulkAbortRef.current = true; }}
+                  style={{ background:C.redDim, color:C.red, border:"1px solid "+C.red+"40", borderRadius:7, padding:"7px 16px", fontSize:10, cursor:"pointer", fontFamily:"inherit", alignSelf:"flex-end" }}>
+                  ⬛ Stop (current batch will complete)
+                </button>
+              ) : (
+                <div>
+                  <div style={{ color:C.muted, fontSize:11, marginBottom:10 }}>
+                    {doneBulk} succeeded · {failedBulk} failed{failedBulk > 0 ? " — select failed targets and re-run to retry" : ""}
+                  </div>
+                  <button onClick={function(){ setBulkRunProgress(null); setSelectedCards({}); }}
+                    style={{ background:C.green, color:"#000", border:"none", borderRadius:7, padding:"7px 16px", fontWeight:800, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Done</button>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Sticky bulk action bar */}
+      {selectedCount > 0 && (
+        <div style={{ position:"fixed", bottom:0, left:0, right:0, background:C.surface, borderTop:"2px solid "+C.border, padding:"10px 20px", display:"flex", alignItems:"center", gap:10, zIndex:99, flexWrap:"wrap", boxShadow:"0 -4px 20px #000" }}>
+          <span style={{ color:C.text, fontWeight:800, fontSize:13, flexShrink:0 }}>{selectedCount} selected</span>
+          <button onClick={function(){ setBulkRunConfirm({ deals: selectedDeals }); }}
+            style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 16px", fontWeight:800, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+            🔄 Run Analysis on Selected
+          </button>
+          <button onClick={function(){
+            setDeals(function(prev){ return prev.map(function(d){ return selectedCards[d.id] ? Object.assign({},d,{isExistingClient:true}) : d; }); });
+            setSelectedCards({});
+          }} style={{ background:C.greenDim, color:C.green, border:"1px solid "+C.green+"50", borderRadius:7, padding:"8px 12px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+            ✓ Mark as Existing Client
+          </button>
+          <select onChange={function(e){ if(!e.target.value) return; var v=e.target.value; setDeals(function(prev){ return prev.map(function(d){ return selectedCards[d.id] ? Object.assign({},d,{priority:v}) : d; }); }); e.target.value=""; setSelectedCards({}); }}
+            style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:7, padding:"8px 10px", fontSize:11, cursor:"pointer", fontFamily:"inherit", color:C.muted, outline:"none" }}>
+            <option value="">Set Tier…</option>
+            <option value="tier_1">Tier 1</option>
+            <option value="tier_2">Tier 2</option>
+            <option value="tier_3">Tier 3</option>
+          </select>
+          <button onClick={function(){ setSelectedCards({}); }}
+            style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"8px 12px", fontSize:11, cursor:"pointer", fontFamily:"inherit", marginLeft:"auto" }}>
+            ✕ Clear Selection
+          </button>
         </div>
       )}
 
