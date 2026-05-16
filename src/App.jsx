@@ -784,7 +784,7 @@ function WorldMap({ deals }) {
         else                                  matchBucket = d.vertical === mapTierF;
       }
       if (!matchBucket) return;
-      if (mapPrioF !== "all" && (d.priority||"p1") !== mapPrioF) return;
+      if (mapPrioF !== "all" && (d.priority||"tier_1") !== mapPrioF) return;
       if (mapGeoF !== "all" && (d.geography||"") !== mapGeoF) return;
       var color = VCOLOR_MAP[d.vertical] || "#94A3B8";
       var marker = L.circleMarker([coords[1], coords[0]], {
@@ -795,14 +795,16 @@ function WorldMap({ deals }) {
       var bkt  = bkts.find(function(x){ return x.id === d.tier; });
       var vc   = v ? v.color : color;
       var bc   = bkt ? bkt.color : null;
-      var pri  = (d.priority||"p1") === "p2";
+      var priVal = d.priority || "tier_1";
+      var priLabel = priVal==="tier_1"?"T1":priVal==="tier_2"?"T2":priVal==="tier_3"?"T3":"\u2014";
+      var priColor = priVal==="tier_1"?"#00C2FF":priVal==="tier_2"?"#64748B":"#334155";
       var tip  = '<div style="min-width:160px">' +
         '<div style="font-weight:700;font-size:12px;margin-bottom:6px">' + d.company + '</div>' +
         (d.analysisData && d.analysisData.hq ? '<div style="color:#94A3B8;font-size:10px;margin-bottom:6px">\uD83D\uDCCD ' + d.analysisData.hq + '</div>' : '') +
         '<div style="display:flex;flex-wrap:wrap;gap:4px">' +
           (v   ? '<span style="background:' + vc + '22;color:' + vc + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + v.label + '</span>' : '') +
           (bkt ? '<span style="background:' + bc + '22;color:' + bc + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + bkt.label + '</span>' : '') +
-          '<span style="background:' + (pri ? '#33415522' : '#00C2FF22') + ';color:' + (pri ? '#94A3B8' : '#00C2FF') + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + (pri ? 'P2' : 'P1') + '</span>' +
+          '<span style="background:' + priColor + '22;color:' + priColor + ';border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700">' + priLabel + '</span>' +
         '</div></div>';
       marker.bindTooltip(tip, { className: "cp-tt", sticky: false, direction: "top", offset: [0, -10] });
       marker.addTo(lMapRef.current);
@@ -822,7 +824,7 @@ function WorldMap({ deals }) {
       else                                  matchBucket = d.vertical === mapTierF;
     }
     if (!matchBucket) return false;
-    if (mapPrioF !== "all" && (d.priority||"p1") !== mapPrioF) return false;
+    if (mapPrioF !== "all" && (d.priority||"tier_1") !== mapPrioF) return false;
     return mapGeoF === "all" || (d.geography||"") === mapGeoF;
   }).length;
 
@@ -837,9 +839,10 @@ function WorldMap({ deals }) {
             {MAP_BUCKET_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
           </select>
           <select value={mapPrioF} onChange={function(e){ setMapPrioF(e.target.value); }} style={sel}>
-            <option value="all">All Priorities</option>
-            <option value="p1">Priority 1</option>
-            <option value="p2">Priority 2</option>
+            <option value="all">All Tiers</option>
+            <option value="tier_1">Tier 1</option>
+            <option value="tier_2">Tier 2</option>
+            <option value="tier_3">Tier 3</option>
           </select>
           <select value={mapGeoF} onChange={function(e){ setMapGeoF(e.target.value); }} style={sel}>
             {GEO_OPTS.map(function(o){ return <option key={o.id} value={o.id}>{o.label}</option>; })}
@@ -866,7 +869,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
   var s3 = useState(false); var showAdd = s3[0]; var setShowAdd = s3[1];
-  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"p1", geography:"", notes:"" });
+  var s4 = useState({ company:"", arr:"", stage:"prospecting", vertical:"financial_services", tier:"", priority:"tier_1", geography:"", notes:"" });
   var form = s4[0]; var setForm = s4[1];
   var s5 = useState(null);  var tierPickId      = s5[0]; var setTierPickId      = s5[1];
   var s6 = useState(null);  var overlayAnalysis = s6[0]; var setOverlayAnalysis = s6[1];
@@ -914,7 +917,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   }
 
   function buildCsvRows(segDeals, includeSegCol) {
-    function sortDl(a,b){ if((a.priority||"p1")!==(b.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b.arr||"")-parseArr(a.arr||""); }
+    function sortDl(a,b){ if((a.priority||"tier_1")!==(b.priority||"tier_1")) return (a.priority||"tier_1")==="tier_1"?-1:(a.priority||"tier_1")==="tier_2"?((b.priority||"tier_1")==="tier_3"?-1:1):1; return parseArr(b.arr||"")-parseArr(a.arr||""); }
     return segDeals.slice().sort(sortDl).map(function(d){
       var ad = d.analysisData||{};
       var kc = (ad.key_contacts||[]).slice(0,5).concat(d.manualContacts||[]).map(function(c){ return c.name+(c.title?" ("+c.title+")":"")+(c.status&&c.status!=="Unverified"?" ["+c.status+"]":""); }).join("; ");
@@ -924,7 +927,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var addedAt = d.addedAt ? new Date(d.addedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
       var finUpd = (d.financials&&d.financials.lockedAt) ? new Date(d.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
       var row = includeSegCol ? [d.company, svLabel(d.vertical,d.tier)] : [d.company];
-      return row.concat([d.priority||"p1", d.geography||"", d.stage||"", d.arr||"", volMetric, partners, d.hasCryptoPartner?"Partnered":"Greenfield", summary, kc, ad.website||"", ad.hq||"", ad.employees||"", addedAt, finUpd]);
+      return row.concat([d.priority||"tier_1", d.geography||"", d.stage||"", d.arr||"", volMetric, partners, d.hasCryptoPartner?"Partnered":"Greenfield", summary, kc, ad.website||"", ad.hq||"", ad.employees||"", addedAt, finUpd]);
     });
   }
 
@@ -1320,8 +1323,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var buckets = getBuckets(vid);
       var segments = buckets.map(function(b){
         var sd = vertDeals.filter(function(d){ return d.tier===b.id; });
-        function sortFn(a,b2){ if((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
-        function mapDeal(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+        function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
+        function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
         var partnered = sd.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         var greenfield = sd.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         return { id:b.id, label:b.label, totalCount:sd.length, partneredCount:partnered.length, greenfieldCount:greenfield.length, partnered:partnered, greenfield:greenfield };
@@ -1446,8 +1449,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       var bucket = getBuckets(vid).find(function(b){ return b.id===tid; });
       var segLabel = bucket ? bucket.label : tid;
       var segDeals = deals.filter(function(d){ return d.vertical===vid && (d.tier||"")===tid; });
-      function sortFn(a,b2){ if((a.priority||"p1")!==(b2.priority||"p1")) return (a.priority||"p1")==="p1"?-1:1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
-      function mapDeal(d){ return { company:d.company, priority:d.priority||"p1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+      function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
+      function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
       var partnered = segDeals.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
       var greenfield = segDeals.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
       var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers. CRITICAL RULE \u2014 NO INDIVIDUAL NAMES: Never include any individual person's name in any slide or table cell. Use company names, titles, and roles only \u2014 never individual person names.\n" + CP_CAPABILITIES;
@@ -1507,7 +1510,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
   function addDeal() {
     if (!form.company.trim()) return;
-    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"p1", geography:form.geography||"", notes:form.notes.trim(), addedAt:new Date().toISOString(), financials:buildFinancials(null, form.arr.trim(), true) };
+    var d = { id:Date.now(), company:form.company.trim(), arr:form.arr.trim(), stage:form.stage, vertical:form.vertical, tier:form.tier||"", priority:form.priority||"tier_1", geography:form.geography||"", notes:form.notes.trim(), addedAt:new Date().toISOString(), financials:buildFinancials(null, form.arr.trim(), true) };
     setDeals(function(prev){ return prev.concat([d]); });
     setForm(function(f){ return Object.assign({},f,{company:"",arr:"",notes:""}); });
     setShowAdd(false);
@@ -1647,7 +1650,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var geo = detectGeo(h.data.hq||"");
     var autoTier = (pipeView.tier&&pipeView.tier!=="all") ? pipeView.tier : "";
     var hCp = detectCryptoPartners(h.data);
-    var d = { id:Date.now()+Math.random(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"p1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, analysisUpdatedAt:new Date().toISOString(), financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
+    var d = { id:Date.now()+Math.random(), company:h.company, arr:arr, tam:tam, geography:geo, stage:"prospecting", vertical:vert, tier:autoTier, priority:"tier_1", notes:(h.data.executive_summary||"").slice(0,120), analysisData:h.data, addedAt:h.analyzedAt, analysisUpdatedAt:new Date().toISOString(), financials:buildFinancials(h.data.tam_som_arr, arr, true), cryptoPartners:hCp.cryptoPartners, hasCryptoPartner:hCp.hasCryptoPartner };
     setDeals(function(prev){ return prev.concat([d]); });
     // Save analysis only — no pipeline; debounced save reads latest state for cp_pipeline
     fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:d.id, analysisData:d.analysisData }) }).catch(function(){});
@@ -1679,7 +1682,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       if (order==="vol_high") return getDealVolume(b)-getDealVolume(a);
       if (order==="vol_low")  return getDealVolume(a)-getDealVolume(b);
       if (order==="recent")   return new Date(b.addedAt||0)-new Date(a.addedAt||0);
-      if (order==="priority"){ var pa=(a.priority||"p1")==="p1"?0:1,pb=(b.priority||"p1")==="p1"?0:1; return pa-pb||a.company.localeCompare(b.company); }
+      if (order==="priority"){ var PORD={"tier_1":0,"tier_2":1,"tier_3":2}; var pa=PORD[a.priority||"tier_1"]??3,pb=PORD[b.priority||"tier_1"]??3; return pa-pb||a.company.localeCompare(b.company); }
       if (order==="stage"){    var si=PIPE_STAGES.findIndex(function(s){return s.id===a.stage;}),sj=PIPE_STAGES.findIndex(function(s){return s.id===b.stage;}); return si-sj||a.company.localeCompare(b.company); }
       return a.company.localeCompare(b.company);
     });
@@ -1703,12 +1706,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     var wa = oppVd.filter(function(d){ return d.arr; });
     var tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
     var sumTam = tMetrics(vid, "all", null, geo, cp).avgTam;
-    return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:vd.filter(function(d){return d.priority==="p2";}).length };
+    return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:vd.filter(function(d){return d.priority==="tier_2";}).length, p3:vd.filter(function(d){return d.priority==="tier_3";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
     var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
-    if (prio && prio!=="all") td = td.filter(function(d){ return (d.priority||"p1")===prio; });
+    if (prio && prio!=="all") td = prio===""?td.filter(function(d){return !d.priority;}):td.filter(function(d){ return (d.priority||"tier_1")===prio; });
     if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
     td = applyCryptoFilter(td, cp);
     var oppTd = td.filter(function(d){ return !d.isExistingClient; });
@@ -1724,7 +1727,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
     if (tid === 'escrow'        && meanTam < 5e11) meanTam = 1e12;
     if (tid === 'regional_bank' && meanTam < 1e12) meanTam = 5e12;
-    return { total:td.length, opportunityCount:oppTd.length, existingCount:td.length-oppTd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"p1")==="p1";}).length, p2:td.filter(function(d){return d.priority==="p2";}).length };
+    return { total:td.length, opportunityCount:oppTd.length, existingCount:td.length-oppTd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:td.filter(function(d){return d.priority==="tier_2";}).length, p3:td.filter(function(d){return d.priority==="tier_3";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
@@ -1743,7 +1746,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       })
     : [];
   var tierDeals = sortDeals(baseTierDeals.filter(function(d){
-    if (prioFilter!=="all" && (d.priority||"p1")!==prioFilter) return false;
+    if (prioFilter!=="all" && (prioFilter===""?(d.priority||"tier_1")!=="":( (d.priority||"tier_1")!==prioFilter))) return false;
     if (geoFilter!=="all" && (d.geography||"")!==geoFilter) return false;
     if (dealSearch && !d.company.toLowerCase().includes(dealSearch.toLowerCase())) return false;
     if (stageFilter!=="all" && d.stage!==stageFilter) return false;
@@ -1798,9 +1801,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           </div>
           <div>
             <div style={{ color:C.dim, fontSize:9, fontWeight:700, marginBottom:4 }}>PRIORITY</div>
-            <select value={form.priority||"p1"} onChange={function(e){setForm(function(f){return Object.assign({},f,{priority:e.target.value});});}} style={sel}>
-              <option value="p1">Priority 1</option>
-              <option value="p2">Priority 2</option>
+            <select value={form.priority||"tier_1"} onChange={function(e){setForm(function(f){return Object.assign({},f,{priority:e.target.value});});}} style={sel}>
+              <option value="tier_1">Tier 1</option>
+              <option value="tier_2">Tier 2</option>
+              <option value="tier_3">Tier 3</option>
             </select>
           </div>
           <div>
@@ -1998,8 +2002,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                     <div><div style={{ color:C.dim, fontSize:9 }}>Won</div><div style={{ color:C.green, fontWeight:700, fontSize:13 }}>{m.won}</div></div>
-                    <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{m.p1}</div></div>
-                    <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:13 }}>{m.p2}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>T1</div><div style={{ color:C.accent, fontWeight:700, fontSize:13 }}>{m.p1}</div></div>
+                    <div><div style={{ color:C.dim, fontSize:9 }}>T2</div><div style={{ color:C.muted, fontWeight:700, fontSize:13 }}>{m.p2}</div></div>
+                    {m.p3>0&&<div><div style={{ color:C.dim, fontSize:9 }}>T3</div><div style={{ color:C.dim, fontWeight:700, fontSize:13 }}>{m.p3}</div></div>}
                   </div>
                   {(function(){
                     var st = briefStatus[v.id]||"idle";
@@ -2104,7 +2109,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             </div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
               <div style={{ display:"flex", gap:4 }}>
-                {[["all","All"],["p1","P1"],["p2","P2"]].map(function(pair){
+                {[["all","All"],["tier_1","T1"],["tier_2","T2"],["tier_3","T3"],["","—"]].map(function(pair){
                   var active = prioFilter===pair[0];
                   return <button key={pair[0]} onClick={function(){ setPrioFilter(pair[0]); }}
                     style={{ background:active?C.accent:C.surface, color:active?"#000":C.muted, border:"1px solid "+(active?C.accent:C.border), borderRadius:5, padding:"4px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", fontWeight:active?700:400 }}>
@@ -2172,8 +2177,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Accounts</div>
                       </div>
                       <div>
-                        <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{fsAll.p1} <span style={{ color:C.dim, fontWeight:400 }}>P1</span></div>
-                        <div style={{ color:C.muted, fontSize:13, fontWeight:700 }}>{fsAll.p2} <span style={{ color:C.dim, fontWeight:400 }}>P2</span></div>
+                        <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{fsAll.p1} <span style={{ color:C.dim, fontWeight:400 }}>T1</span></div>
+                        <div style={{ color:C.muted, fontSize:13, fontWeight:700 }}>{fsAll.p2} <span style={{ color:C.dim, fontWeight:400 }}>T2</span></div>
+                        {fsAll.p3>0&&<div style={{ color:C.dim, fontSize:13, fontWeight:700 }}>{fsAll.p3} <span style={{ color:C.dim, fontWeight:400 }}>T3</span></div>}
                       </div>
                       <div>
                         <div style={{ color:activeVert.color, fontSize:13, fontWeight:700 }}>{fsAll.total&&fsAll.avgArr ? fmtMoney(fsAll.avgArr) : "—"}</div>
@@ -2203,8 +2209,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                           <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.avgTam > 0 ? 0 : 6 }}>
                             <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                             <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
-                            <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
-                            <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>T1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>T2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
+                            {m.p3>0&&<div><div style={{ color:C.dim, fontSize:9 }}>T3</div><div style={{ color:C.dim, fontWeight:700, fontSize:11 }}>{m.p3}</div></div>}
                           </div>
                           {/* Brief + Pull List + Details action bar */}
                           <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
@@ -2306,8 +2313,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em" }}>Accounts</div>
                     </div>
                     <div>
-                      <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{vertAll.p1} <span style={{ color:C.dim, fontWeight:400 }}>P1</span></div>
-                      <div style={{ color:C.muted, fontSize:13, fontWeight:700 }}>{vertAll.p2} <span style={{ color:C.dim, fontWeight:400 }}>P2</span></div>
+                      <div style={{ color:C.accent, fontSize:13, fontWeight:700 }}>{vertAll.p1} <span style={{ color:C.dim, fontWeight:400 }}>T1</span></div>
+                      <div style={{ color:C.muted, fontSize:13, fontWeight:700 }}>{vertAll.p2} <span style={{ color:C.dim, fontWeight:400 }}>T2</span></div>
+                      {vertAll.p3>0&&<div style={{ color:C.dim, fontSize:13, fontWeight:700 }}>{vertAll.p3} <span style={{ color:C.dim, fontWeight:400 }}>T3</span></div>}
                     </div>
                     <div>
                       <div style={{ color:activeVert.color, fontSize:13, fontWeight:700 }}>{vertAll.total&&vertAll.avgArr ? fmtMoney(vertAll.avgArr) : "—"}</div>
@@ -2337,8 +2345,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                       <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.avgTam > 0 ? 0 : 6 }}>
                         <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
                         <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>P1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>P2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
+                        <div><div style={{ color:C.dim, fontSize:9 }}>T1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
+                        <div><div style={{ color:C.dim, fontSize:9 }}>T2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
+                        {m.p3>0&&<div><div style={{ color:C.dim, fontSize:9 }}>T3</div><div style={{ color:C.dim, fontWeight:700, fontSize:11 }}>{m.p3}</div></div>}
                       </div>
                       {/* Brief + Pull List + Details action bar */}
                       <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
@@ -2417,9 +2426,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             </select>
             <select value={prioFilter} onChange={function(e){ setPrioFilter(e.target.value); }}
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
-              <option value="all">All Priorities</option>
-              <option value="p1">Priority 1</option>
-              <option value="p2">Priority 2</option>
+              <option value="all">All Tiers</option>
+              <option value="tier_1">Tier 1</option>
+              <option value="tier_2">Tier 2</option>
+              <option value="tier_3">Tier 3</option>
+              <option value="">Untagged</option>
             </select>
             <select value={arrFilter} onChange={function(e){ setArrFilter(e.target.value); }}
               style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"6px 10px", color:C.muted, fontSize:11, cursor:"pointer", fontFamily:"inherit", outline:"none" }}>
@@ -2472,7 +2483,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <option value="vol_high">Volume: High → Low</option>
               <option value="vol_low">Volume: Low → High</option>
               <option value="recent">Recently Added</option>
-              <option value="priority">Priority (P1 first)</option>
+              <option value="priority">Priority (Tier 1 first)</option>
               <option value="stage">Stage</option>
             </select>
           </div>
@@ -2480,7 +2491,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           {/* Active filter summary bar */}
           {(function(){
             var chips = [];
-            if (prioFilter!=="all") chips.push({ label:prioFilter==="p1"?"Priority 1":"Priority 2", clear:function(){setPrioFilter("all");} });
+            if (prioFilter!=="all") chips.push({ label:prioFilter==="tier_1"?"Tier 1":prioFilter==="tier_2"?"Tier 2":prioFilter==="tier_3"?"Tier 3":"Untagged", clear:function(){setPrioFilter("all");} });
             if (stageFilter!=="all"){ var sf=PIPE_STAGES.find(function(s){return s.id===stageFilter;}); chips.push({ label:sf?sf.label:stageFilter, clear:function(){setStageFilter("all");} }); }
             if (arrFilter!=="all")  chips.push({ label:arrFilter==="under1m"?"ARR <$1M":arrFilter==="1m_2m"?"ARR $1M–$2M":"ARR >$2M", clear:function(){setArrFilter("all");} });
             if (oppSizeFilter!=="all"){ var os=OPP_SIZES.find(function(o){return o.id===oppSizeFilter;}); chips.push({ label:os?os.label:oppSizeFilter, clear:function(){setOppSizeFilter("all");} }); }
@@ -2539,12 +2550,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         var isEditing = editId===deal.id;
                         var dealBuckets = getBuckets(deal.vertical);
                         var dt = dealBuckets.find(function(t){ return t.id===deal.tier; });
-                        var isPri2 = deal.priority==="p2";
                         return (function() {
                           var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
                           var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
                           var isExisting = !!deal.isExistingClient;
+                          var dealPrio = deal.priority || "";
+                          var prioColor = dealPrio==="tier_1"?C.accent:dealPrio==="tier_2"?"#64748B":dealPrio==="tier_3"?C.dim:C.border;
+                          var prioBg = dealPrio==="tier_1"?C.accentDim:dealPrio==="tier_2"?"#64748B22":dealPrio==="tier_3"?"#33415522":"transparent";
                           var cardStyle = { width:"100%", boxSizing:"border-box", overflow:"hidden", background:C.card, border:"1px solid "+(isEditing?dealVert.color+"60":isExisting?C.green+"55":C.border), borderLeft:isExisting?"4px solid "+C.green:"1px solid "+(isEditing?dealVert.color+"60":C.border), borderRadius:12, display:"flex", flexDirection:"column" };
                           var actionBtn = { boxSizing:"border-box", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 4px", fontSize:9, fontWeight:600, cursor:"pointer", fontFamily:"inherit", color:C.muted, textAlign:"center", overflow:"hidden", whiteSpace:"nowrap", textOverflow:"ellipsis" };
                           return (
@@ -2556,13 +2569,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                               <span style={{ color:C.green, fontSize:8, fontWeight:800, letterSpacing:"0.1em" }}>✓ EXISTING CLIENT</span>
                             </div>}
 
-                            {/* 2. Header row: company name (left) + P1/P2 + × (right) */}
+                            {/* 2. Header row: company name (left) + tier badge select + × (right) */}
                             <div style={{ display:"flex", alignItems:"center", padding:"10px 12px 6px", gap:8, minWidth:0 }}>
                               <div style={{ flex:"1 1 0", minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:C.text, fontWeight:800, fontSize:14, lineHeight:1.2 }}>{deal.company}</div>
-                              <button onClick={function(){ setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:isPri2?"p1":"p2"}):x; }); }); }}
-                                style={{ flexShrink:0, background:isPri2?C.surface:C.accentDim, border:"1px solid "+(isPri2?C.border:C.accent), color:isPri2?C.muted:C.accent, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4 }}>
-                                {isPri2?"P2":"P1"}
-                              </button>
+                              <select value={dealPrio} onChange={function(e){ var v=e.target.value; setDeals(function(prev){ return prev.map(function(x){ return x.id===deal.id?Object.assign({},x,{priority:v}):x; }); }); }}
+                                style={{ flexShrink:0, background:prioBg, border:"1px solid "+prioColor, color:prioColor||C.dim, borderRadius:20, padding:"2px 7px", fontSize:9, fontWeight:700, cursor:"pointer", fontFamily:"inherit", lineHeight:1.4, outline:"none", appearance:"none", WebkitAppearance:"none", minWidth:32, textAlign:"center" }}>
+                                <option value="">—</option>
+                                <option value="tier_1">T1</option>
+                                <option value="tier_2">T2</option>
+                                <option value="tier_3">T3</option>
+                              </select>
                               <button onClick={function(){ removeDeal(deal.id); }}
                                 style={{ flexShrink:0, background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:13, padding:"0 2px", lineHeight:1 }}>✕</button>
                             </div>
@@ -2637,9 +2653,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                     <option value="">Unassigned</option>
                                     {dealBuckets.map(function(t){ return <option key={t.id} value={t.id}>{t.label}</option>; })}
                                   </select>
-                                  <select defaultValue={deal.priority||"p1"} id={"priority_"+deal.id} style={sel}>
-                                    <option value="p1">Priority 1</option>
-                                    <option value="p2">Priority 2</option>
+                                  <select defaultValue={deal.priority||"tier_1"} id={"priority_"+deal.id} style={sel}>
+                                    <option value="tier_1">Tier 1</option>
+                                    <option value="tier_2">Tier 2</option>
+                                    <option value="tier_3">Tier 3</option>
                                   </select>
                                   <select defaultValue={deal.stage}    id={"stage_"+deal.id} style={sel}>
                                     {PIPE_STAGES.map(function(s){ return <option key={s.id} value={s.id}>{s.label}</option>; })}
@@ -2675,7 +2692,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                   var otherEl=document.getElementById("cp_other_"+deal.id);
                                   var otherPartners=otherEl?otherEl.value.split(",").map(function(s){ return s.trim(); }).filter(Boolean):[];
                                   var allPartners=selPartners.concat(otherPartners);
-                                  updateDeal(deal.id,Object.assign({arr:newArr,notes:notesEl?notesEl.value:deal.notes,tier:tierEl?tierEl.value:(deal.tier||""),priority:priorityEl?priorityEl.value:(deal.priority||"p1"),stage:stageEl?stageEl.value:deal.stage,vertical:vertEl?vertEl.value:deal.vertical,geography:geoEl?geoEl.value:(deal.geography||""),cryptoPartners:allPartners,hasCryptoPartner:allPartners.length>0},finPatch));
+                                  updateDeal(deal.id,Object.assign({arr:newArr,notes:notesEl?notesEl.value:deal.notes,tier:tierEl?tierEl.value:(deal.tier||""),priority:priorityEl?priorityEl.value:(deal.priority||"tier_1"),stage:stageEl?stageEl.value:deal.stage,vertical:vertEl?vertEl.value:deal.vertical,geography:geoEl?geoEl.value:(deal.geography||""),cryptoPartners:allPartners,hasCryptoPartner:allPartners.length>0},finPatch));
                                 }} style={{ background:dealVert.color, color:"#000", border:"none", borderRadius:6, padding:"5px 14px", fontWeight:800, fontSize:10, cursor:"pointer", fontFamily:"inherit", marginRight:6 }}>Save</button>
                                 <button onClick={function(){ setEditId(null); }} style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"5px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>Cancel</button>
                               </div>
@@ -2858,7 +2875,7 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
       }
       lines.push("ACCOUNT: " + d.company);
       lines.push("  Segment: " + getSubVertLabel(d.tier));
-      lines.push("  Priority: " + (d.priority||"p1").toUpperCase());
+      lines.push("  Priority: " + (d.priority||"tier_1").replace("_"," ").toUpperCase());
       lines.push("  Geography: " + (d.geography||"Unknown"));
       lines.push("  Stage: " + (d.stage||"prospecting"));
       lines.push("  Projected ARR: " + proj);
@@ -3107,8 +3124,8 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
                 style={{ width:"100%", background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"9px 12px", color:C.text, fontSize:12, outline:"none" }}/>
             </div>
             {deals && deals.length ? (function() {
-              var p1 = deals.filter(function(d){ return (d.priority||"p1")==="p1"; }).length;
-              var p2 = deals.filter(function(d){ return d.priority==="p2"; }).length;
+              var p1 = deals.filter(function(d){ return (d.priority||"tier_1")==="tier_1"; }).length;
+              var p2 = deals.filter(function(d){ return d.priority==="tier_2"; }).length;
               var svMap = {}; deals.forEach(function(d){ svMap[d.tier||"unknown"]=(svMap[d.tier||"unknown"]||0)+1; });
               var withPartners = deals.filter(function(d){ return d.analysisData && Array.isArray(d.analysisData.partnerships) && d.analysisData.partnerships.length>0; }).length;
               return (
@@ -3116,8 +3133,8 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
                   <div style={{ color:C.muted, fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:10 }}>Pipeline snapshot</div>
                   <div style={{ display:"flex", gap:24, flexWrap:"wrap" }}>
                     <div><div style={{ color:C.accent,  fontSize:20, fontWeight:900 }}>{deals.length}</div><div style={{ color:C.dim, fontSize:10 }}>Total accounts</div></div>
-                    <div><div style={{ color:C.gold,    fontSize:20, fontWeight:900 }}>{p1}</div><div style={{ color:C.dim, fontSize:10 }}>P1 priority</div></div>
-                    <div><div style={{ color:C.muted,   fontSize:20, fontWeight:900 }}>{p2}</div><div style={{ color:C.dim, fontSize:10 }}>P2 priority</div></div>
+                    <div><div style={{ color:C.gold,    fontSize:20, fontWeight:900 }}>{p1}</div><div style={{ color:C.dim, fontSize:10 }}>Tier 1</div></div>
+                    <div><div style={{ color:C.muted,   fontSize:20, fontWeight:900 }}>{p2}</div><div style={{ color:C.dim, fontSize:10 }}>Tier 2</div></div>
                     <div><div style={{ color:C.green,   fontSize:20, fontWeight:900 }}>{Object.keys(svMap).length}</div><div style={{ color:C.dim, fontSize:10 }}>Segments</div></div>
                     <div><div style={{ color:C.purple,  fontSize:20, fontWeight:900 }}>{withPartners}</div><div style={{ color:C.dim, fontSize:10 }}>w/ crypto partners</div></div>
                   </div>
@@ -3833,7 +3850,7 @@ export default function App() {
     // Pre-generate IDs outside the state updater so we can reference them for Redis saves
     var entries = [];
     items.forEach(function(item) {
-      var result = item.result; var seg = item.segment || ""; var pri = item.priority || "p1";
+      var result = item.result; var seg = item.segment || ""; var pri = item.priority || "tier_1";
       if (!result || !result.company) return;
       var segLower = (result.segment || "").toLowerCase();
       var vert = seg || "financial_services";
@@ -3853,7 +3870,7 @@ export default function App() {
       var now = new Date().toISOString();
       entries.push({
         id: newId,
-        deal: { id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, tier: item.tier || "", priority: pri || "p1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] },
+        deal: { id: newId, company: result.company, arr: arr, tam: tam, geography: geo, stage: "prospecting", vertical: vert, tier: item.tier || "", priority: pri || "tier_1", notes: (result.executive_summary || "").slice(0, 120), analysisData: result, addedAt: now, analysisUpdatedAt: now, financials: buildFinancials(result.tam_som_arr, arr, true), cryptoPartners: mergedCp, hasCryptoPartner: mergedCp.length > 0, manualContacts: item.manualContacts || [], manualPartnerships: item.manualPartnerships || [] },
         data: result
       });
     });
@@ -4052,7 +4069,7 @@ export default function App() {
             ? <div>
                 <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:16 }}>
                   <button onClick={function(){
-                    addResultsToPipeline([{ result: result, segment: "", priority: "p1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
+                    addResultsToPipeline([{ result: result, segment: "", priority: "tier_1", extraCryptoPartners: resultCp.cryptoPartners || [], manualContacts: resultManualContacts, manualPartnerships: resultManualPartnerships }]);
                     setPage("pipeline");
                   }} style={{ background:C.accent, color:"#000", border:"none", borderRadius:7, padding:"8px 18px", fontSize:11, cursor:"pointer", fontWeight:800, fontFamily:"inherit" }}>
                     + Add to Pipeline

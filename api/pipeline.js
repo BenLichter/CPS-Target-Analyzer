@@ -34,10 +34,28 @@ export default async function handler(req, res) {
 
     if (url && token) {
       if (req.method === 'GET') {
-        const [pipeline, keys] = await Promise.all([
+        let [pipeline, keys] = await Promise.all([
           kvGet(url, token, 'cp_pipeline'),
           kvGet(url, token, 'cp_keys'),
         ]);
+
+        // One-time migration: priority values p1→tier_1, p2→tier_2
+        if (Array.isArray(pipeline)) {
+          const alreadyMigrated = await kvGet(url, token, 'cp_pipeline:tier_migrated');
+          if (!alreadyMigrated) {
+            var migrated = pipeline.map(function(d) {
+              if (!d) return d;
+              if (d.priority === 'p1') return Object.assign({}, d, { priority: 'tier_1' });
+              if (d.priority === 'p2') return Object.assign({}, d, { priority: 'tier_2' });
+              return d;
+            });
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', migrated),
+              kvSet(url, token, 'cp_pipeline:tier_migrated', true),
+            ]);
+            pipeline = migrated;
+          }
+        }
 
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.

@@ -21,8 +21,9 @@ var SEGMENT_OPTS = [
 ];
 
 var PRIORITY_OPTS = [
-  { id: "p1", label: "P1 - High" },
-  { id: "p2", label: "P2 - Standard" },
+  { id: "tier_1", label: "Tier 1" },
+  { id: "tier_2", label: "Tier 2" },
+  { id: "tier_3", label: "Tier 3" },
 ];
 
 var STATUS_ICON = { queued: "⏳", analyzing: "🔄", done: "✅", failed: "❌" };
@@ -68,6 +69,20 @@ function normalizeTier(raw, vertical, rowNum) {
   return "";
 }
 
+function normalizePriority(raw) {
+  if (!raw) return "";
+  var lower = String(raw).toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!lower) return "";
+  if (lower === "1" || lower === "t1" || lower === "tier1" || lower === "p1" || lower === "tierone" || lower === "high" || lower === "priority1") return "tier_1";
+  if (lower === "2" || lower === "t2" || lower === "tier2" || lower === "p2" || lower === "tiertwo" || lower === "standard" || lower === "priority2") return "tier_2";
+  if (lower === "3" || lower === "t3" || lower === "tier3" || lower === "p3" || lower === "tierthree" || lower === "growth" || lower === "priority3") return "tier_3";
+  return "";
+}
+
+function normalizeName(n) {
+  return (n || "").toLowerCase().replace(/\s+/g, " ").trim().replace(/^the\s+/, "");
+}
+
 function parseText(text) {
   var lines = text.trim().split(/\r?\n/).filter(function(l) { return l.trim(); });
   if (!lines.length) return [];
@@ -80,7 +95,9 @@ function parseText(text) {
     var nameIdx = headers.findIndex(function(h) { return h.includes("company") || h === "name"; });
     var websiteIdx = headers.findIndex(function(h) { return h.includes("website") || h.includes("domain"); });
     var segmentIdx = headers.findIndex(function(h) { return h.includes("segment") || h.includes("vertical"); });
-    var priorityIdx = headers.findIndex(function(h) { return h.includes("priority"); });
+    var priorityIdx = headers.findIndex(function(h) {
+      return h === "priority" || h.includes("priority tier") || h.includes("tier level") || h === "p-tier";
+    });
     var tierIdx = headers.findIndex(function(h) {
       return h === "tier" || h.includes("tier selection") || h.includes("sub-segment") ||
              h.includes("sub segment") || h.includes("subsegment") || h.includes("category");
@@ -92,13 +109,14 @@ function parseText(text) {
       if (!name) return null;
       var seg = segmentIdx >= 0 ? (cells[segmentIdx] || "") : "";
       var rawTier = tierIdx >= 0 ? (cells[tierIdx] || "") : "";
+      var rawPriority = priorityIdx >= 0 ? (cells[priorityIdx] || "") : "";
       return {
         id: "c_" + i + "_" + Date.now(),
         name: name,
         website: websiteIdx >= 0 ? (cells[websiteIdx] || "") : "",
         segment: seg,
         tier: normalizeTier(rawTier, seg, i),
-        priority: priorityIdx >= 0 ? (cells[priorityIdx] || "") : "",
+        priority: normalizePriority(rawPriority),
       };
     }).filter(Boolean);
   }
@@ -119,13 +137,14 @@ function parseXLSXBuffer(buffer) {
       if (!name) return null;
       var seg = String(row["Segment"] || row["segment"] || row["Vertical"] || row["vertical"] || "");
       var rawTier = String(row["Tier"] || row["tier"] || row["TIER"] || row["Tier Selection"] || row["Sub-segment"] || row["Sub Segment"] || row["Category"] || "");
+      var rawPriority = String(row["Priority"] || row["priority"] || row["Priority Tier"] || row["Tier Level"] || row["P-Tier"] || "");
       return {
         id: "c_" + i + "_" + Date.now(),
         name: name,
         website: String(row["Website"] || row["website"] || row["Domain"] || row["domain"] || ""),
         segment: seg,
         tier: normalizeTier(rawTier, seg, i),
-        priority: String(row["Priority"] || row["priority"] || ""),
+        priority: normalizePriority(rawPriority),
       };
     }).filter(Boolean);
   } catch(e) { return []; }
@@ -135,9 +154,9 @@ function downloadTemplate() {
   var wb = XLSX.utils.book_new();
   var data = [
     ["Company Name", "Website", "Segment", "Tier", "Priority"],
-    ["Stripe", "stripe.com", "financial_services", "neobanks", "p1"],
-    ["Revolut", "revolut.com", "financial_services", "neobanks", "p1"],
-    ["MGM Resorts", "mgmresorts.com", "gaming_casinos", "", "p2"],
+    ["Stripe", "stripe.com", "financial_services", "neobanks", "tier_1"],
+    ["Revolut", "revolut.com", "financial_services", "neobanks", "tier_1"],
+    ["MGM Resorts", "mgmresorts.com", "gaming_casinos", "", "tier_2"],
   ];
   var ws = XLSX.utils.aoa_to_sheet(data);
   ws["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 12 }];
@@ -156,7 +175,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var s2 = useState(false); var running = s2[0]; var setRunning = s2[1];
   var s3 = useState(""); var pasteText = s3[0]; var setPasteText = s3[1];
   var s4 = useState(""); var defSegment = s4[0]; var setDefSegment = s4[1];
-  var s5 = useState("p1"); var defPriority = s5[0]; var setDefPriority = s5[1];
+  var s5 = useState("tier_1"); var defPriority = s5[0]; var setDefPriority = s5[1];
   var s6 = useState({}); var checked = s6[0]; var setChecked = s6[1];
   var s7 = useState(null); var viewingResult = s7[0]; var setViewingResult = s7[1];
   var s8 = useState(false); var multiFailWarn = s8[0]; var setMultiFailWarn = s8[1];
@@ -180,7 +199,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
           : "";
         return {
           id: c.id, name: c.name, website: c.website || "",
-          segment: c.segment || "", priority: c.priority || "p1",
+          segment: c.segment || "", priority: c.priority || "tier_1",
           status: c.status, error: c.error || null,
           resultSummary: c.result ? {
             company: c.result.company, segment: c.result.segment || "",
@@ -344,6 +363,15 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
     return pipe.some(function(d) { return d.company && d.company.toLowerCase() === (name || "").toLowerCase(); });
   }
 
+  function pipeMatchNorm(name, vertical) {
+    var nn = normalizeName(name);
+    return pipe.find(function(d) {
+      if (normalizeName(d.company || "") !== nn) return false;
+      if (vertical && d.vertical && d.vertical !== vertical) return false;
+      return true;
+    }) || null;
+  }
+
   async function batchAddToPipeline(items, startIdx) {
     var from = startIdx || 0;
     pendingItemsRef.current = items;
@@ -370,28 +398,36 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   }
 
   function buildAddList(rows, forUpdate) {
-    var noResult = []; var toAdd = []; var toUpdate = [];
+    var noResult = []; var toAdd = []; var toUpdate = []; var unmatched = [];
     rows.forEach(function(c) {
       if (!c.result) { noResult.push(c.name); return; }
-      var inPipe = pipeHas(c.result.company || c.name);
-      if (inPipe && forUpdate) {
-        toUpdate.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "", matchName: c.result.company || c.name });
-      } else if (!inPipe) {
-        toAdd.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "" });
+      var companyName = c.result.company || c.name;
+      if (forUpdate) {
+        var match = pipeMatchNorm(companyName, c.segment || "");
+        if (match) {
+          toUpdate.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "", matchName: companyName });
+        } else {
+          unmatched.push(companyName);
+        }
+      } else {
+        if (!pipeHas(companyName)) {
+          toAdd.push({ result: c.result, segment: c.segment, priority: c.priority, tier: c.tier || "" });
+        }
       }
     });
-    return { toAdd: toAdd, toUpdate: toUpdate, noResult: noResult };
+    return { toAdd: toAdd, toUpdate: toUpdate, noResult: noResult, unmatched: unmatched };
   }
 
   function handleAddSelected() {
     var r = buildAddList(checkedDone, updateMode);
     if (!r.toAdd.length && !r.toUpdate.length) {
       if (r.noResult.length) setAddedMsg("rerun");
+      else if (updateMode && r.unmatched.length) setUpdatePreview({ toAdd: [], toUpdate: [], unmatched: r.unmatched });
       else setAddedMsg("already");
-      setTimeout(function() { setAddedMsg(null); }, 3500);
+      if (!updateMode || !r.unmatched.length) setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    if (updateMode && r.toUpdate.length > 0) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate }); }
+    if (updateMode) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate, unmatched: r.unmatched || [] }); }
     else { batchAddToPipeline(r.toAdd, 0); }
   }
 
@@ -399,11 +435,12 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
     var r = buildAddList(allDone, updateMode);
     if (!r.toAdd.length && !r.toUpdate.length) {
       if (r.noResult.length) setAddedMsg("rerun");
+      else if (updateMode && r.unmatched.length) setUpdatePreview({ toAdd: [], toUpdate: [], unmatched: r.unmatched });
       else setAddedMsg("already");
-      setTimeout(function() { setAddedMsg(null); }, 3500);
+      if (!updateMode || !r.unmatched.length) setTimeout(function() { setAddedMsg(null); }, 3500);
       return;
     }
-    if (updateMode && r.toUpdate.length > 0) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate }); }
+    if (updateMode) { setUpdatePreview({ toAdd: r.toAdd, toUpdate: r.toUpdate, unmatched: r.unmatched || [] }); }
     else { batchAddToPipeline(r.toAdd, 0); }
   }
 
@@ -542,24 +579,38 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
 
       {/* Update preview confirmation */}
       {updatePreview && (
-        <div style={{ background: C.greenDim, border: "1px solid " + C.green + "50", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ color: C.green, fontSize: 11, fontWeight: 700, flex: 1 }}>
-            {updatePreview.toUpdate.length > 0 && <span>{updatePreview.toUpdate.length} target{updatePreview.toUpdate.length !== 1 ? "s" : ""} will be updated</span>}
-            {updatePreview.toUpdate.length > 0 && updatePreview.toAdd.length > 0 && <span style={{ color: C.dim }}> · </span>}
-            {updatePreview.toAdd.length > 0 && <span>{updatePreview.toAdd.length} new will be added</span>}
-          </span>
-          <button onClick={function() {
-            if (updatePreview.toUpdate.length && updateExistingInPipeline) updateExistingInPipeline(updatePreview.toUpdate);
-            if (updatePreview.toAdd.length) batchAddToPipeline(updatePreview.toAdd, 0);
-            setUpdatePreview(null);
-          }}
-            style={Object.assign({}, btn, { background: C.green, color: "#000", padding: "5px 12px", fontSize: 10 })}>
-            ✓ Confirm
-          </button>
-          <button onClick={function() { setUpdatePreview(null); }}
-            style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.muted, padding: "5px 10px", fontSize: 10 })}>
-            ✕ Cancel
-          </button>
+        <div style={{ background: C.greenDim, border: "1px solid " + C.green + "50", borderRadius: 10, padding: "12px 16px", marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: (updatePreview.unmatched && updatePreview.unmatched.length > 0) ? 10 : 0 }}>
+            <span style={{ color: C.green, fontSize: 11, fontWeight: 700, flex: 1 }}>
+              {updatePreview.toUpdate.length > 0 && <span>{updatePreview.toUpdate.length} matched · </span>}
+              {(updatePreview.unmatched && updatePreview.unmatched.length > 0) && <span style={{ color: C.gold }}>{updatePreview.unmatched.length} unmatched (will be skipped)</span>}
+              {updatePreview.toUpdate.length === 0 && (!updatePreview.unmatched || updatePreview.unmatched.length === 0) && <span>Nothing to update</span>}
+            </span>
+            {updatePreview.toUpdate.length > 0 && (
+              <button onClick={function() {
+                var n = updatePreview.toUpdate.length;
+                if (updateExistingInPipeline) updateExistingInPipeline(updatePreview.toUpdate);
+                setUpdatePreview(null);
+                setAddedMsg("updated:" + n);
+                setTimeout(function() { setAddedMsg(null); }, 4000);
+              }}
+                style={Object.assign({}, btn, { background: C.green, color: "#000", padding: "5px 12px", fontSize: 10 })}>
+                ✓ Confirm Update
+              </button>
+            )}
+            <button onClick={function() { setUpdatePreview(null); }}
+              style={Object.assign({}, btn, { background: "transparent", border: "1px solid " + C.border, color: C.muted, padding: "5px 10px", fontSize: 10 })}>
+              ✕ Cancel
+            </button>
+          </div>
+          {updatePreview.unmatched && updatePreview.unmatched.length > 0 && (
+            <div style={{ background: C.card, borderRadius: 6, padding: "8px 10px", maxHeight: 120, overflowY: "auto" }}>
+              <div style={{ color: C.gold, fontSize: 9, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.07em" }}>Unmatched — not in pipeline:</div>
+              {updatePreview.unmatched.map(function(name, i) {
+                return <div key={i} style={{ color: C.muted, fontSize: 10, lineHeight: 1.6 }}>{name}</div>;
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -637,6 +688,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
             </button>
           )}
           {addedMsg && addedMsg.startsWith("added:") && <span style={{ color: C.green, fontSize: 10 }}>✅ Added {addedMsg.split(":")[1]} to pipeline!</span>}
+          {addedMsg && addedMsg.startsWith("updated:") && <span style={{ color: C.green, fontSize: 10 }}>✓ Updated {addedMsg.split(":")[1]} target{addedMsg.split(":")[1]==="1"?"":"s"}</span>}
           {addedMsg === "already" && <span style={{ color: C.gold, fontSize: 10 }}>⚠ Already in pipeline</span>}
           {addedMsg === "rerun" && <span style={{ color: C.red, fontSize: 10 }}>⚠ Re-run analysis to add to pipeline</span>}
         </div>
@@ -695,11 +747,11 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
                         </select>
                       </td>
                       <td style={{ padding: "8px 10px" }}>
-                        <select value={c.priority || "p1"} onChange={function(e) {
+                        <select value={c.priority || "tier_1"} onChange={function(e) {
                           setCompanies(function(prev) {
                             var upd = prev.slice(); upd[idx] = Object.assign({}, upd[idx], { priority: e.target.value }); return upd;
                           });
-                        }} style={{ background: "transparent", border: "none", color: c.priority === "p1" ? C.accent : C.muted, fontSize: 10, cursor: "pointer", fontFamily: "inherit", outline: "none" }}>
+                        }} style={{ background: "transparent", border: "none", color: c.priority === "tier_1" ? C.accent : c.priority === "tier_2" ? "#64748B" : C.dim, fontSize: 10, cursor: "pointer", fontFamily: "inherit", outline: "none" }}>
                           {PRIORITY_OPTS.map(function(o) { return <option key={o.id} value={o.id}>{o.label}</option>; })}
                         </select>
                       </td>
