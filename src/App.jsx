@@ -36,6 +36,12 @@ const VERTICAL_WIN_RATES = {
   gaming_casinos: 1.0,
 };
 
+// Per-segment rate overrides — take precedence over the vertical WIN_RATE for that segment.
+// segment_id must match FS_SUBVERTS id (e.g. "regional_bank", not "corporate_treasury").
+const SEGMENT_RATE_OVERRIDES = {
+  regional_bank: 0.02,   // Corporate Treasury — 2% niche high-touch capture
+};
+
 // No capture rate multiplier at aggregation — per-target ARR already equals SOM for all
 // non-FX/Broker FS targets (fee applies directly to crypto-adopted volume). The only
 // portfolio-level adjustment is VERTICAL_WIN_RATES (33.3% for FS and Luxury Travel).
@@ -1862,19 +1868,13 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     vd = applyCryptoFilter(vd, cp);
     var oppVd = vd.filter(function(d){ return !d.isExistingClient; });
     var wa = oppVd.filter(function(d){ return getDealArr(d); });
-    var cr = VERTICAL_CAPTURE_RATES[vid] !== undefined ? VERTICAL_CAPTURE_RATES[vid] : 1.0;
-    var tot;
-    if (vid === "financial_services") {
-      // FX/Broker getDealArr = final ARR (bps model, no capture rate needed)
-      // Non-broker getDealArr = SOM → apply capture rate at aggregation
-      var brokerArr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-      var nonBrokerSom = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-      tot = brokerArr + nonBrokerSom * cr;
-    } else {
-      tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-    }
-    var sumTam = tMetrics(vid, "all", null, geo, cp).avgTam;
-    return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:vd.filter(function(d){return d.priority==="tier_2";}).length, p3:vd.filter(function(d){return d.priority==="tier_3";}).length };
+    // For FS: delegate to tMetrics("all") so per-segment rates are applied consistently.
+    // tMetrics("all") sums each segment's rate-adjusted total so vertical === sum of segments.
+    var allM = tMetrics(vid, "all", null, geo, cp);
+    var tot = allM.totalArr;
+    var rawSum = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
+    // avgArr is raw average (matches per-target card display, not rate-adjusted)
+    return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?rawSum/wa.length:0, totalArr:tot, avgTam:allM.avgTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:vd.filter(function(d){return d.priority==="tier_2";}).length, p3:vd.filter(function(d){return d.priority==="tier_3";}).length };
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
@@ -1884,20 +1884,23 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     td = applyCryptoFilter(td, cp);
     var oppTd = td.filter(function(d){ return !d.isExistingClient; });
     var wa = oppTd.filter(function(d){ return getDealArr(d); });
-    var cr = VERTICAL_CAPTURE_RATES[vid] !== undefined ? VERTICAL_CAPTURE_RATES[vid] : 1.0;
+    var _rawSum = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
     var tot;
     if (vid === "financial_services") {
-      if (tid === "brokerage") {
-        tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-      } else if (tid === "all") {
-        var bkr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-        var nbk = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
-        tot = bkr + nbk * cr;
+      if (tid === "all") {
+        // Vertical total = sum of each segment's rate-adjusted total.
+        // Untiered deals (no tier or tier not in FS_SUBVERTS) use vertical win rate.
+        tot = FS_SUBVERTS.reduce(function(s, sv) { return s + tMetrics(vid, sv.id, prio, geo, cp).totalArr; }, 0);
+        var _vwr = VERTICAL_WIN_RATES[vid] !== undefined ? VERTICAL_WIN_RATES[vid] : 1;
+        var _untiered = wa.filter(function(d){ return !FS_SUBVERTS.find(function(sv){ return sv.id === d.tier; }); });
+        tot += _untiered.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0) * _vwr;
       } else {
-        tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0) * cr;
+        // effectiveRate: segment override takes precedence over vertical win rate
+        var _segRate = SEGMENT_RATE_OVERRIDES[tid] !== undefined ? SEGMENT_RATE_OVERRIDES[tid] : (VERTICAL_WIN_RATES[vid] !== undefined ? VERTICAL_WIN_RATES[vid] : 1);
+        tot = _rawSum * _segRate;
       }
     } else {
-      tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
+      tot = _rawSum;
     }
     var ts = calcTamStats(oppTd);
     var meanTam = tid === "all"
@@ -1909,7 +1912,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     if (tid === 'remittance'    && meanTam < 1e12) meanTam = 10e12;
     if (tid === 'escrow'        && meanTam < 5e11) meanTam = 1e12;
     if (tid === 'regional_bank' && meanTam < 1e12) meanTam = 5e12;
-    return { total:td.length, opportunityCount:oppTd.length, existingCount:td.length-oppTd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:td.filter(function(d){return d.priority==="tier_2";}).length, p3:td.filter(function(d){return d.priority==="tier_3";}).length };
+    // avgArr uses raw sum — matches per-target card display (not rate-adjusted)
+    return { total:td.length, opportunityCount:oppTd.length, existingCount:td.length-oppTd.length, avgArr:wa.length?_rawSum/wa.length:0, totalArr:tot, avgTam:meanTam, p1:td.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:td.filter(function(d){return d.priority==="tier_2";}).length, p3:td.filter(function(d){return d.priority==="tier_3";}).length };
   }
 
   var inp = { background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"7px 10px", color:C.text, fontSize:11, outline:"none", fontFamily:"inherit", width:"100%" };
@@ -2355,8 +2359,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
             {VERTICALS.map(function(v) {
               var m = vMetrics(v.id, geoFilter, cryptoFilter);
               var wr = VERTICAL_WIN_RATES[v.id] !== undefined ? VERTICAL_WIN_RATES[v.id] : 1;
-              var adjArr = m.totalArr * wr;
+              // For FS: per-segment rates already baked into m.totalArr via tMetrics.
+              // For other verticals: apply win rate at display time (current pattern).
+              var isFs = v.id === "financial_services";
+              var adjArr = isFs ? m.totalArr : m.totalArr * wr;
               var adjTam = m.avgTam * wr;
+              var hasRateLabel = isFs || wr < 1;
               return (
                 <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
                   style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", transition:"border-color 0.15s" }}>
@@ -2364,10 +2372,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                     <span style={{ fontSize:20 }}>{v.icon}</span>
                     <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
-                  <div title={wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined}
+                  <div title={isFs ? "Rate-adjusted (33.3% win rate; Corporate Treasury 2% capture)" : (wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined)}
                     style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(adjArr):"—"}</div>
-                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:wr<1?1:4 }}>Total ARR</div>
-                  {wr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>({Math.round(wr*1000)/10}% win-adjusted)</div>}
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:hasRateLabel?1:4 }}>Total ARR</div>
+                  {hasRateLabel && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>{isFs ? "(rate-adjusted)" : "("+Math.round(wr*1000)/10+"% win-adjusted)"}</div>}
                   {m.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, marginBottom:4, lineHeight:1.3 }}>{m.opportunityCount} opportunit{m.opportunityCount===1?"y":"ies"} · {m.existingCount} existing client{m.existingCount===1?"":"s"}</div>}
                   {adjTam > 0 && <div style={{ marginBottom:6 }}>
                     <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(adjTam)}</div>
@@ -2511,7 +2519,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
             if (pipeView.vertical === "financial_services") {
               var fsAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
               var fsWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1;
-              var fsAdjArr = fsAll.totalArr * fsWr;
+              // fsAll.totalArr already includes per-segment rates from tMetrics; do not re-multiply.
+              var fsAdjArr = fsAll.totalArr;
               var fsAdjTam = fsAll.avgTam * fsWr;
               var fsSegments = FS_ORDER.map(function(id){ return buckets.find(function(b){ return b.id===id; }); }).filter(Boolean);
               return (
@@ -2533,10 +2542,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                     </div>
                     <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                       <div>
-                        <div title={fsWr < 1 ? "Total potential: "+fmtMoney(fsAll.totalArr)+" · Win-adjusted at "+Math.round(fsWr*1000)/10+"%: "+fmtMoney(fsAdjArr) : undefined}
+                        <div title="Rate-adjusted: 33.3% win rate on FX/Broker, Escrow, Remittance, Neobanks; 2% capture on Corporate Treasury"
                           style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAdjArr) : "—"}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
-                        {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
+                        <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>(rate-adjusted)</div>
                         {fsAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{fsAll.opportunityCount} opportunit{fsAll.opportunityCount===1?"y":"ies"} · {fsAll.existingCount} existing client{fsAll.existingCount===1?"":"s"}</div>}
                       </div>
                       {fsAdjTam > 0 && <div>
@@ -2574,11 +2583,20 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                       return (
                         <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                           style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
-                          <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
-                          <div title={fsWr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(fsWr*1000)/10+"%: "+fmtMoney(m.totalArr*fsWr) : undefined}
-                            style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr*fsWr):"—"}</div>
-                          <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:fsWr<1?1:3 }}>Total ARR</div>
-                          {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:3, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
+                          {(function(){
+                            var _segRate = SEGMENT_RATE_OVERRIDES[t.id] !== undefined ? SEGMENT_RATE_OVERRIDES[t.id] : fsWr;
+                            var _isOverride = SEGMENT_RATE_OVERRIDES[t.id] !== undefined;
+                            var _rawSegArr = m.avgArr * m.total; // raw total (before rate) for tooltip
+                            var _pct = Math.round(_segRate*1000)/10;
+                            var _lbl = _isOverride ? _pct+"% capture-adjusted" : _pct+"% win-adjusted";
+                            return (<>
+                              <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
+                              <div title={"Raw total: "+fmtMoney(_rawSegArr)+" · "+_lbl+": "+fmtMoney(m.totalArr)}
+                                style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
+                              <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:1 }}>Total ARR</div>
+                              {_segRate < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:3, lineHeight:1.3 }}>({_lbl})</div>}
+                            </>);
+                          })()}
                           {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
                             <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
                             <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
