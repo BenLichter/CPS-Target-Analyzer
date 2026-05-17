@@ -657,10 +657,24 @@ function buildFinancials(tam_som_arr, arr_str, setOnAdd) {
 }
 
 // Single source of truth for per-target ARR.
-// financials.projected_arr is the canonical value (refreshed by each analysis).
-// d.arr is the legacy top-level field kept in sync — fall back to it if financials is missing.
+// Priority: 1) financials.projected_arr  2) parsed from arr_calculation  3) legacy d.arr
+// Never returns undefined or NaN. Returns "" when no valid value exists.
 function getDealArr(d) {
-  return (d.financials && d.financials.projected_arr) || d.arr || "";
+  if (!d) return "";
+  // 1. Canonical field written by every analysis run
+  if (d.financials && d.financials.projected_arr && parseArr(d.financials.projected_arr) > 0) {
+    return d.financials.projected_arr;
+  }
+  // 2. Extract the final dollar figure from the calculation string (e.g. "… = $15M ARR")
+  if (d.financials && d.financials.arr_calculation) {
+    var _matches = String(d.financials.arr_calculation).match(/\$[\d.,]+[KMBTkmbt]?/g);
+    if (_matches && _matches.length) {
+      var _last = _matches[_matches.length - 1];
+      if (parseArr(_last) > 0) return _last;
+    }
+  }
+  // 3. Legacy d.arr — kept in sync by analysis runs and migrations
+  return d.arr || "";
 }
 
 // ─── City coords for world map ────────────────────────────────────────────────
@@ -962,7 +976,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   }
 
   function buildCsvRows(segDeals, includeSegCol) {
-    function sortDl(a,b){ if((a.priority||"tier_1")!==(b.priority||"tier_1")) return (a.priority||"tier_1")==="tier_1"?-1:(a.priority||"tier_1")==="tier_2"?((b.priority||"tier_1")==="tier_3"?-1:1):1; return parseArr(b.arr||"")-parseArr(a.arr||""); }
+    function sortDl(a,b){ if((a.priority||"tier_1")!==(b.priority||"tier_1")) return (a.priority||"tier_1")==="tier_1"?-1:(a.priority||"tier_1")==="tier_2"?((b.priority||"tier_1")==="tier_3"?-1:1):1; return parseArr(getDealArr(b)||"")-parseArr(getDealArr(a)||""); }
     return segDeals.slice().sort(sortDl).map(function(d){
       var ad = d.analysisData||{};
       var kc = (ad.key_contacts||[]).slice(0,5).concat(d.manualContacts||[]).map(function(c){ return c.name+(c.title?" ("+c.title+")":"")+(c.status&&c.status!=="Unverified"?" ["+c.status+"]":""); }).join("; ");
@@ -1368,7 +1382,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       var buckets = getBuckets(vid);
       var segments = buckets.map(function(b){
         var sd = vertDeals.filter(function(d){ return d.tier===b.id; });
-        function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
+        function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(getDealArr(b2)||"")-parseArr(getDealArr(a)||""); }
         function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:getDealArr(d)||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
         var partnered = sd.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         var greenfield = sd.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
@@ -1494,8 +1508,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       var bucket = getBuckets(vid).find(function(b){ return b.id===tid; });
       var segLabel = bucket ? bucket.label : tid;
       var segDeals = deals.filter(function(d){ return d.vertical===vid && (d.tier||"")===tid; });
-      function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
-      function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+      function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(getDealArr(b2)||"")-parseArr(getDealArr(a)||""); }
+      function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:getDealArr(d)||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
       var partnered = segDeals.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
       var greenfield = segDeals.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
       var sys = "You are a pipeline intelligence analyst for CoinPayments. Every slide must reference specific named accounts from the data — no hallucination, no invented numbers. CRITICAL RULE \u2014 NO INDIVIDUAL NAMES: Never include any individual person's name in any slide or table cell. Use company names, titles, and roles only \u2014 never individual person names.\n" + CP_CAPABILITIES;
@@ -1570,7 +1584,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       var t = (data && data.tam_som_arr) || {};
-      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(deal);
       var freshFin = buildFinancials(t, freshArr, false);
       freshFin.updatedByRerun = true;
       var freshCp = detectCryptoPartners(data);
@@ -1599,7 +1613,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       setUpdateFinStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"" }).then(function(data) {
       var t = (data && data.tam_som_arr) || {};
-      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(deal);
       var freshTam = t.tam_usd || deal.tam || "";
       var newFin = buildFinancials(t, freshArr, false);
       setDeals(function(prev){ return prev.map(function(d){
@@ -1633,7 +1647,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
           .then(function(data) {
             var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
             var t = (data && data.tam_som_arr) || {};
-            var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+            var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(deal);
             var freshFin = buildFinancials(t, freshArr, false);
             freshFin.updatedByRerun = true;
             var freshCp = detectCryptoPartners(data);
@@ -1671,7 +1685,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       try {
         var data = await runFinancialCalc(deal.company, function(){}, { tavily: tKey||"" });
         var t = (data && data.tam_som_arr) || {};
-        var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
+        var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(deal);
         var freshTam = t.tam_usd || deal.tam || "";
         var newFin = buildFinancials(t, freshArr, false);
         newFin.updatedByRerun = true;
@@ -2915,8 +2929,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                       <div style={{ width:8, height:8, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
                       <span style={{ color:stage.color, fontWeight:800, fontSize:14, letterSpacing:"-0.01em" }}>{stage.label}</span>
                       <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>({stageDeals.length})</span>
-                      {stageDeals.some(function(d){return d.financials?d.financials.projected_arr:d.arr;}) && (
-                        <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>· {fmtMoney(stageDeals.reduce(function(s,d){ return s+parseArr(d.financials?d.financials.projected_arr:d.arr); },0))} ARR</span>
+                      {stageDeals.some(function(d){return getDealArr(d);}) && (
+                        <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>· {fmtMoney(stageDeals.reduce(function(s,d){ return s+parseArr(getDealArr(d)||"0"); },0))} ARR</span>
                       )}
                     </div>
                     <div style={{ borderBottom:"1px solid "+C.border, marginBottom:14 }}/>
@@ -2928,7 +2942,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                         return (function() {
                           var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
-                          var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
+                          var dispArr = getDealArr(deal);
+                          if (process.env.NODE_ENV !== "production" && deal.arr && deal.financials && deal.financials.projected_arr && deal.arr !== deal.financials.projected_arr) {
+                            console.warn("[ARR DRIFT]", deal.company, "d.arr=", deal.arr, "financials.projected_arr=", deal.financials.projected_arr);
+                          }
                           var isExisting = !!deal.isExistingClient;
                           var dealPrio = deal.priority || "";
                           var prioColor = dealPrio==="tier_1"?C.accent:dealPrio==="tier_2"?"#64748B":dealPrio==="tier_3"?C.dim:C.border;
@@ -3032,7 +3049,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                             {isEditing ? (
                               <div style={{ padding:"12px" }}>
                                 <div style={{ display:"grid", gap:6, marginBottom:8 }}>
-                                  <input defaultValue={deal.financials?deal.financials.projected_arr:deal.arr} id={"arr_"+deal.id} placeholder="Projected ARR e.g. $45K" style={inp}/>
+                                  <input defaultValue={getDealArr(deal)} id={"arr_"+deal.id} placeholder="Projected ARR e.g. $45K" style={inp}/>
                                   <input defaultValue={deal.notes}   id={"notes_"+deal.id} placeholder="Notes"                   style={inp}/>
                                   <select defaultValue={deal.tier||""} id={"tier_"+deal.id} style={sel}>
                                     <option value="">Unassigned</option>
@@ -3071,7 +3088,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                                 </div>
                                 <button onClick={function(){
                                   var arrEl=document.getElementById("arr_"+deal.id), notesEl=document.getElementById("notes_"+deal.id), tierEl=document.getElementById("tier_"+deal.id), priorityEl=document.getElementById("priority_"+deal.id), stageEl=document.getElementById("stage_"+deal.id), vertEl=document.getElementById("vert_"+deal.id), geoEl=document.getElementById("geo_"+deal.id);
-                                  var newArr=arrEl?arrEl.value:(deal.financials?deal.financials.projected_arr:deal.arr);
+                                  var newArr=arrEl?arrEl.value:getDealArr(deal);
                                   var finPatch=deal.financials?{financials:Object.assign({},deal.financials,{projected_arr:newArr})}:{};
                                   var selPartners=CRYPTO_INFRA_PARTNERS.filter(function(p){ var cb=document.getElementById("cp_"+p.name.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+deal.id); return cb&&cb.checked; }).map(function(p){ return p.name; });
                                   var otherEl=document.getElementById("cp_other_"+deal.id);
@@ -3350,7 +3367,7 @@ function DeckBuilder({ gammaHistory, setGammaHistory, deals }) {
     if (!dealList || !dealList.length) return "No pipeline deals available.";
     var lines = ["=== PIPELINE DEALS (" + dealList.length + " accounts) ===\n"];
     dealList.forEach(function(d) {
-      var proj = (d.financials && d.financials.projected_arr) || d.arr || "N/A";
+      var proj = getDealArr(d) || "N/A";
       var som  = (d.financials && d.financials.som) || "N/A";
       var partners = [];
       if (d.analysisData && Array.isArray(d.analysisData.partnerships)) {
@@ -3904,7 +3921,7 @@ function CompeteTab({ deals }) {
         '<h2>' + (c.name||"") + ' <span class="cat">' + (c.category||"") + '</span> <span class="pos pos-' + (c.competitivePosition||"") + '">' + posLbl + '</span></h2>' +
         '<p class="desc">' + (c.description||"—") + '</p>' +
         '<div class="lbl">Segments Penetrated</div><p>' + ((c.segmentsPenetrated||[]).join(", ")||"—") + '</p>' +
-        '<div class="lbl">Pipeline Targets (' + targets.length + ')</div><p>' + (targets.length ? targets.map(function(d){ return d.company+(d.arr?" · "+d.arr:""); }).join(" · ") : "None") + '</p>' +
+        '<div class="lbl">Pipeline Targets (' + targets.length + ')</div><p>' + (targets.length ? targets.map(function(d){ var _a=getDealArr(d); return d.company+(_a?" · "+_a:""); }).join(" · ") : "None") + '</p>' +
         '<div class="lbl">CoinPayments Differentiation</div><p>' + (c.differentiation||"—") + '</p>' +
         '<div class="lbl">Key Weaknesses</div><p>' + (c.weaknesses||"—") + '</p>' +
         '<div class="lbl">Full Intelligence</div><p>' + (c.fullDetail||"—") + '</p>' +
@@ -3956,7 +3973,7 @@ function CompeteTab({ deals }) {
     try {
       var compList = filtered.map(function(c){
         var t = getPipelineTargets(c.name);
-        return { name:c.name, category:c.category, description:c.description, segmentsPenetrated:c.segmentsPenetrated||[], competitivePosition:c.competitivePosition, differentiation:c.differentiation||"", weaknesses:c.weaknesses||"", fullDetail:c.fullDetail||"", pipelineTargets:t.map(function(d){return {company:d.company,arr:d.arr||"",segment:d.tier||""};}) };
+        return { name:c.name, category:c.category, description:c.description, segmentsPenetrated:c.segmentsPenetrated||[], competitivePosition:c.competitivePosition, differentiation:c.differentiation||"", weaknesses:c.weaknesses||"", fullDetail:c.fullDetail||"", pipelineTargets:t.map(function(d){return {company:d.company,arr:getDealArr(d)||"",segment:d.tier||""};}) };
       });
       var sys = "You are a CoinPayments sales enablement specialist creating a competitive intelligence deck for the sales team.\n" + CP_CAPABILITIES;
       var user = "Using the following competitive landscape data, create a structured presentation outline for a CoinPayments internal competitive intelligence deck. Audience: CoinPayments sales team.\n\n" +
@@ -4413,7 +4430,7 @@ export default function App() {
       if (pipeMatch) {
         var now = new Date().toISOString();
         var t = data.tam_som_arr || {};
-        var freshArr = t.projected_arr || t.likely_arr_usd || pipeMatch.arr || "";
+        var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(pipeMatch) || "";
         var freshFin = buildFinancials(t, freshArr, false);
         freshFin.updatedByRerun = true;
         setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:now, arr:freshArr, financials:freshFin }) : d; }); });

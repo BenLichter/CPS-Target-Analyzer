@@ -233,6 +233,32 @@ export default async function handler(req, res) {
           }
         }
 
+        // Hard migration: force d.arr === financials.projected_arr for every deal that has financials.
+        // This eliminates any remaining drift from partial analysis saves or stale writes.
+        if (Array.isArray(pipeline)) {
+          const arrSyncV2 = await kvGet(url, token, 'cp_pipeline:arr_sync_v2');
+          if (!arrSyncV2) {
+            var v2Corrected = 0;
+            var v2NoFin = [];
+            var v2Fixed = pipeline.map(function(d) {
+              if (!d) return d;
+              if (!d.financials || !d.financials.projected_arr) {
+                if (v2NoFin.length < 20) v2NoFin.push(d.company || d.id);
+                return d;
+              }
+              if (d.arr === d.financials.projected_arr) return d;
+              v2Corrected++;
+              return Object.assign({}, d, { arr: d.financials.projected_arr });
+            });
+            console.log('[arr_sync_v2] Corrected', v2Corrected, 'targets. No-financials count:', v2NoFin.length, 'sample:', JSON.stringify(v2NoFin));
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', v2Fixed),
+              kvSet(url, token, 'cp_pipeline:arr_sync_v2', true),
+            ]);
+            pipeline = v2Fixed;
+          }
+        }
+
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.
