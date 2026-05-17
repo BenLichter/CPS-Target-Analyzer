@@ -57,6 +57,23 @@ export default async function handler(req, res) {
           }
         }
 
+        // One-time migration: set deal.arr = raw SOM so capture rate can be applied at vertical level
+        if (Array.isArray(pipeline)) {
+          const somMigrated = await kvGet(url, token, 'cp_pipeline:som_migrated');
+          if (!somMigrated) {
+            var somPipeline = pipeline.map(function(d) {
+              if (!d) return d;
+              var rawSom = (d.financials && d.financials.som) ? d.financials.som : (d.arr || '');
+              return Object.assign({}, d, { arr: rawSom, som: rawSom });
+            });
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', somPipeline),
+              kvSet(url, token, 'cp_pipeline:som_migrated', true),
+            ]);
+            pipeline = somPipeline;
+          }
+        }
+
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.
