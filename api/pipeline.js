@@ -1,6 +1,28 @@
 import { verifyAuth } from './_lib/auth.js';
 let memoryStore = { pipeline: [], keys: null, analyses: {} };
 
+function parseArrSimple(s) {
+  if (!s) return 0;
+  var raw = String(s).trim();
+  var match = raw.match(/\$?([0-9,]+(?:\.[0-9]+)?)\s*(T|B|M|K|t|b|m|k)?/);
+  if (!match) return 0;
+  var num = parseFloat(match[1].replace(/,/g, ''));
+  var unit = (match[2] || '').toUpperCase();
+  if (unit === 'T') return num * 1e12;
+  if (unit === 'B') return num * 1e9;
+  if (unit === 'M') return num * 1e6;
+  if (unit === 'K') return num * 1e3;
+  return num || 0;
+}
+function fmtArrSimple(n) {
+  if (!n) return '';
+  if (n >= 1e12) return '$' + (n / 1e12).toFixed(2).replace(/\.?0+$/, '') + 'T';
+  if (n >= 1e9)  return '$' + (n / 1e9).toFixed(2).replace(/\.?0+$/, '')  + 'B';
+  if (n >= 1e6)  return '$' + (n / 1e6).toFixed(2).replace(/\.?0+$/, '')  + 'M';
+  if (n >= 1e3)  return '$' + (n / 1e3).toFixed(2).replace(/\.?0+$/, '')  + 'K';
+  return '$' + Math.round(n);
+}
+
 async function kvGet(url, token, key) {
   const r = await fetch(`${url}/get/${key}`, {
     headers: { Authorization: `Bearer ${token}` }
@@ -73,6 +95,39 @@ export default async function handler(req, res) {
               kvSet(url, token, 'cp_pipeline:som_migrated', false),
             ]);
             pipeline = restored;
+          }
+        }
+
+        // One-time migration: set projected_arr = SOM for non-broker FS targets
+        // where capture rate was incorrectly applied at the per-target level.
+        if (Array.isArray(pipeline)) {
+          const arrEqSomMigrated = await kvGet(url, token, 'cp_pipeline:arr_eq_som_migrated');
+          if (!arrEqSomMigrated) {
+            let corrected = 0;
+            var fixedArr = pipeline.map(function(d) {
+              if (!d) return d;
+              if (d.vertical !== 'financial_services') return d;
+              if (d.tier === 'brokerage') return d;
+              if (!d.financials || !d.financials.som) return d;
+              var somVal = parseArrSimple(d.financials.som);
+              var projVal = parseArrSimple(d.financials.projected_arr || d.arr || '');
+              if (somVal <= 0 || projVal >= somVal * 0.95) return d; // already correct or no haircut
+              corrected++;
+              var upsideVal = fmtArrSimple(somVal * 3);
+              return Object.assign({}, d, {
+                arr: d.financials.som,
+                financials: Object.assign({}, d.financials, {
+                  projected_arr: d.financials.som,
+                  upside_arr: upsideVal,
+                })
+              });
+            });
+            console.log('[Migration arr_eq_som] Corrected', corrected, 'targets');
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', fixedArr),
+              kvSet(url, token, 'cp_pipeline:arr_eq_som_migrated', true),
+            ]);
+            pipeline = fixedArr;
           }
         }
 
