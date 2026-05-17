@@ -30,7 +30,7 @@ const C = {
 const BLOCKED = ["bloomberg.com","wsj.com","ft.com","economist.com","nytimes.com","washingtonpost.com","barrons.com","hbr.org"];
 
 const VERTICAL_WIN_RATES = {
-  financial_services: 1.0,
+  financial_services: 0.333,
   luxury_travel: 0.333,
   luxury_goods: 1.0,
   gaming_casinos: 1.0,
@@ -2568,8 +2568,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                         <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                           style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
                           <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
-                          <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
-                          <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
+                          <div title={fsWr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(fsWr*1000)/10+"%: "+fmtMoney(m.totalArr*fsWr) : undefined}
+                            style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr*fsWr):"—"}</div>
+                          <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:fsWr<1?1:3 }}>Total ARR</div>
+                          {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:3, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
                           {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
                             <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
                             <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
