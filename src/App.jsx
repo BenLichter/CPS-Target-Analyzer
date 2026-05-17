@@ -36,13 +36,6 @@ const VERTICAL_WIN_RATES = {
   gaming_casinos: 1.0,
 };
 
-const VERTICAL_CAPTURE_RATES = {
-  financial_services: 0.02,
-  luxury_travel: 1.0,
-  luxury_goods: 1.0,
-  gaming_casinos: 1.0,
-};
-
 const COMPARE_ROWS = [
   ["Merchant Acceptance","merchant_acceptance"],["Fiat On-Ramp","fiat_on_ramp"],
   ["Fiat Off-Ramp","fiat_off_ramp"],["Crypto Breadth","crypto_breadth"],
@@ -1555,7 +1548,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       var t = (data && data.tam_som_arr) || {};
-      var freshArr = t.som || t.som_usd || t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
       var freshFin = buildFinancials(t, freshArr, false);
       freshFin.updatedByRerun = true;
       var freshCp = detectCryptoPartners(data);
@@ -1584,7 +1577,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       setUpdateFinStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
     }, { tavily:tKey||"" }).then(function(data) {
       var t = (data && data.tam_som_arr) || {};
-      var freshArr = t.som || t.som_usd || t.projected_arr || t.likely_arr_usd || deal.arr;
+      var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
       var freshTam = t.tam_usd || deal.tam || "";
       var newFin = buildFinancials(t, freshArr, false);
       setDeals(function(prev){ return prev.map(function(d){
@@ -1618,7 +1611,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           .then(function(data) {
             var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
             var t = (data && data.tam_som_arr) || {};
-            var freshArr = t.som || t.som_usd || t.projected_arr || t.likely_arr_usd || deal.arr;
+            var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
             var freshFin = buildFinancials(t, freshArr, false);
             freshFin.updatedByRerun = true;
             var freshCp = detectCryptoPartners(data);
@@ -1656,7 +1649,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       try {
         var data = await runFinancialCalc(deal.company, function(){}, { tavily: tKey||"" });
         var t = (data && data.tam_som_arr) || {};
-        var freshArr = t.som || t.som_usd || t.projected_arr || t.likely_arr_usd || deal.arr;
+        var freshArr = t.projected_arr || t.likely_arr_usd || deal.arr;
         var freshTam = t.tam_usd || deal.tam || "";
         var newFin = buildFinancials(t, freshArr, false);
         newFin.updatedByRerun = true;
@@ -1746,8 +1739,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     return parseArr(String(s));
   }
   function getDealOppSize(d) {
-    var cr = VERTICAL_CAPTURE_RATES[d.vertical] !== undefined ? VERTICAL_CAPTURE_RATES[d.vertical] : 1.0;
-    var av = parseArr(d.arr||"0") * cr;
+    var av = parseArr(d.arr||"0");
     if (av>=5000000) return "enterprise";
     if (av>=1000000) return "midmarket";
     if (av>=500000)  return "growth";
@@ -1756,8 +1748,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   function sortDeals(arr, order) {
     return arr.slice().sort(function(a,b){
       if (order==="za")       return b.company.localeCompare(a.company);
-      if (order==="arr_high") return (parseArr(b.arr||"0")*(VERTICAL_CAPTURE_RATES[b.vertical]||1.0))-(parseArr(a.arr||"0")*(VERTICAL_CAPTURE_RATES[a.vertical]||1.0));
-      if (order==="arr_low")  return (parseArr(a.arr||"0")*(VERTICAL_CAPTURE_RATES[a.vertical]||1.0))-(parseArr(b.arr||"0")*(VERTICAL_CAPTURE_RATES[b.vertical]||1.0));
+      if (order==="arr_high") return parseArr(b.arr||"0")-parseArr(a.arr||"0");
+      if (order==="arr_low")  return parseArr(a.arr||"0")-parseArr(b.arr||"0");
       if (order==="vol_high") return getDealVolume(b)-getDealVolume(a);
       if (order==="vol_low")  return getDealVolume(a)-getDealVolume(b);
       if (order==="recent")   return new Date(b.addedAt||0)-new Date(a.addedAt||0);
@@ -1815,8 +1807,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
 
   var activeVert = pipeView.vertical ? (VERTICALS.find(function(v){ return v.id===pipeView.vertical; })||VERTICALS[0]) : null;
   var activeTier = pipeView.tier ? (getBuckets(pipeView.vertical||"").find(function(t){ return t.id===pipeView.tier; })||null) : null;
-  var activeCr = VERTICAL_CAPTURE_RATES[pipeView.vertical] !== undefined ? VERTICAL_CAPTURE_RATES[pipeView.vertical] : 1.0;
-  var activeWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1.0;
   var baseTierDeals = (pipeView.vertical&&pipeView.tier)
     ? deals.filter(function(d){
         if (d.vertical!==pipeView.vertical) return false;
@@ -1834,8 +1824,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (stageFilter!=="all" && d.stage!==stageFilter) return false;
     if (arrFilter!=="all") {
       if (!d.arr) return false;
-      var arrCr = VERTICAL_CAPTURE_RATES[d.vertical] !== undefined ? VERTICAL_CAPTURE_RATES[d.vertical] : 1.0;
-      var av = parseArr(d.arr) * arrCr;
+      var av = parseArr(d.arr);
       if (arrFilter==="under1m" && av >= 1000000) return false;
       if (arrFilter==="1m_2m" && (av < 1000000 || av > 2000000)) return false;
       if (arrFilter==="over2m" && av <= 2000000) return false;
@@ -1845,7 +1834,11 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     if (existingClientFilter==="opportunity" &&  !!d.isExistingClient) return false;
     if (existingClientFilter==="existing"    && !d.isExistingClient)   return false;
     if (oppSizeFilter!=="all") {
-      if (getDealOppSize(d) !== oppSizeFilter) return false;
+      var oa = parseArr(d.arr||"0");
+      if (oppSizeFilter==="enterprise" && oa<5000000) return false;
+      if (oppSizeFilter==="midmarket"  && (oa<1000000||oa>=5000000)) return false;
+      if (oppSizeFilter==="growth"     && (oa<500000||oa>=1000000)) return false;
+      if (oppSizeFilter==="emerging"   && oa>=500000) return false;
     }
     if (volTierFilter!=="all") {
       var vv = getDealVolume(d);
@@ -2091,8 +2084,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             {VERTICALS.map(function(v) {
               var m = vMetrics(v.id, geoFilter, cryptoFilter);
               var wr = VERTICAL_WIN_RATES[v.id] !== undefined ? VERTICAL_WIN_RATES[v.id] : 1;
-              var cr = VERTICAL_CAPTURE_RATES[v.id] !== undefined ? VERTICAL_CAPTURE_RATES[v.id] : 1.0;
-              var adjArr = m.totalArr * cr * wr;
+              var adjArr = m.totalArr * wr;
               var adjTam = m.avgTam * wr;
               return (
                 <div key={v.id} onClick={function(){ setPipeView({vertical:v.id,tier:null}); }}
@@ -2101,10 +2093,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     <span style={{ fontSize:20 }}>{v.icon}</span>
                     <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
-                  <div title={(cr < 1 || wr < 1) ? "Raw SOM: "+fmtMoney(m.totalArr)+(cr < 1 ? " · Capture: "+Math.round(cr*100)+"%" : "")+(wr < 1 ? " · Win: "+Math.round(wr*1000)/10+"%" : "")+" = "+fmtMoney(adjArr) : undefined}
+                  <div title={wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined}
                     style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(adjArr):"—"}</div>
-                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:(cr<1||wr<1)?1:4 }}>Total ARR</div>
-                  {(cr < 1 || wr < 1) && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>Raw SOM: {fmtMoney(m.totalArr)}{cr < 1 ? " · "+Math.round(cr*100)+"% capture" : ""}{wr < 1 ? " · "+Math.round(wr*1000)/10+"% win" : ""}</div>}
+                  <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:wr<1?1:4 }}>Total ARR</div>
+                  {wr < 1 && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>({Math.round(wr*1000)/10}% win-adjusted)</div>}
                   {m.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, marginBottom:4, lineHeight:1.3 }}>{m.opportunityCount} opportunit{m.opportunityCount===1?"y":"ies"} · {m.existingCount} existing client{m.existingCount===1?"":"s"}</div>}
                   {adjTam > 0 && <div style={{ marginBottom:6 }}>
                     <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(adjTam)}</div>
@@ -2160,7 +2152,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
           </div>
           {deals.length > 0 && (function() {
             var totalDeals = deals.length;
-            var totalArr = deals.reduce(function(s,d){ return s+parseArr(d.arr||"")*(VERTICAL_CAPTURE_RATES[d.vertical]||1.0); }, 0);
+            var totalArr = deals.reduce(function(s,d){ return s+parseArr(d.arr||""); }, 0);
             return (
               <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
@@ -2173,7 +2165,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                 <div style={{ display:"flex", gap:3, alignItems:"stretch" }}>
                   {PIPE_STAGES.map(function(stage) {
                     var cnt = deals.filter(function(d){ return d.stage===stage.id; }).length;
-                    var stageArr = deals.filter(function(d){ return d.stage===stage.id; }).reduce(function(s,d){ return s+parseArr(d.arr||"")*(VERTICAL_CAPTURE_RATES[d.vertical]||1.0); }, 0);
+                    var stageArr = deals.filter(function(d){ return d.stage===stage.id; }).reduce(function(s,d){ return s+parseArr(d.arr||""); }, 0);
                     var pct = totalDeals ? Math.round(cnt/totalDeals*100) : 0;
                     var isActive = stageFilter===stage.id;
                     return (
@@ -2248,8 +2240,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             if (pipeView.vertical === "financial_services") {
               var fsAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
               var fsWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1;
-              var fsCr = VERTICAL_CAPTURE_RATES[pipeView.vertical] !== undefined ? VERTICAL_CAPTURE_RATES[pipeView.vertical] : 1.0;
-              var fsAdjArr = fsAll.totalArr * fsCr * fsWr;
+              var fsAdjArr = fsAll.totalArr * fsWr;
               var fsAdjTam = fsAll.avgTam * fsWr;
               var fsSegments = FS_ORDER.map(function(id){ return buckets.find(function(b){ return b.id===id; }); }).filter(Boolean);
               return (
@@ -2271,10 +2262,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     </div>
                     <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                       <div>
-                        <div title={(fsCr < 1 || fsWr < 1) ? "Raw SOM: "+fmtMoney(fsAll.totalArr)+(fsCr < 1 ? " · Capture: "+Math.round(fsCr*100)+"%" : "")+(fsWr < 1 ? " · Win: "+Math.round(fsWr*1000)/10+"%" : "")+" = "+fmtMoney(fsAdjArr) : undefined}
+                        <div title={fsWr < 1 ? "Total potential: "+fmtMoney(fsAll.totalArr)+" · Win-adjusted at "+Math.round(fsWr*1000)/10+"%: "+fmtMoney(fsAdjArr) : undefined}
                           style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAdjArr) : "—"}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
-                        {(fsCr < 1 || fsWr < 1) && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>Raw SOM: {fmtMoney(fsAll.totalArr)}{fsCr < 1 ? " · "+Math.round(fsCr*100)+"% capture" : ""}{fsWr < 1 ? " · "+Math.round(fsWr*1000)/10+"% win" : ""}</div>}
+                        {fsWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(fsWr*1000)/10}% win-adjusted)</div>}
                         {fsAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{fsAll.opportunityCount} opportunit{fsAll.opportunityCount===1?"y":"ies"} · {fsAll.existingCount} existing client{fsAll.existingCount===1?"":"s"}</div>}
                       </div>
                       {fsAdjTam > 0 && <div>
@@ -2304,7 +2295,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10 }}>
                     {fsSegments.map(function(t) {
                       var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
-                      var segAdjArr = m.totalArr * fsCr * fsWr;
                       var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
                       var bst = briefStatus[t.id]||"idle";
                       var burl = briefUrls[t.id];
@@ -2314,9 +2304,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                           style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
                           <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
-                          <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(segAdjArr):"—"}</div>
-                          <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:(fsCr<1||fsWr<1)?1:3 }}>Total ARR</div>
-                          {(fsCr < 1 || fsWr < 1) && <div style={{ color:C.dim, fontSize:8, marginBottom:3, lineHeight:1.3 }}>Raw SOM: {fmtMoney(m.totalArr)}{fsCr < 1 ? " · "+Math.round(fsCr*100)+"% cap" : ""}{fsWr < 1 ? " · "+Math.round(fsWr*1000)/10+"% win" : ""}</div>}
+                          <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
+                          <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
                           {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
                             <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
                             <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
@@ -2370,8 +2359,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             var ordered = buckets.slice().sort(function(a,b){ return tMetrics(pipeView.vertical,b.id,prioFilter,geoFilter,cryptoFilter).totalArr - tMetrics(pipeView.vertical,a.id,prioFilter,geoFilter,cryptoFilter).totalArr; });
             var vertAll = tMetrics(pipeView.vertical, "all", prioFilter, geoFilter, cryptoFilter);
             var vWr = VERTICAL_WIN_RATES[pipeView.vertical] !== undefined ? VERTICAL_WIN_RATES[pipeView.vertical] : 1;
-            var vCr = VERTICAL_CAPTURE_RATES[pipeView.vertical] !== undefined ? VERTICAL_CAPTURE_RATES[pipeView.vertical] : 1.0;
-            var vAdjArr = vertAll.totalArr * vCr * vWr;
+            var vAdjArr = vertAll.totalArr * vWr;
             var vAdjTam = vertAll.avgTam * vWr;
             return (
               <div style={{ marginBottom:20 }}>
@@ -2410,10 +2398,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                   </div>
                   <div style={{ display:"flex", gap:24, flexWrap:"wrap", alignItems:"flex-end" }}>
                     <div>
-                      <div title={(vCr < 1 || vWr < 1) ? "Raw SOM: "+fmtMoney(vertAll.totalArr)+(vCr < 1 ? " · Capture: "+Math.round(vCr*100)+"%" : "")+(vWr < 1 ? " · Win: "+Math.round(vWr*1000)/10+"%" : "")+" = "+fmtMoney(vAdjArr) : undefined}
+                      <div title={vWr < 1 ? "Total potential: "+fmtMoney(vertAll.totalArr)+" · Win-adjusted at "+Math.round(vWr*1000)/10+"%: "+fmtMoney(vAdjArr) : undefined}
                         style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{vertAll.total ? fmtMoney(vAdjArr) : "—"}</div>
                       <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
-                      {(vCr < 1 || vWr < 1) && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>Raw SOM: {fmtMoney(vertAll.totalArr)}{vCr < 1 ? " · "+Math.round(vCr*100)+"% capture" : ""}{vWr < 1 ? " · "+Math.round(vWr*1000)/10+"% win" : ""}</div>}
+                      {vWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>({Math.round(vWr*1000)/10}% win-adjusted)</div>}
                       {vertAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{vertAll.opportunityCount} opportunit{vertAll.opportunityCount===1?"y":"ies"} · {vertAll.existingCount} existing client{vertAll.existingCount===1?"":"s"}</div>}
                     </div>
                     {vAdjTam > 0 && <div>
@@ -2443,7 +2431,6 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10 }}>
                 {ordered.map(function(t) {
                   var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
-                  var tierAdjArr = m.totalArr * vCr * vWr;
                   var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
                   var bst = briefStatus[t.id]||"idle";
                   var burl = briefUrls[t.id];
@@ -2453,9 +2440,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                     <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
                       style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
                       <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
-                      <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(tierAdjArr):"—"}</div>
-                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:(vCr<1||vWr<1)?1:3 }}>Total ARR</div>
-                      {(vCr < 1 || vWr < 1) && <div style={{ color:C.dim, fontSize:8, marginBottom:3, lineHeight:1.3 }}>Raw SOM: {fmtMoney(m.totalArr)}{vCr < 1 ? " · "+Math.round(vCr*100)+"% cap" : ""}{vWr < 1 ? " · "+Math.round(vWr*1000)/10+"% win" : ""}</div>}
+                      <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
                       {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
                         <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
                         <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
@@ -2641,7 +2627,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
             if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
             if (datePreset!=="all"){ var dpLabel=datePreset==="7d"?"Last 7 days":datePreset==="30d"?"Last 30 days":datePreset==="90d"?"Last 90 days":datePreset==="quarter"?"This quarter":datePreset==="year"?"This year":(customRange.from||"?")+" – "+(customRange.to||"?"); chips.push({ label:"Added: "+dpLabel, clear:function(){setDatePreset("all");setCustomRange({from:"",to:""});} }); }
             if (!chips.length) return null;
-            var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0")*activeCr; },0);
+            var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0"); },0);
             return (
               <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", marginBottom:10, display:"flex", alignItems:"center", gap:5, flexWrap:"wrap", fontSize:10 }}>
                 <span style={{ color:C.dim, fontWeight:700, flexShrink:0 }}>Showing:</span>
@@ -2679,8 +2665,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                       <div style={{ width:8, height:8, borderRadius:"50%", background:stage.color, flexShrink:0 }}/>
                       <span style={{ color:stage.color, fontWeight:800, fontSize:14, letterSpacing:"-0.01em" }}>{stage.label}</span>
                       <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>({stageDeals.length})</span>
-                      {stageDeals.some(function(d){ return d.arr; }) && (
-                        <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>· {fmtMoney(stageDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0")*activeCr; },0))} ARR</span>
+                      {stageDeals.some(function(d){return d.financials?d.financials.projected_arr:d.arr;}) && (
+                        <span style={{ color:C.muted, fontWeight:600, fontSize:12 }}>· {fmtMoney(stageDeals.reduce(function(s,d){ return s+parseArr(d.financials?d.financials.projected_arr:d.arr); },0))} ARR</span>
                       )}
                     </div>
                     <div style={{ borderBottom:"1px solid "+C.border, marginBottom:14 }}/>
@@ -2692,7 +2678,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                         return (function() {
                           var dealVert = VERTICALS.find(function(v){ return v.id===deal.vertical; }) || activeVert;
                           var busy = !!(rerunStatus[deal.id] || updateFinStatus[deal.id]);
-                          var dispArr = deal.financials ? (deal.financials.som || deal.financials.projected_arr) : deal.arr;
+                          var dispArr = deal.financials ? deal.financials.projected_arr : deal.arr;
                           var isExisting = !!deal.isExistingClient;
                           var dealPrio = deal.priority || "";
                           var prioColor = dealPrio==="tier_1"?C.accent:dealPrio==="tier_2"?"#64748B":dealPrio==="tier_3"?C.dim:C.border;
@@ -2754,13 +2740,12 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
                                       var oppEntry = OPP_SIZES.find(function(o){ return o.id===oppId; });
                                       var dotColor = oppEntry ? oppEntry.dotColor : "#94A3B8";
                                       return (
-                                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:1 }}>
+                                        <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:2 }}>
                                           <span title={oppEntry?oppEntry.label:"Unknown"} style={{ width:8, height:8, borderRadius:"50%", background:dotColor, display:"inline-block", flexShrink:0 }}></span>
                                           <div style={{ color:C.cyan, fontWeight:800, fontSize:22, lineHeight:1.1 }}>{dispArr}</div>
                                         </div>
                                       );
                                     })()}
-                                    <div style={{ color:C.dim, fontSize:8, marginBottom:2, lineHeight:1.3 }}>Projected ARR (uncapped)</div>
                                     {deal.financials && (
                                       <div style={{ color:C.dim, fontSize:8 }}>{deal.financials.updatedByRerun?"✏️ Financials updated":"🔒 Financials locked"} · {new Date(deal.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
                                     )}
@@ -4112,7 +4097,7 @@ export default function App() {
         else if (segLower.includes("gaming")||segLower.includes("casino")||segLower.includes("gambling")||segLower.includes("betting")) vert="gaming_casinos";
         else vert="financial_services";
       }
-      var arr = (result.tam_som_arr && (result.tam_som_arr.som || result.tam_som_arr.som_usd || result.tam_som_arr.projected_arr || result.tam_som_arr.likely_arr_usd)) || "";
+      var arr = (result.tam_som_arr && (result.tam_som_arr.projected_arr || result.tam_som_arr.likely_arr_usd)) || "";
       var tam = (result.tam_som_arr && result.tam_som_arr.tam_usd) || "";
       var geo = detectGeo(result.hq || "");
       var rCp = detectCryptoPartners(result);
