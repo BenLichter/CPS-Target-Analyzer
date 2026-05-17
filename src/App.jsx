@@ -881,7 +881,7 @@ function relativeDate(iso) {
 }
 
 // ─── Pipeline Tab ─────────────────────────────────────────────────────────────
-function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
+function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOpenBulkUpload }) {
   // ALL hooks first — var sN pattern, no const, no early returns before hooks
   var s1 = useState({ vertical: null, tier: null }); var pipeView = s1[0]; var setPipeView = s1[1];
   var s2 = useState(null);  var editId  = s2[0]; var setEditId  = s2[1];
@@ -920,6 +920,9 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   var s30 = useState(null); var bulkRunConfirm = s30[0]; var setBulkRunConfirm = s30[1];
   var s31 = useState(null); var bulkRunProgress = s31[0]; var setBulkRunProgress = s31[1];
   var bulkAbortRef = useRef(false);
+  var sUVSel = useState({}); var uvSelected = sUVSel[0]; var setUVSelected = sUVSel[1];
+  var sUVBulkVert = useState(""); var uvBulkVert = sUVBulkVert[0]; var setUVBulkVert = sUVBulkVert[1];
+  var sUVAutoTag = useState(null); var uvAutoTag = sUVAutoTag[0]; var setUVAutoTag = sUVAutoTag[1];
 
   useEffect(function() {
     fetch("/api/gamma-template").then(function(r){ return r.json(); }).then(function(d){
@@ -1708,6 +1711,49 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
     setAutoTagModal(true);
   }
 
+  function assignVertical(dealId, vertical) {
+    setDeals(function(prev) {
+      return prev.map(function(d) {
+        return d.id === dealId ? Object.assign({}, d, { vertical: vertical }) : d;
+      });
+    });
+  }
+
+  async function autoTagVertical() {
+    var untagged = deals.filter(function(d){ return !d.vertical; });
+    if (!untagged.length) return;
+    setUVAutoTag({ status:'running', done:0, total:untagged.length, results:[] });
+    var results = [];
+    for (var i = 0; i < untagged.length; i++) {
+      var deal = untagged[i];
+      try {
+        var raw = await callAPI(
+          "You are a company classification expert. Output ONLY valid JSON. No markdown. Start with { end with }.",
+          'Classify this company into ONE of these verticals:\n- financial_services (banks, neobanks, fintechs, payment processors, FX brokers, escrow companies, remittance firms)\n- luxury_travel (hotels, airlines, cruise lines, private aviation, luxury travel agencies)\n- luxury_goods (luxury fashion, jewelry, watches, high-end retail, art galleries)\n- gaming_casinos (online gaming, casinos, sports betting, gambling operators)\n\nCompany: "' + deal.company + '"\nNotes: "' + (deal.notes||"").slice(0,200) + '"\n\nReturn ONLY valid JSON: {"vertical":"financial_services","confidence":0.85}',
+          150
+        );
+        var parsed = parseJSON(raw);
+        var vert = parsed.vertical;
+        var conf = parseFloat(parsed.confidence) || 0;
+        if (VERTICALS.find(function(v){ return v.id === vert; })) {
+          results.push({ id:deal.id, company:deal.company, vertical:vert, confidence:conf, lowConf:conf<0.7 });
+          if (conf >= 0.7) {
+            setDeals(function(prev){
+              return prev.map(function(d){ return d.id === deal.id ? Object.assign({},d,{ vertical:vert }) : d; });
+            });
+          }
+        } else {
+          results.push({ id:deal.id, company:deal.company, vertical:null, confidence:0, error:"Invalid vertical: "+vert });
+        }
+      } catch(e) {
+        results.push({ id:deal.id, company:deal.company, vertical:null, confidence:0, error:(e&&e.message)||String(e) });
+      }
+      setUVAutoTag(function(prev){ return prev ? Object.assign({},prev,{ done:i+1, results:results.slice() }) : null; });
+      if (i < untagged.length-1) await new Promise(function(r){ setTimeout(r, 400); });
+    }
+    setUVAutoTag({ status:'done', done:untagged.length, total:untagged.length, results:results });
+  }
+
   function importFromHistory(h) {
     var already = deals.find(function(d){ return d.company.toLowerCase()===(h.company||"").toLowerCase(); });
     if (already) return;
@@ -1961,6 +2007,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
   }
 
   var untaggedCount = deals.filter(function(d){ return !d.tier && d.vertical; }).length;
+  var noVerticalCount = deals.filter(function(d){ return !d.vertical; }).length;
 
   return (
     <div>
@@ -2049,7 +2096,16 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey }) {
       {!pipeView.vertical && (
         <div>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
-            <div style={{ color:C.text, fontSize:18, fontWeight:900 }}>Pipeline Dashboard</div>
+            <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+              <div style={{ color:C.text, fontSize:18, fontWeight:900 }}>Pipeline Dashboard</div>
+              {noVerticalCount > 0 && (
+                <button onClick={function(){ setPipeView({ vertical:"__untagged__", tier:null }); setUVSelected({}); setUVAutoTag(null); }}
+                  style={{ background:C.redDim, color:C.red, border:"1px solid "+C.red+"50", borderRadius:7, padding:"4px 12px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6, whiteSpace:"nowrap" }}>
+                  ⚠ Untagged
+                  <span style={{ background:C.red, color:"#fff", borderRadius:10, padding:"1px 6px", fontSize:9, fontWeight:700 }}>{noVerticalCount}</span>
+                </button>
+              )}
+            </div>
             <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
               {GEO_OPTS.map(function(o){
                 var active = geoFilter===o.id;
