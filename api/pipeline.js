@@ -161,6 +161,78 @@ export default async function handler(req, res) {
           }
         }
 
+        // One-time migration: enforce deterministic FX/Broker formula for all brokerage targets.
+        // Formula: projected_arr = annual_volume × 0.00003; upside = projected_arr × 1.5; som = projected_arr.
+        // Volume source: d.financials.som (old format stored volume there) or parsed from arr_calculation.
+        if (Array.isArray(pipeline)) {
+          const fxMigrated = await kvGet(url, token, 'cp_pipeline:fx_formula_migrated');
+          if (!fxMigrated) {
+            var fxCorrected = 0;
+            var fxOutliers = [];
+            var fxFixed = pipeline.map(function(d) {
+              if (!d) return d;
+              if (d.tier !== 'brokerage') return d;
+
+              // Determine annual volume. Old SYS had SOM = total annual volume for FX/Broker.
+              // If financials.som >> financials.projected_arr it's still the raw volume.
+              var volVal = 0;
+              var finSom = parseArrSimple((d.financials && d.financials.som) || '');
+              var finArr = parseArrSimple((d.financials && d.financials.projected_arr) || d.arr || '');
+              if (finSom > 0 && finArr > 0 && finSom > finArr * 100) {
+                // som is clearly the volume (volume >> ARR)
+                volVal = finSom;
+              } else if (finArr > 0) {
+                // Already has ARR; reverse-engineer volume from it as fallback
+                // volume = arr / 0.00003
+                volVal = finArr / 0.00003;
+              }
+
+              // Try parsing volume from arr_calculation string as another fallback
+              if (volVal <= 0 && d.financials && d.financials.arr_calculation) {
+                var calcStr = String(d.financials.arr_calculation);
+                var match = calcStr.match(/\$?([\d,.]+)\s*(T|B|M|K|t|b|m|k)/);
+                if (match) {
+                  var num = parseFloat(match[1].replace(/,/g, ''));
+                  var unit = (match[2] || '').toUpperCase();
+                  volVal = unit === 'T' ? num * 1e12 : unit === 'B' ? num * 1e9 : unit === 'M' ? num * 1e6 : unit === 'K' ? num * 1e3 : num;
+                }
+              }
+
+              if (volVal <= 0) return d; // cannot determine volume, skip
+
+              var newArr = volVal * 0.00003;
+              var newUpside = newArr * 1.5;
+              var newArrFmt = fmtArrSimple(newArr);
+              var newUpsideFmt = fmtArrSimple(newUpside);
+              var volFmt = fmtArrSimple(volVal);
+              var newCalc = volFmt + ' annual volume × 0.003% (0.3bps per $1M) = ' + newArrFmt + ' ARR';
+
+              var oldArr = finArr;
+              var discrepancy = oldArr > 0 ? Math.abs(newArr - oldArr) / Math.max(newArr, oldArr) : 1;
+              if (discrepancy > 0.05 || !d.financials || !d.financials.arr_calculation || !d.financials.arr_calculation.includes('0.003%')) {
+                fxCorrected++;
+                if (fxOutliers.length < 10) fxOutliers.push({ company: d.company, volume: volFmt, oldArr: fmtArrSimple(oldArr), newArr: newArrFmt });
+                return Object.assign({}, d, {
+                  arr: newArrFmt,
+                  financials: Object.assign({}, d.financials || {}, {
+                    projected_arr: newArrFmt,
+                    upside_arr: newUpsideFmt,
+                    som: newArrFmt,
+                    arr_calculation: newCalc,
+                  })
+                });
+              }
+              return d;
+            });
+            console.log('[FX/Broker migration] Corrected', fxCorrected, 'targets. Outliers:', JSON.stringify(fxOutliers));
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', fxFixed),
+              kvSet(url, token, 'cp_pipeline:fx_formula_migrated', true),
+            ]);
+            pipeline = fxFixed;
+          }
+        }
+
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.
