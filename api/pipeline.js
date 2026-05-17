@@ -57,6 +57,25 @@ export default async function handler(req, res) {
           }
         }
 
+        // One-time rollback: restore deal.arr = financials.projected_arr after aborted SOM migration
+        if (Array.isArray(pipeline)) {
+          const somMigrated = await kvGet(url, token, 'cp_pipeline:som_migrated');
+          if (somMigrated) {
+            var restored = pipeline.map(function(d) {
+              if (!d) return d;
+              var origArr = (d.financials && d.financials.projected_arr) ? d.financials.projected_arr : d.arr;
+              var patched = Object.assign({}, d, { arr: origArr });
+              delete patched.som;
+              return patched;
+            });
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', restored),
+              kvSet(url, token, 'cp_pipeline:som_migrated', false),
+            ]);
+            pipeline = restored;
+          }
+        }
+
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.
