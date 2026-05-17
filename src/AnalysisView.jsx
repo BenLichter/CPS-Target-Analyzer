@@ -639,7 +639,7 @@ export default function AnalysisView({ data, onEventsUpdate, dealId, manualConta
           {t.som_calculation && (
             <div style={{ background: C.bg, border: "1px solid " + C.border, borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
               <div style={{ color: C.dim, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>📐 Bottoms-Up Calculation</div>
-              <div style={{ color: C.cyan, fontSize: 11, lineHeight: 1.7, fontFamily: "monospace" }}>{t.som_calculation}</div>
+              <div style={{ color: C.cyan, fontSize: 11, lineHeight: 1.7, fontFamily: "monospace" }}>{t.som_calculation.replace(/\s*[xX×]\s*(?:[123](?:\.\d)?)%\s*=\s*\$[\d.,]+[KMBTkmbt]?\s*(?:ARR)?\s*$/i, '')}</div>
             </div>
           )}
           {(t.assumptions || []).map(function(a, i) { return <div key={i} style={{ color: C.dim, fontSize: 11, marginBottom: 4 }}>• {a}</div>; })}
