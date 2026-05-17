@@ -36,11 +36,11 @@ const VERTICAL_WIN_RATES = {
   gaming_casinos: 1.0,
 };
 
-// Capture rate applied at vertical aggregation level only.
-// Per-target ARR = SOM for all non-FX/Broker FS targets;
-// FX/Broker d.arr is already final ARR (bps model), so capture rate = 1.
+// No capture rate multiplier at aggregation — per-target ARR already equals SOM for all
+// non-FX/Broker FS targets (fee applies directly to crypto-adopted volume). The only
+// portfolio-level adjustment is VERTICAL_WIN_RATES (33.3% for FS and Luxury Travel).
 const VERTICAL_CAPTURE_RATES = {
-  financial_services: 0.02,
+  financial_services: 1.0,
   luxury_travel: 1.0,
   luxury_goods: 1.0,
   gaming_casinos: 1.0,
@@ -548,7 +548,7 @@ async function runFinancialCalc(company, onStep, keys) {
   }
   onStep("💰 Recalculating financials...");
   const FIN_SYS = 'Output ONLY valid JSON. No markdown. Start with { end with }.\n\nARR METHODOLOGY:\nStep 1: Find annual GMV or revenue from context.\nStep 2: Apply crypto adoption rate based on maturity: 15-25% already offering, 8-15% exploring, 3-8% early/none.\nStep 3: projected_arr = crypto adoption volume × 0.5% fee. Do NOT apply a capture rate multiplier — the 0.5% fee IS the projected ARR.\nupside_arr = crypto adoption volume × 1.5%.\nsom_calculation format: "$[GMV] annual GMV × [adoption%] = $[crypto volume] × 0.5% fee = $[ARR] ARR"\nset capture_rate to "N/A — fee applies directly to crypto-adopted volume".\nAlways show full math inline in som_calculation.';
-  var raw = await callAPI(FIN_SYS, sanitize(ctx) + "Calculate TAM/SOM/ARR for " + company + ". Today: " + todayStr + ".\nOutput ONLY: {\"tam_som_arr\":{\"tam_usd\":\"$X\",\"scale_metric\":\"X\",\"penetration_rate\":\"X%\",\"addressable_base\":\"X\",\"avg_transaction_value\":\"$450/user/year\",\"som\":\"$X\",\"capture_rate\":\"1.5%\",\"projected_arr\":\"$X\",\"upside_arr\":\"$X\",\"som_calculation\":\"full math string\",\"assumptions\":[]}}", 1200);
+  var raw = await callAPI(FIN_SYS, sanitize(ctx) + "Calculate TAM/SOM/ARR for " + company + ". Today: " + todayStr + ".\nOutput ONLY: {\"tam_som_arr\":{\"tam_usd\":\"$X\",\"scale_metric\":\"X\",\"penetration_rate\":\"X%\",\"addressable_base\":\"X\",\"avg_transaction_value\":\"$450/user/year\",\"som\":\"$X\",\"capture_rate\":\"N/A — fee applies directly to crypto-adopted volume\",\"projected_arr\":\"$X (= som — no capture rate)\",\"upside_arr\":\"$X\",\"som_calculation\":\"full math string\",\"assumptions\":[]}}", 1200);
   return parseJSON(raw);
 }
 
@@ -656,24 +656,31 @@ function buildFinancials(tam_som_arr, arr_str, setOnAdd) {
   };
 }
 
-// Single source of truth for per-target ARR.
-// Priority: 1) analysisData.tam_som_arr.projected_arr  2) financials.projected_arr  3) d.arr
-// analysisData is the raw output of the most recent analysis run — it is always the freshest
-// figure and is exactly what the analysis modal displays. financials may lag behind if the
-// pipeline save was interrupted. Never returns undefined or NaN.
+// Single source of truth for per-target ARR. ARR = SOM for all non-FX/Broker targets
+// (the 0.5% fee on crypto-adopted volume IS the ARR — no capture rate anywhere).
+// Priority order:
+//   1. analysisData.tam_som_arr — most recent analysis output
+//      For non-broker FS: prefer .som (fee calculation, never capture-rate-adjusted) over
+//      .projected_arr which may have had a stale capture rate applied in older analyses.
+//      For FX/Broker and all other verticals: prefer .projected_arr (bps model result).
+//   2. financials.projected_arr — built from analysis at save time, may lag analysisData
+//   3. d.arr — legacy field kept in sync by migrations
+// Never returns undefined or NaN.
 function getDealArr(d) {
   if (!d) return "";
-  // 1. Raw analysis output — the same value the modal shows, always freshest
   if (d.analysisData && d.analysisData.tam_som_arr) {
     var _t = d.analysisData.tam_som_arr;
+    // Non-broker FS: som = fee calculation = ARR. projected_arr may have stale capture rate.
+    if (d.vertical === "financial_services" && d.tier !== "brokerage") {
+      var _s = _t.som;
+      if (_s && parseArr(_s) > 0) return _s;
+    }
     var _av = _t.projected_arr || _t.likely_arr_usd;
     if (_av && parseArr(_av) > 0) return _av;
   }
-  // 2. financials.projected_arr — built from analysis, may be stale relative to analysisData
   if (d.financials && d.financials.projected_arr && parseArr(d.financials.projected_arr) > 0) {
     return d.financials.projected_arr;
   }
-  // 3. Legacy d.arr — kept in sync by migrations
   return d.arr || "";
 }
 
