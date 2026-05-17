@@ -657,23 +657,23 @@ function buildFinancials(tam_som_arr, arr_str, setOnAdd) {
 }
 
 // Single source of truth for per-target ARR.
-// Priority: 1) financials.projected_arr  2) parsed from arr_calculation  3) legacy d.arr
-// Never returns undefined or NaN. Returns "" when no valid value exists.
+// Priority: 1) analysisData.tam_som_arr.projected_arr  2) financials.projected_arr  3) d.arr
+// analysisData is the raw output of the most recent analysis run — it is always the freshest
+// figure and is exactly what the analysis modal displays. financials may lag behind if the
+// pipeline save was interrupted. Never returns undefined or NaN.
 function getDealArr(d) {
   if (!d) return "";
-  // 1. Canonical field written by every analysis run
+  // 1. Raw analysis output — the same value the modal shows, always freshest
+  if (d.analysisData && d.analysisData.tam_som_arr) {
+    var _t = d.analysisData.tam_som_arr;
+    var _av = _t.projected_arr || _t.likely_arr_usd;
+    if (_av && parseArr(_av) > 0) return _av;
+  }
+  // 2. financials.projected_arr — built from analysis, may be stale relative to analysisData
   if (d.financials && d.financials.projected_arr && parseArr(d.financials.projected_arr) > 0) {
     return d.financials.projected_arr;
   }
-  // 2. Extract the final dollar figure from the calculation string (e.g. "… = $15M ARR")
-  if (d.financials && d.financials.arr_calculation) {
-    var _matches = String(d.financials.arr_calculation).match(/\$[\d.,]+[KMBTkmbt]?/g);
-    if (_matches && _matches.length) {
-      var _last = _matches[_matches.length - 1];
-      if (parseArr(_last) > 0) return _last;
-    }
-  }
-  // 3. Legacy d.arr — kept in sync by analysis runs and migrations
+  // 3. Legacy d.arr — kept in sync by migrations
   return d.arr || "";
 }
 
