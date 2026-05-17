@@ -930,6 +930,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     }).catch(function(){});
   }, []);
 
+  var validVerticalIds = VERTICALS.map(function(v){ return v.id; });
+
   function getBuckets(vid) { return vid==="financial_services" ? FS_SUBVERTS : TIERS; }
 
   function exportCsv(filename, headers, rows) {
@@ -1720,7 +1722,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   }
 
   async function autoTagVertical() {
-    var untagged = deals.filter(function(d){ return !d.vertical; });
+    var untagged = deals.filter(function(d){ return !d.vertical || validVerticalIds.indexOf(d.vertical) === -1; });
     if (!untagged.length) return;
     setUVAutoTag({ status:'running', done:0, total:untagged.length, results:[] });
     var results = [];
@@ -2007,7 +2009,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   }
 
   var untaggedCount = deals.filter(function(d){ return !d.tier && d.vertical; }).length;
-  var noVerticalCount = deals.filter(function(d){ return !d.vertical; }).length;
+  var noVerticalCount = deals.filter(function(d){ return !d.vertical || validVerticalIds.indexOf(d.vertical) === -1; }).length;
 
   return (
     <div>
@@ -2094,7 +2096,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
           UNTAGGED TARGETS VIEW
       ══════════════════════════════════════════════════════════════════════ */}
       {pipeView.vertical === '__untagged__' && (function(){
-        var untaggedDeals = deals.filter(function(d){ return !d.vertical; });
+        var untaggedDeals = deals.filter(function(d){ return !d.vertical || validVerticalIds.indexOf(d.vertical) === -1; });
         var selCount = Object.keys(uvSelected).filter(function(k){ return uvSelected[k]; }).length;
         var allSelectable = untaggedDeals.length;
         var allSelected = allSelectable > 0 && selCount === allSelectable;
