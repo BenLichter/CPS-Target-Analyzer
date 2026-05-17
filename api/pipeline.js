@@ -131,6 +131,36 @@ export default async function handler(req, res) {
           }
         }
 
+        // One-time migration: sync d.arr ← financials.projected_arr where they differ >5%.
+        // financials.projected_arr is the canonical value (refreshed by each analysis run).
+        // d.arr is the legacy top-level field that can drift if analysis updates were partial.
+        if (Array.isArray(pipeline)) {
+          const arrSyncMigrated = await kvGet(url, token, 'cp_pipeline:arr_sync_migrated');
+          if (!arrSyncMigrated) {
+            let corrected = 0;
+            var offenders = [];
+            var syncedArr = pipeline.map(function(d) {
+              if (!d) return d;
+              if (!d.financials || !d.financials.projected_arr) return d;
+              var finVal = parseArrSimple(d.financials.projected_arr);
+              var arrVal = parseArrSimple(d.arr || '');
+              if (finVal <= 0) return d;
+              if (arrVal <= 0 || Math.abs(finVal - arrVal) / finVal > 0.05) {
+                corrected++;
+                if (offenders.length < 10) offenders.push({ company: d.company, old: d.arr, newArr: d.financials.projected_arr, delta: fmtArrSimple(Math.abs(finVal - arrVal)) });
+                return Object.assign({}, d, { arr: d.financials.projected_arr });
+              }
+              return d;
+            });
+            console.log('[Migration arr_sync] Corrected', corrected, 'targets. Top offenders:', JSON.stringify(offenders));
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', syncedArr),
+              kvSet(url, token, 'cp_pipeline:arr_sync_migrated', true),
+            ]);
+            pipeline = syncedArr;
+          }
+        }
+
         // Only fetch analyses for deals that have analysisUpdatedAt — this field is
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.

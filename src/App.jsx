@@ -656,6 +656,13 @@ function buildFinancials(tam_som_arr, arr_str, setOnAdd) {
   };
 }
 
+// Single source of truth for per-target ARR.
+// financials.projected_arr is the canonical value (refreshed by each analysis).
+// d.arr is the legacy top-level field kept in sync — fall back to it if financials is missing.
+function getDealArr(d) {
+  return (d.financials && d.financials.projected_arr) || d.arr || "";
+}
+
 // ─── City coords for world map ────────────────────────────────────────────────
 var CITY_COORDS = {
   "new york":[-74.006,40.714],"new york city":[-74.006,40.714],"nyc":[-74.006,40.714],
@@ -965,7 +972,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       var addedAt = d.addedAt ? new Date(d.addedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
       var finUpd = (d.financials&&d.financials.lockedAt) ? new Date(d.financials.lockedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
       var row = includeSegCol ? [d.company, svLabel(d.vertical,d.tier)] : [d.company];
-      return row.concat([d.priority||"tier_1", d.geography||"", d.stage||"", d.arr||"", volMetric, partners, d.hasCryptoPartner?"Partnered":"Greenfield", summary, kc, ad.website||"", ad.hq||"", ad.employees||"", addedAt, finUpd]);
+      return row.concat([d.priority||"tier_1", d.geography||"", d.stage||"", getDealArr(d)||"", volMetric, partners, d.hasCryptoPartner?"Partnered":"Greenfield", summary, kc, ad.website||"", ad.hq||"", ad.employees||"", addedAt, finUpd]);
     });
   }
 
@@ -1362,7 +1369,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       var segments = buckets.map(function(b){
         var sd = vertDeals.filter(function(d){ return d.tier===b.id; });
         function sortFn(a,b2){ var pa=a.priority||"tier_1",pb=b2.priority||"tier_1"; if(pa!==pb) return pa==="tier_1"?-1:pa==="tier_2"?(pb==="tier_3"?-1:1):1; return parseArr(b2.arr||"")-parseArr(a.arr||""); }
-        function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:d.arr||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
+        function mapDeal(d){ return { company:d.company, priority:d.priority||"tier_1", cryptoPartners:(d.cryptoPartners||[]).join(", ")||null, arr:getDealArr(d)||"—", tam:d.tam||"—", stage:d.stage||"—", geography:d.geography||"—" }; }
         var partnered = sd.filter(function(d){ return d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         var greenfield = sd.filter(function(d){ return !d.hasCryptoPartner; }).sort(sortFn).map(mapDeal);
         return { id:b.id, label:b.label, totalCount:sd.length, partneredCount:partnered.length, greenfieldCount:greenfield.length, partnered:partnered, greenfield:greenfield };
@@ -1797,7 +1804,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     return parseArr(String(s));
   }
   function getDealOppSize(d) {
-    var av = parseArr(d.arr||"0");
+    var av = parseArr(getDealArr(d)||"0");
     if (av>=5000000) return "enterprise";
     if (av>=1000000) return "midmarket";
     if (av>=500000)  return "growth";
@@ -1806,8 +1813,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   function sortDeals(arr, order) {
     return arr.slice().sort(function(a,b){
       if (order==="za")       return b.company.localeCompare(a.company);
-      if (order==="arr_high") return parseArr(b.arr||"0")-parseArr(a.arr||"0");
-      if (order==="arr_low")  return parseArr(a.arr||"0")-parseArr(b.arr||"0");
+      if (order==="arr_high") return parseArr(getDealArr(b)||"0")-parseArr(getDealArr(a)||"0");
+      if (order==="arr_low")  return parseArr(getDealArr(a)||"0")-parseArr(getDealArr(b)||"0");
       if (order==="vol_high") return getDealVolume(b)-getDealVolume(a);
       if (order==="vol_low")  return getDealVolume(a)-getDealVolume(b);
       if (order==="recent")   return new Date(b.addedAt||0)-new Date(a.addedAt||0);
@@ -1833,17 +1840,17 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     if (geo && geo!=="all") vd = vd.filter(function(d){ return (d.geography||"")===geo; });
     vd = applyCryptoFilter(vd, cp);
     var oppVd = vd.filter(function(d){ return !d.isExistingClient; });
-    var wa = oppVd.filter(function(d){ return d.arr; });
+    var wa = oppVd.filter(function(d){ return getDealArr(d); });
     var cr = VERTICAL_CAPTURE_RATES[vid] !== undefined ? VERTICAL_CAPTURE_RATES[vid] : 1.0;
     var tot;
     if (vid === "financial_services") {
-      // FX/Broker d.arr = final ARR (bps model, no capture rate needed)
-      // Non-broker d.arr = SOM → apply capture rate at aggregation
-      var brokerArr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-      var nonBrokerSom = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+      // FX/Broker getDealArr = final ARR (bps model, no capture rate needed)
+      // Non-broker getDealArr = SOM → apply capture rate at aggregation
+      var brokerArr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
+      var nonBrokerSom = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
       tot = brokerArr + nonBrokerSom * cr;
     } else {
-      tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+      tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
     }
     var sumTam = tMetrics(vid, "all", null, geo, cp).avgTam;
     return { total:vd.length, opportunityCount:oppVd.length, existingCount:vd.length-oppVd.length, avgArr:wa.length?tot/wa.length:0, totalArr:tot, avgTam:sumTam, won:vd.filter(function(d){return d.stage==="closed_won";}).length, p1:vd.filter(function(d){return (d.priority||"tier_1")==="tier_1";}).length, p2:vd.filter(function(d){return d.priority==="tier_2";}).length, p3:vd.filter(function(d){return d.priority==="tier_3";}).length };
@@ -1855,21 +1862,21 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
     td = applyCryptoFilter(td, cp);
     var oppTd = td.filter(function(d){ return !d.isExistingClient; });
-    var wa = oppTd.filter(function(d){ return d.arr; });
+    var wa = oppTd.filter(function(d){ return getDealArr(d); });
     var cr = VERTICAL_CAPTURE_RATES[vid] !== undefined ? VERTICAL_CAPTURE_RATES[vid] : 1.0;
     var tot;
     if (vid === "financial_services") {
       if (tid === "brokerage") {
-        tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+        tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
       } else if (tid === "all") {
-        var bkr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
-        var nbk = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+        var bkr = wa.filter(function(d){ return d.tier === "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
+        var nbk = wa.filter(function(d){ return d.tier !== "brokerage"; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
         tot = bkr + nbk * cr;
       } else {
-        tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0) * cr;
+        tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0) * cr;
       }
     } else {
-      tot = wa.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+      tot = wa.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
     }
     var ts = calcTamStats(oppTd);
     var meanTam = tid === "all"
@@ -1905,8 +1912,8 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     if (dealSearch && !d.company.toLowerCase().includes(dealSearch.toLowerCase())) return false;
     if (stageFilter!=="all" && d.stage!==stageFilter) return false;
     if (arrFilter!=="all") {
-      if (!d.arr) return false;
-      var av = parseArr(d.arr);
+      if (!getDealArr(d)) return false;
+      var av = parseArr(getDealArr(d));
       if (arrFilter==="under1m" && av >= 1000000) return false;
       if (arrFilter==="1m_2m" && (av < 1000000 || av > 2000000)) return false;
       if (arrFilter==="over2m" && av <= 2000000) return false;
@@ -1916,7 +1923,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
     if (existingClientFilter==="opportunity" &&  !!d.isExistingClient) return false;
     if (existingClientFilter==="existing"    && !d.isExistingClient)   return false;
     if (oppSizeFilter!=="all") {
-      var oa = parseArr(d.arr||"0");
+      var oa = parseArr(getDealArr(d)||"0");
       if (oppSizeFilter==="enterprise" && oa<5000000) return false;
       if (oppSizeFilter==="midmarket"  && (oa<1000000||oa>=5000000)) return false;
       if (oppSizeFilter==="growth"     && (oa<500000||oa>=1000000)) return false;
@@ -2260,7 +2267,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                         <div style={{ display:"flex", flexDirection:"column", gap:2, minWidth:90, textAlign:"right" }}>
                           {addedStr && <div style={{ color:C.dim, fontSize:9 }}>{addedStr}</div>}
                           {deal.priority && <div style={{ color:C.muted, fontSize:9, fontWeight:700, textTransform:"uppercase" }}>{(deal.priority||"").replace("_"," ")}</div>}
-                          {deal.arr && <div style={{ color:C.green, fontSize:10, fontWeight:700 }}>{deal.arr}</div>}
+                          {getDealArr(deal) && <div style={{ color:C.green, fontSize:10, fontWeight:700 }}>{getDealArr(deal)}</div>}
                         </div>
                         <select value="" onChange={function(e){ if(e.target.value) assignVertical(deal.id, e.target.value); }}
                           style={{ background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
@@ -2395,7 +2402,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
           </div>
           {deals.length > 0 && (function() {
             var totalDeals = deals.length;
-            var totalArr = deals.reduce(function(s,d){ return s+parseArr(d.arr||""); }, 0);
+            var totalArr = deals.reduce(function(s,d){ return s+parseArr(getDealArr(d)||""); }, 0);
             return (
               <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", marginBottom:16 }}>
                 <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
@@ -2408,7 +2415,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                 <div style={{ display:"flex", gap:3, alignItems:"stretch" }}>
                   {PIPE_STAGES.map(function(stage) {
                     var cnt = deals.filter(function(d){ return d.stage===stage.id; }).length;
-                    var stageArr = deals.filter(function(d){ return d.stage===stage.id; }).reduce(function(s,d){ return s+parseArr(d.arr||""); }, 0);
+                    var stageArr = deals.filter(function(d){ return d.stage===stage.id; }).reduce(function(s,d){ return s+parseArr(getDealArr(d)||""); }, 0);
                     var pct = totalDeals ? Math.round(cnt/totalDeals*100) : 0;
                     var isActive = stageFilter===stage.id;
                     return (
@@ -2870,7 +2877,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
             if (dealSearch)         chips.push({ label:"\""+dealSearch+"\"", clear:function(){setDealSearch("");} });
             if (datePreset!=="all"){ var dpLabel=datePreset==="7d"?"Last 7 days":datePreset==="30d"?"Last 30 days":datePreset==="90d"?"Last 90 days":datePreset==="quarter"?"This quarter":datePreset==="year"?"This year":(customRange.from||"?")+" – "+(customRange.to||"?"); chips.push({ label:"Added: "+dpLabel, clear:function(){setDatePreset("all");setCustomRange({from:"",to:""});} }); }
             if (!chips.length) return null;
-            var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(d.arr||"0"); },0);
+            var filteredArr = tierDeals.reduce(function(s,d){ return s+parseArr(getDealArr(d)||"0"); },0);
             return (
               <div style={{ background:C.surface, border:"1px solid "+C.border, borderRadius:6, padding:"5px 10px", marginBottom:10, display:"flex", alignItems:"center", gap:5, flexWrap:"wrap", fontSize:10 }}>
                 <span style={{ color:C.dim, fontWeight:700, flexShrink:0 }}>Showing:</span>
@@ -3931,7 +3938,7 @@ function CompeteTab({ deals }) {
     var hdrs = ["Competitor Name","Category","Description","Segments Penetrated","Pipeline Targets Count","Pipeline Targets","Total ARR at Risk","CoinPayments Differentiation","Competitive Position","Key Weaknesses","Full Intelligence"];
     var rows = filtered.map(function(c){
       var t = getPipelineTargets(c.name);
-      var arr = t.reduce(function(s,d){ return s+parseArr(d.arr); }, 0);
+      var arr = t.reduce(function(s,d){ return s+parseArr(getDealArr(d)); }, 0);
       return [c.name,c.category,c.description||"",(c.segmentsPenetrated||[]).join("; "),t.length,t.map(function(d){return d.company;}).join("; "),arr?fmtMoney(arr):"",c.differentiation||"",c.competitivePosition||"",c.weaknesses||"",c.fullDetail||""].map(esc).join(",");
     });
     var csv = hdrs.map(esc).join(",") + "\n" + rows.join("\n");
@@ -4405,7 +4412,11 @@ export default function App() {
       var pipeMatch = pipelineDeals.find(function(d){ return d.company.toLowerCase() === (data.company||"").toLowerCase(); });
       if (pipeMatch) {
         var now = new Date().toISOString();
-        setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:now }) : d; }); });
+        var t = data.tam_som_arr || {};
+        var freshArr = t.projected_arr || t.likely_arr_usd || pipeMatch.arr || "";
+        var freshFin = buildFinancials(t, freshArr, false);
+        freshFin.updatedByRerun = true;
+        setPipelineDeals(function(prev){ return prev.map(function(d){ return d.id===pipeMatch.id ? Object.assign({},d,{ analysisData:data, analysisUpdatedAt:now, arr:freshArr, financials:freshFin }) : d; }); });
         // Save analysis only — no pipeline; debounced save reads latest state for cp_pipeline
         fetch("/api/pipeline", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ analysisId:pipeMatch.id, analysisData:data }) }).catch(function(){});
       }
