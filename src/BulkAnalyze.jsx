@@ -164,7 +164,7 @@ function downloadTemplate() {
   XLSX.writeFile(wb, "bulk_analysis_template.xlsx");
 }
 
-export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, addResultsToPipeline, updateExistingInPipeline }) {
+export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, addResultsToPipeline, updateExistingInPipeline, initialUpdateMode }) {
   var s1 = useState(function() {
     try {
       var saved = JSON.parse(localStorage.getItem(BULK_LS) || "[]");
@@ -182,7 +182,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var s9 = useState(false); var showPaste = s9[0]; var setShowPaste = s9[1];
   var s10 = useState(null); var addedMsg = s10[0]; var setAddedMsg = s10[1];
   var s11 = useState(null); var addingProgress = s11[0]; var setAddingProgress = s11[1];
-  var s12 = useState(false); var updateMode = s12[0]; var setUpdateMode = s12[1];
+  var s12 = useState(initialUpdateMode || false); var updateMode = s12[0]; var setUpdateMode = s12[1];
   var s13 = useState(null); var updatePreview = s13[0]; var setUpdatePreview = s13[1];
   var s14 = useState(null); var confirmModal = s14[0]; var setConfirmModal = s14[1];
   var s15 = useState(""); var capInput = s15[0]; var setCapInput = s15[1];

@@ -2091,6 +2091,157 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
+          UNTAGGED TARGETS VIEW
+      ══════════════════════════════════════════════════════════════════════ */}
+      {pipeView.vertical === '__untagged__' && (function(){
+        var untaggedDeals = deals.filter(function(d){ return !d.vertical; });
+        var selCount = Object.keys(uvSelected).filter(function(k){ return uvSelected[k]; }).length;
+        var allSelectable = untaggedDeals.length;
+        var allSelected = allSelectable > 0 && selCount === allSelectable;
+        return (
+          <div>
+            {/* Header */}
+            <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16, flexWrap:"wrap" }}>
+              <button onClick={function(){ setPipeView({vertical:null,tier:null}); setUVSelected({}); setUVAutoTag(null); setUVBulkVert(""); }}
+                style={{ background:"transparent", border:"1px solid "+C.border, color:C.muted, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                ← Pipeline
+              </button>
+              <div style={{ color:C.text, fontWeight:800, fontSize:15 }}>⚠ Untagged Targets</div>
+              <span style={{ background:C.red+"22", color:C.red, border:"1px solid "+C.red+"44", borderRadius:10, padding:"2px 8px", fontSize:10, fontWeight:700 }}>{noVerticalCount}</span>
+              <div style={{ flex:1 }}/>
+              {/* AI Auto-Tag button */}
+              {uvAutoTag && uvAutoTag.status === 'running'
+                ? <span style={{ color:C.gold, fontSize:10, fontWeight:700 }}>🤖 Tagging {uvAutoTag.done}/{uvAutoTag.total}…</span>
+                : <button onClick={autoTagVertical} disabled={untaggedDeals.length === 0}
+                    style={{ background:C.gold+"22", color:C.gold, border:"1px solid "+C.gold+"50", borderRadius:7, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    🤖 AI Auto-Tag Vertical
+                  </button>
+              }
+              {/* Bulk Upload button */}
+              {onOpenBulkUpload && (
+                <button onClick={onOpenBulkUpload}
+                  style={{ background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:7, padding:"6px 14px", fontSize:11, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                  📥 Bulk Upload
+                </button>
+              )}
+            </div>
+
+            {/* Auto-tag results */}
+            {uvAutoTag && uvAutoTag.status === 'done' && (
+              <div style={{ background:C.card, border:"1px solid "+C.border, borderRadius:8, padding:"12px 16px", marginBottom:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                  <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>🤖 Auto-tag Results</div>
+                  <button onClick={function(){ setUVAutoTag(null); }}
+                    style={{ background:"transparent", border:"none", color:C.dim, cursor:"pointer", fontSize:14, padding:"0 2px" }}>✕</button>
+                </div>
+                <div style={{ display:"flex", gap:14, marginBottom:10, flexWrap:"wrap" }}>
+                  <span style={{ color:C.green, fontWeight:700, fontSize:11 }}>{uvAutoTag.results.filter(function(r){ return r.vertical && !r.lowConf; }).length} tagged</span>
+                  {uvAutoTag.results.filter(function(r){ return r.vertical && r.lowConf; }).length > 0 && (
+                    <span style={{ color:C.gold, fontWeight:700, fontSize:11 }}>⚠ {uvAutoTag.results.filter(function(r){ return r.vertical && r.lowConf; }).length} low confidence (not applied)</span>
+                  )}
+                  {uvAutoTag.results.filter(function(r){ return !r.vertical; }).length > 0 && (
+                    <span style={{ color:C.red, fontWeight:700, fontSize:11 }}>{uvAutoTag.results.filter(function(r){ return !r.vertical; }).length} failed</span>
+                  )}
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:5, maxHeight:200, overflowY:"auto" }}>
+                  {uvAutoTag.results.map(function(r, i){
+                    var v = r.vertical ? VERTICALS.find(function(x){ return x.id===r.vertical; }) : null;
+                    return (
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.surface, borderRadius:6, padding:"6px 10px" }}>
+                        <span style={{ color:C.text, fontSize:10, fontWeight:700 }}>{r.company}</span>
+                        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                          {r.vertical && <span style={{ color:v?v.color:C.muted, fontSize:10 }}>{v?v.icon:""} {r.vertical.replace(/_/g," ")}</span>}
+                          {r.vertical && <span style={{ color:r.lowConf?C.gold:C.green, fontSize:9, fontWeight:700 }}>{Math.round(r.confidence*100)}%{r.lowConf?" ⚠":""}</span>}
+                          {!r.vertical && <span style={{ color:C.red, fontSize:9 }}>failed</span>}
+                          {r.vertical && r.lowConf && (
+                            <select value="" onChange={function(e){ if(e.target.value) assignVertical(r.id, e.target.value); }}
+                              style={{ background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:5, padding:"3px 6px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>
+                              <option value="">Assign manually…</option>
+                              {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Select-all + bulk action bar */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, padding:"8px 12px", background:C.card, borderRadius:8, border:"1px solid "+C.border, flexWrap:"wrap" }}>
+              <input type="checkbox" checked={allSelected} onChange={function(e){
+                if (e.target.checked) {
+                  var all = {}; untaggedDeals.forEach(function(d){ all[d.id]=true; }); setUVSelected(all);
+                } else { setUVSelected({}); }
+              }} style={{ cursor:"pointer", width:14, height:14 }}/>
+              <span style={{ color:C.muted, fontSize:10 }}>{selCount > 0 ? selCount + " selected" : "Select all"}</span>
+              {selCount > 0 && (
+                <>
+                  <div style={{ width:1, height:14, background:C.border }}/>
+                  <span style={{ color:C.muted, fontSize:10, whiteSpace:"nowrap" }}>Assign all to:</span>
+                  <select value={uvBulkVert} onChange={function(e){ setUVBulkVert(e.target.value); }}
+                    style={{ background:C.surface, border:"1px solid "+C.border, color:uvBulkVert?C.text:C.muted, borderRadius:6, padding:"4px 8px", fontSize:10, cursor:"pointer", fontFamily:"inherit" }}>
+                    <option value="">Choose vertical…</option>
+                    {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
+                  </select>
+                  <button onClick={function(){
+                    if (!uvBulkVert) return;
+                    var ids = Object.keys(uvSelected).filter(function(k){ return uvSelected[k]; });
+                    ids.forEach(function(id){
+                      setDeals(function(prev){ return prev.map(function(d){ return String(d.id)===String(id) ? Object.assign({},d,{vertical:uvBulkVert}) : d; }); });
+                    });
+                    setUVSelected({}); setUVBulkVert("");
+                  }} disabled={!uvBulkVert}
+                    style={{ background:uvBulkVert?C.accent:"transparent", color:uvBulkVert?"#000":C.dim, border:"1px solid "+(uvBulkVert?C.accent:C.border), borderRadius:6, padding:"4px 12px", fontSize:10, fontWeight:700, cursor:uvBulkVert?"pointer":"default", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    Apply
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Deal rows */}
+            {untaggedDeals.length === 0 ? (
+              <div style={{ color:C.muted, fontSize:12, textAlign:"center", padding:"40px 0" }}>No untagged targets — all targets have a vertical assigned.</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {untaggedDeals.map(function(deal){
+                  return (function(){
+                    var isSelected = !!uvSelected[deal.id];
+                    var addedStr = deal.addedAt ? new Date(deal.addedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+                    return (
+                      <div key={deal.id} style={{ background:C.card, border:"1px solid "+(isSelected?C.accent:C.border), borderRadius:8, padding:"10px 14px", display:"flex", gap:10, alignItems:"center", flexWrap:"wrap", transition:"border-color 0.1s" }}>
+                        <input type="checkbox" checked={isSelected} onChange={function(e){
+                          setUVSelected(function(p){ var n=Object.assign({},p); if(e.target.checked) n[deal.id]=true; else delete n[deal.id]; return n; });
+                        }} style={{ cursor:"pointer", width:14, height:14, flexShrink:0 }}/>
+                        <div style={{ flex:1, minWidth:150 }}>
+                          <div style={{ color:C.text, fontWeight:700, fontSize:12 }}>{deal.company}</div>
+                          {(deal.website||(deal.analysisData&&deal.analysisData.website)) && (
+                            <div style={{ color:C.cyan, fontSize:10, marginTop:1 }}>{deal.website||deal.analysisData.website}</div>
+                          )}
+                          {deal.notes && <div style={{ color:C.muted, fontSize:10, marginTop:2, lineHeight:1.4 }}>{deal.notes.slice(0,100)}{deal.notes.length>100?"…":""}</div>}
+                        </div>
+                        <div style={{ display:"flex", flexDirection:"column", gap:2, minWidth:90, textAlign:"right" }}>
+                          {addedStr && <div style={{ color:C.dim, fontSize:9 }}>{addedStr}</div>}
+                          {deal.priority && <div style={{ color:C.muted, fontSize:9, fontWeight:700, textTransform:"uppercase" }}>{(deal.priority||"").replace("_"," ")}</div>}
+                          {deal.arr && <div style={{ color:C.green, fontSize:10, fontWeight:700 }}>{deal.arr}</div>}
+                        </div>
+                        <select value="" onChange={function(e){ if(e.target.value) assignVertical(deal.id, e.target.value); }}
+                          style={{ background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:6, padding:"6px 10px", fontSize:10, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
+                          <option value="">Assign Vertical…</option>
+                          {VERTICALS.map(function(v){ return <option key={v.id} value={v.id}>{v.icon} {v.label}</option>; })}
+                        </select>
+                      </div>
+                    );
+                  })();
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════════
           MAIN DASHBOARD — vertical === null
       ══════════════════════════════════════════════════════════════════════ */}
       {!pipeView.vertical && (
@@ -4057,6 +4208,7 @@ export default function App() {
   var s12 = useState(false); var pipeLoaded = s12[0]; var setPipeLoaded = s12[1];
   var sGammaH = useState(function(){ try { return JSON.parse(localStorage.getItem(GAMMA_HIST_LS)||"[]"); } catch { return []; } }); var gammaHistory = sGammaH[0]; var setGammaHistory = sGammaH[1];
   var sBulk = useState(false); var showBulk = sBulk[0]; var setShowBulk = sBulk[1];
+  var sBulkIM = useState(false); var bulkInitUpdateMode = sBulkIM[0]; var setBulkInitUpdateMode = sBulkIM[1];
   var sResMC = useState([]); var resultManualContacts = sResMC[0]; var setResultManualContacts = sResMC[1];
   var sResMP = useState([]); var resultManualPartnerships = sResMP[0]; var setResultManualPartnerships = sResMP[1];
   var sResCp = useState({ cryptoPartners: [], hasCryptoPartner: false }); var resultCp = sResCp[0]; var setResultCp = sResCp[1];
@@ -4327,7 +4479,7 @@ export default function App() {
                   </button>
                 </>
               )}
-              <button onClick={function(){ setShowBulk(!showBulk); }}
+              <button onClick={function(){ setBulkInitUpdateMode(false); setShowBulk(!showBulk); }}
                 style={{ padding:"10px 18px", borderRadius:8, background:showBulk?C.accent:C.surface, color:showBulk?"#000":C.muted, border:"1px solid "+(showBulk?C.accent:C.border), fontWeight:700, fontSize:12, cursor:"pointer", whiteSpace:"nowrap" }}>
                 {showBulk ? "← Single Analyze" : "📋 Bulk Analyze"}
               </button>
@@ -4340,6 +4492,7 @@ export default function App() {
                   pipelineDeals={pipelineDeals}
                   addResultsToPipeline={addResultsToPipeline}
                   updateExistingInPipeline={updateExistingInPipeline}
+                  initialUpdateMode={bulkInitUpdateMode}
                 />
               : (
                 <>
@@ -4396,7 +4549,7 @@ export default function App() {
         )}
 
         {/* Pipeline */}
-        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} onViewResult={function(data){setResult(data);setPage("result");}}/>}
+        {page==="pipeline" && <PipelineTab deals={pipelineDeals} setDeals={setPipelineDeals} history={history} tKey={tKey} njKey={njKey} onViewResult={function(data){setResult(data);setPage("result");}} onOpenBulkUpload={function(){ setBulkInitUpdateMode(true); setPage("analyze"); setShowBulk(true); }}/>}
 
         {/* Deck Builder */}
         {page==="deck" && <DeckBuilder gammaHistory={gammaHistory} setGammaHistory={setGammaHistory} deals={pipelineDeals}/>}
