@@ -1878,7 +1878,14 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   }
   function tMetrics(vid, tid, prio, geo, cp) {
     var vd = deals.filter(function(d){ return d.vertical===vid; });
-    var td = tid==="all" ? vd : vd.filter(function(d){ return (d.tier||"")===tid; });
+    var td;
+    if (tid === "all") { td = vd; }
+    else if (vid === "luxury_travel") {
+      // LT deals store grouping in d.priority (tier_1/2/3), not d.tier.
+      // Use exact match (no default) so untagged deals are not folded into T1.
+      var _ltPrio = {tier1:"tier_1",tier2:"tier_2",tier3:"tier_3"}[tid]||tid;
+      td = vd.filter(function(d){ return d.priority===_ltPrio; });
+    } else { td = vd.filter(function(d){ return (d.tier||"")===tid; }); }
     if (prio && prio!=="all") td = prio===""?td.filter(function(d){return !d.priority;}):td.filter(function(d){ return (d.priority||"tier_1")===prio; });
     if (geo && geo!=="all") td = td.filter(function(d){ return (d.geography||"")===geo; });
     td = applyCryptoFilter(td, cp);
@@ -2721,64 +2728,107 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                 {/* Tier cards grid */}
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(175px,1fr))", gap:10 }}>
                 {ordered.map(function(t) {
-                  var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
-                  var segDeals = deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
-                  var bst = briefStatus[t.id]||"idle";
-                  var burl = briefUrls[t.id];
-                  var busy = bst==="building"||bst==="starting"||bst.indexOf("polling")===0;
-                  var isConfirm = briefConfirm===t.id;
-                  return (
-                    <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
-                      style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
-                      <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
-                      <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(m.totalArr):"—"}</div>
-                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
-                      {m.avgTam > 0 && <div style={{ marginBottom:6 }}>
-                        <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
-                        <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
-                      </div>}
-                      <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.avgTam > 0 ? 0 : 6 }}>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>T1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
-                        <div><div style={{ color:C.dim, fontSize:9 }}>T2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
-                        {m.p3>0&&<div><div style={{ color:C.dim, fontSize:9 }}>T3</div><div style={{ color:C.dim, fontWeight:700, fontSize:11 }}>{m.p3}</div></div>}
-                      </div>
-                      {/* Brief + Pull List + Details action bar */}
-                      <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
-                        {isConfirm ? (
-                          <div style={{ marginBottom:5 }}>
-                            <div style={{ color:C.text, fontSize:8, fontWeight:700, marginBottom:5, lineHeight:1.4 }}>Regenerate brief for {t.label}?</div>
-                            <div style={{ display:"flex", gap:4 }}>
-                              <button onClick={function(){ setBriefConfirm(null); buildSegmentBrief(pipeView.vertical, t.id); }} style={{ flex:1, background:t.color, color:"#000", border:"none", borderRadius:4, padding:"3px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Regen</button>
-                              <button onClick={function(){ setBriefConfirm(null); if(burl) window.open(burl,"_blank"); }} style={{ flex:1, background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:4, padding:"3px 0", fontSize:8, cursor:"pointer", fontFamily:"inherit" }}>View</button>
-                              <button onClick={function(){ setBriefConfirm(null); }} style={{ background:"transparent", color:C.dim, border:"none", fontSize:10, cursor:"pointer", fontFamily:"inherit", padding:"2px 4px" }}>✕</button>
-                            </div>
+                  return (function(){
+                    var isLT = pipeView.vertical === "luxury_travel";
+                    var _ltPrioKey = {tier1:"tier_1",tier2:"tier_2",tier3:"tier_3"}[t.id]||t.id;
+                    var m = tMetrics(pipeView.vertical, t.id, prioFilter, geoFilter, cryptoFilter);
+                    var segDeals = isLT
+                      ? deals.filter(function(d){ return d.vertical===pipeView.vertical && d.priority===_ltPrioKey; })
+                      : deals.filter(function(d){ return d.vertical===pipeView.vertical && (d.tier||"")===t.id; });
+                    var _dispArr = isLT ? m.totalArr * vWr : m.totalArr;
+                    var geoAMER = isLT ? segDeals.filter(function(d){ return (d.geography||"")==="AMER"; }).length : 0;
+                    var geoEMEA = isLT ? segDeals.filter(function(d){ return (d.geography||"")==="EMEA"; }).length : 0;
+                    var geoAPAC = isLT ? segDeals.filter(function(d){ return (d.geography||"")==="APAC"; }).length : 0;
+                    var bst = briefStatus[t.id]||"idle";
+                    var burl = briefUrls[t.id];
+                    var busy = bst==="building"||bst==="starting"||bst.indexOf("polling")===0;
+                    var isConfirm = briefConfirm===t.id;
+                    return (
+                      <div key={t.id} onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }}
+                        style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer" }}>
+                        <div style={{ color:t.color, fontWeight:800, fontSize:13, marginBottom:10 }}>{t.label}</div>
+                        <div style={{ color:t.color, fontSize:22, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(_dispArr):"—"}</div>
+                        <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
+                        {isLT && vWr < 1 && <div style={{ color:C.muted, fontSize:8, lineHeight:1.3, marginBottom:3 }}>({Math.round(vWr*1000)/10}% win-adjusted)</div>}
+                        {!isLT && m.avgTam > 0 && <div style={{ marginBottom:6 }}>
+                          <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(m.avgTam)}</div>
+                          <div style={{ color:C.cyan, fontSize:10, fontWeight:700, lineHeight:1.6 }}>Crypto SAM {fmtMoney(m.avgTam*0.125)}</div>
+                        </div>}
+                        {isLT ? (
+                          <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:6 }}>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
+                            {geoAMER>0&&<div><div style={{ color:C.dim, fontSize:9 }}>AMER</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{geoAMER}</div></div>}
+                            {geoEMEA>0&&<div><div style={{ color:C.dim, fontSize:9 }}>EMEA</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{geoEMEA}</div></div>}
+                            {geoAPAC>0&&<div><div style={{ color:C.dim, fontSize:9 }}>APAC</div><div style={{ color:C.dim, fontWeight:700, fontSize:11 }}>{geoAPAC}</div></div>}
                           </div>
-                        ) : burl && !busy ? (
-                          <div style={{ display:"flex", gap:4, marginBottom:5 }}>
-                            <button onClick={function(){ window.open(burl,"_blank"); }} style={{ flex:1, background:t.color+"22", color:t.color, border:"1px solid "+t.color+"55", borderRadius:4, padding:"4px 4px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📊 View Brief →</button>
-                            <button onClick={function(){ setBriefConfirm(t.id); }} style={{ background:C.surface, color:C.dim, border:"1px solid "+C.border, borderRadius:4, padding:"4px 6px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>↻</button>
-                          </div>
-                        ) : busy ? (
-                          <button disabled style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"default", fontFamily:"inherit", opacity:0.75 }}>
-                            📋 {bst==="building"?"Building…":bst==="starting"?"Starting…":"Generating… ("+bst.split(":")[1]+"/30)"}
-                          </button>
-                        ) : bst.indexOf("error:")===0 ? (
-                          <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:"#EF444418", color:"#EF4444", border:"1px solid #EF444455", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Retry Brief</button>
                         ) : (
-                          <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Brief</button>
+                          <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop: m.avgTam > 0 ? 0 : 6 }}>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{m.total}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>Avg ARR</div><div style={{ color:t.color, fontWeight:700, fontSize:11 }}>{m.total&&m.avgArr?fmtMoney(m.avgArr):"—"}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>T1</div><div style={{ color:C.accent, fontWeight:700, fontSize:11 }}>{m.p1}</div></div>
+                            <div><div style={{ color:C.dim, fontSize:9 }}>T2</div><div style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{m.p2}</div></div>
+                            {m.p3>0&&<div><div style={{ color:C.dim, fontSize:9 }}>T3</div><div style={{ color:C.dim, fontWeight:700, fontSize:11 }}>{m.p3}</div></div>}
+                          </div>
                         )}
-                        <div style={{ display:"flex", gap:4 }}>
-                          <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }} style={{ flex:1, background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
-                            {csvDlState[t.id] ? "⬇️…" : "📥 Pull List"}
-                          </button>
-                          <button onClick={function(e){ e.stopPropagation(); setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }} style={{ flex:1, background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Details</button>
+                        {/* Brief + Pull List + Details action bar */}
+                        <div style={{ marginTop:10, borderTop:"1px solid "+C.border, paddingTop:8 }} onClick={function(e){ e.stopPropagation(); }}>
+                          {isConfirm ? (
+                            <div style={{ marginBottom:5 }}>
+                              <div style={{ color:C.text, fontSize:8, fontWeight:700, marginBottom:5, lineHeight:1.4 }}>Regenerate brief for {t.label}?</div>
+                              <div style={{ display:"flex", gap:4 }}>
+                                <button onClick={function(){ setBriefConfirm(null); buildSegmentBrief(pipeView.vertical, t.id); }} style={{ flex:1, background:t.color, color:"#000", border:"none", borderRadius:4, padding:"3px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>Regen</button>
+                                <button onClick={function(){ setBriefConfirm(null); if(burl) window.open(burl,"_blank"); }} style={{ flex:1, background:C.surface, color:C.muted, border:"1px solid "+C.border, borderRadius:4, padding:"3px 0", fontSize:8, cursor:"pointer", fontFamily:"inherit" }}>View</button>
+                                <button onClick={function(){ setBriefConfirm(null); }} style={{ background:"transparent", color:C.dim, border:"none", fontSize:10, cursor:"pointer", fontFamily:"inherit", padding:"2px 4px" }}>✕</button>
+                              </div>
+                            </div>
+                          ) : burl && !busy ? (
+                            <div style={{ display:"flex", gap:4, marginBottom:5 }}>
+                              <button onClick={function(){ window.open(burl,"_blank"); }} style={{ flex:1, background:t.color+"22", color:t.color, border:"1px solid "+t.color+"55", borderRadius:4, padding:"4px 4px", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📊 View Brief →</button>
+                              <button onClick={function(){ setBriefConfirm(t.id); }} style={{ background:C.surface, color:C.dim, border:"1px solid "+C.border, borderRadius:4, padding:"4px 6px", fontSize:9, cursor:"pointer", fontFamily:"inherit" }}>↻</button>
+                            </div>
+                          ) : busy ? (
+                            <button disabled style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"default", fontFamily:"inherit", opacity:0.75 }}>
+                              📋 {bst==="building"?"Building…":bst==="starting"?"Starting…":"Generating… ("+bst.split(":")[1]+"/30)"}
+                            </button>
+                          ) : bst.indexOf("error:")===0 ? (
+                            <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:"#EF444418", color:"#EF4444", border:"1px solid #EF444455", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Retry Brief</button>
+                          ) : (
+                            <button onClick={function(){ buildSegmentBrief(pipeView.vertical, t.id); }} style={{ width:"100%", marginBottom:5, background:t.color+"18", color:t.color, border:"1px solid "+t.color+"44", borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>📋 Brief</button>
+                          )}
+                          <div style={{ display:"flex", gap:4 }}>
+                            <button onClick={function(e){ pullSegmentCsv(e, t.id, t.label, segDeals); }} style={{ flex:1, background:C.surface, border:"1px solid "+t.color+"44", color:t.color, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                              {csvDlState[t.id] ? "⬇️…" : "📥 Pull List"}
+                            </button>
+                            <button onClick={function(e){ e.stopPropagation(); setPipeView({vertical:pipeView.vertical,tier:t.id}); setShowAdd(false); }} style={{ flex:1, background:C.surface, border:"1px solid "+C.border, color:C.muted, borderRadius:4, padding:"4px 0", fontSize:8, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>→ Details</button>
+                          </div>
                         </div>
+                      </div>
+                    );
+                  })();
+                })}
+                {/* LT-only: Untagged card + sanity assertion */}
+                {pipeView.vertical === "luxury_travel" && (function(){
+                  var _untagged = deals.filter(function(d){ return d.vertical==="luxury_travel" && !d.priority && !d.isExistingClient; });
+                  var _untaggedRaw = _untagged.reduce(function(s,d){ return s+parseArr(getDealArr(d)||""); }, 0);
+                  var _untaggedAdj = _untaggedRaw * vWr;
+                  var _tierSum = ordered.reduce(function(s,t){ return s + tMetrics(pipeView.vertical,t.id,prioFilter,geoFilter,cryptoFilter).totalArr * vWr; }, 0) + _untaggedAdj;
+                  if (vAdjArr > 0 && Math.abs(_tierSum - vAdjArr) / vAdjArr > 0.0001) {
+                    console.warn("[LT tier sanity] Tier sum "+fmtMoney(_tierSum)+" ≠ vertical total "+fmtMoney(vAdjArr));
+                  }
+                  if (_untagged.length === 0) return null;
+                  return (
+                    <div key="lt-untagged" onClick={function(){ setPipeView({vertical:pipeView.vertical,tier:""}); setShowAdd(false); }}
+                      style={{ background:C.card, border:"1px solid "+C.border, borderRadius:10, padding:"14px 16px", cursor:"pointer", opacity:0.65 }}>
+                      <div style={{ color:C.muted, fontWeight:800, fontSize:13, marginBottom:10 }}>— Untagged</div>
+                      <div style={{ color:C.muted, fontSize:22, fontWeight:900, marginBottom:2 }}>{_untaggedAdj>0?fmtMoney(_untaggedAdj):"—"}</div>
+                      <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:3 }}>Total ARR</div>
+                      <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:6 }}>
+                        <div><div style={{ color:C.dim, fontSize:9 }}>Accounts</div><div style={{ color:C.text, fontWeight:700, fontSize:13 }}>{_untagged.length}</div></div>
                       </div>
                     </div>
                   );
-                })}
+                })()}
               </div>
               </div>
             );
