@@ -30,7 +30,7 @@ const C = {
 const BLOCKED = ["bloomberg.com","wsj.com","ft.com","economist.com","nytimes.com","washingtonpost.com","barrons.com","hbr.org"];
 
 const VERTICAL_WIN_RATES = {
-  financial_services: 0.333,
+  financial_services: 0.10,
   luxury_travel: 0.333,
   luxury_goods: 1.0,
   gaming_casinos: 1.0,
@@ -44,7 +44,7 @@ const SEGMENT_RATE_OVERRIDES = {
 
 // No capture rate multiplier at aggregation — per-target ARR already equals SOM for all
 // non-FX/Broker FS targets (fee applies directly to crypto-adopted volume). The only
-// portfolio-level adjustment is VERTICAL_WIN_RATES (33.3% for FS and Luxury Travel).
+// portfolio-level adjustment is VERTICAL_WIN_RATES (10% for FS, 33.3% for Luxury Travel).
 const VERTICAL_CAPTURE_RATES = {
   financial_services: 1.0,
   luxury_travel: 1.0,
