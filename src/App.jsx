@@ -2379,10 +2379,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                     <span style={{ fontSize:20 }}>{v.icon}</span>
                     <span style={{ color:C.muted, fontWeight:700, fontSize:11 }}>{v.label}</span>
                   </div>
-                  <div title={isFs ? "Rate-adjusted (33.3% win rate; Corporate Treasury 2% capture)" : (wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined)}
+                  <div title={isFs ? "10% win-adjusted (Corporate Treasury uses 2% segment override)" : (wr < 1 ? "Total potential: "+fmtMoney(m.totalArr)+" · Win-adjusted at "+Math.round(wr*1000)/10+"%: "+fmtMoney(adjArr) : undefined)}
                     style={{ color:v.color, fontSize:26, fontWeight:900, marginBottom:2 }}>{m.total?fmtMoney(adjArr):"—"}</div>
                   <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:hasRateLabel?1:4 }}>Total ARR</div>
-                  {hasRateLabel && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>{isFs ? "(rate-adjusted)" : "("+Math.round(wr*1000)/10+"% win-adjusted)"}</div>}
+                  {hasRateLabel && <div style={{ color:C.muted, fontSize:8, marginBottom:2, lineHeight:1.3 }}>{"("+Math.round(wr*1000)/10+"% win-adjusted)"}</div>}
                   {m.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, marginBottom:4, lineHeight:1.3 }}>{m.opportunityCount} opportunit{m.opportunityCount===1?"y":"ies"} · {m.existingCount} existing client{m.existingCount===1?"":"s"}</div>}
                   {adjTam > 0 && <div style={{ marginBottom:6 }}>
                     <div style={{ color:C.gold, fontSize:10, fontWeight:700, lineHeight:1.6 }}>TAM {fmtMoney(adjTam)}</div>
@@ -2552,7 +2552,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                         <div title="Rate-adjusted: 33.3% win rate on FX/Broker, Escrow, Remittance, Neobanks; 2% capture on Corporate Treasury"
                           style={{ color:activeVert.color, fontSize:26, fontWeight:900, lineHeight:1 }}>{fsAll.total ? fmtMoney(fsAdjArr) : "—"}</div>
                         <div style={{ color:C.dim, fontSize:9, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.07em", marginTop:2 }}>Total ARR</div>
-                        <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>(rate-adjusted)</div>
+                        <div style={{ color:C.muted, fontSize:8, lineHeight:1.3 }}>(10% win-adjusted)</div>
                         {fsAll.existingCount > 0 && <div style={{ color:C.dim, fontSize:8, lineHeight:1.3, marginTop:1 }}>{fsAll.opportunityCount} opportunit{fsAll.opportunityCount===1?"y":"ies"} · {fsAll.existingCount} existing client{fsAll.existingCount===1?"":"s"}</div>}
                       </div>
                       {fsAdjTam > 0 && <div>
