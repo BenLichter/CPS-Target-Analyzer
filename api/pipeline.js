@@ -259,7 +259,56 @@ export default async function handler(req, res) {
           }
         }
 
-        // Only fetch analyses for deals that have analysisUpdatedAt — this field is
+        // One-time migration: restore analysisUpdatedAt + hasAnalysis for deals that
+        // have a cp_analysis_{id} key in Redis but are missing the indicator on the
+        // pipeline object (e.g. added before this field existed, or silently dropped
+        // by an earlier migration that used Object.assign without preserving the field).
+        if (Array.isArray(pipeline)) {
+          const indicatorsRestored = await kvGet(url, token, 'cp_pipeline:analysis_indicators_restored');
+          if (!indicatorsRestored) {
+            const dealsToCheck = pipeline.filter(function(d) { return d && d.id; });
+            var indRestored = 0;
+            var indByVert = {};
+            var indFixed = pipeline;
+
+            if (dealsToCheck.length > 0) {
+              // Batch-EXISTS via Upstash pipeline — single round-trip regardless of pipeline size.
+              const existsCmds = dealsToCheck.map(function(d) { return ['EXISTS', 'cp_analysis_' + d.id]; });
+              const existsResp = await fetch(url + '/pipeline', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(existsCmds)
+              });
+              const existsResults = await existsResp.json(); // [{result:0|1}, ...]
+
+              const hasAnalysisSet = new Set();
+              dealsToCheck.forEach(function(d, i) {
+                if (existsResults[i] && existsResults[i].result === 1) hasAnalysisSet.add(String(d.id));
+              });
+
+              indFixed = pipeline.map(function(d) {
+                if (!d || !hasAnalysisSet.has(String(d.id))) return d;
+                if (d.analysisUpdatedAt) return d; // already has indicator
+                indRestored++;
+                var vert = d.vertical || 'unknown';
+                indByVert[vert] = (indByVert[vert] || 0) + 1;
+                return Object.assign({}, d, {
+                  analysisUpdatedAt: d.addedAt || new Date().toISOString(),
+                  hasAnalysis: true,
+                });
+              });
+            }
+
+            console.log('[analysis_indicators_restored] Restored', indRestored, 'targets by vertical:', JSON.stringify(indByVert));
+            await Promise.all([
+              kvSet(url, token, 'cp_pipeline', indFixed),
+              kvSet(url, token, 'cp_pipeline:analysis_indicators_restored', true),
+            ]);
+            pipeline = indFixed;
+          }
+        }
+
+
         // now written atomically with the analysis save so it is a reliable indicator.
         // Cap at 30 most-recently-analysed to stay within Upstash free-tier limits.
         const analyses = {};

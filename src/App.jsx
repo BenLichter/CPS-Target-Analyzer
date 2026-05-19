@@ -3198,7 +3198,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
                                     <div>
                                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5, padding:"8px 12px", borderBottom:"1px solid "+C.border, boxSizing:"border-box" }}>
                                         {(function(){
-                                          var hasAnalyzed = !!deal.analysisUpdatedAt;
+                                          var hasAnalyzed = !!deal.analysisUpdatedAt || !!deal.analysisData;
                                           var isFetching = !!loadingAnalysis[deal.id];
                                           var canView = hasAnalyzed && !busy && !isFetching;
                                           function openView() {
