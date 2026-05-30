@@ -2,6 +2,13 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/anthropic.js":  { "maxDuration": 800 },
+    "api/grok.js":       { "maxDuration": 800 },
+    "api/tavily.js":     { "maxDuration": 800 },
+    "api/ninjapear.js":  { "maxDuration": 800 },
+    "api/analysis.js":   { "maxDuration": 800 }
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],

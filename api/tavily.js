@@ -7,6 +7,7 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     return res.status(200).end();
   }
+  console.log('[tavily] handler invoked, maxDuration: 800s');
 
   if (!verifyAuth(req)) return res.status(401).json({ error: 'Unauthorized' });
 
