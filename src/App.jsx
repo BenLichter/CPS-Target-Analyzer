@@ -113,6 +113,19 @@ function parseJSON(raw) {
   throw new Error("No JSON found");
 }
 
+// Run `fn(item, i)` over `items` with at most `limit` in-flight at once.
+async function throttleAll(items, limit, fn) {
+  var results = new Array(items.length);
+  var next = 0;
+  async function worker() {
+    while (next < items.length) { var i = next++; results[i] = await fn(items[i], i); }
+  }
+  var workers = [];
+  for (var w = 0; w < Math.min(limit, items.length); w++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
+}
+
 async function tavilyRaw(query, key, n, days) {
   if (!key) return [];
   try {
@@ -154,16 +167,28 @@ function profileToContact(p, source) {
   return { name, title: job?.role || p.role || "", category: "Influencer", verified_source: "ninjapear", verification_confidence: "HIGH", why_target: "Key executive", outreach_angle: "Direct executive outreach", source };
 }
 
-async function runAnalysis(company, onStep, keys) {
+async function runAnalysis(company, onStep, keys, opts) {
+  var _phase0Snap = (opts && opts.phase0Snapshot) || null;
+  var _onPhase0Done = (opts && opts.onPhase0Done) || null;
+  var _tTotal = Date.now();
   const { tavily: tKey, ninjapear: njKey } = keys;
   const domain = company.toLowerCase().replace(/[^a-z0-9]/g, "") + ".com";
   const todayStr = new Date().toDateString();
   const SYS = 'You are a senior B2B sales intelligence expert for CoinPayments (100+ digital assets, white-label infrastructure, fiat on/off ramps, API-first). Output ONLY valid JSON. No markdown. Start with { end with }. Values under 35 words.\n\nARR METHODOLOGY — follow this exact structure:\n\nStep 1 — Find the volume driver. Identify the most appropriate volume metric based on business model:\n  FX / Broker: AUM or annual trading volume\n  Neobanks: annual payment volume or total transaction volume\n  Remittance Fintechs: annual remittance volume\n  Corporate Treasury: total payment volume or deposit base\n  Escrow: annual escrow transaction volume\n  Luxury Travel: annual booking volume or GMV\n  Luxury Goods: annual GMV or revenue\n  Gaming & Casinos: annual GGR or wagering volume\nUse the actual figure from the provided research data. If not found, make an informed estimate based on company size, funding, and comparable companies — state clearly that it is an estimate.\n\nStep 2 — Calculate crypto adoption volume. Apply a rate based on this company\'s current crypto maturity:\n  Already offering crypto: 15-25% of volume\n  Actively exploring crypto: 8-15% of volume\n  Early stage / no crypto yet: 3-8% of volume\nCrypto adoption volume = Total volume x adoption rate.\n\nStep 3 — Calculate SOM. SOM = Crypto adoption volume x 0.5% CoinPayments fee rate. This is the serviceable obtainable market — what CoinPayments can realistically earn from this company\'s crypto volume.\n\nStep 4 — Projected ARR = SOM. For all non-FX/Broker volume-based targets (Neobanks, Remittance Fintechs, Corporate Treasury, Escrow, and generic Financial Services), the 0.5% CoinPayments fee on crypto-adopted volume IS the projected ARR. Do NOT apply a further capture rate multiplier. Set projected_arr = SOM.\nupside_arr = SOM × 3 (equivalent to a 1.5% fee rate as the upside scenario — 3× the base 0.5% fee).\nSet capture_rate to "N/A — fee applies directly to crypto-adopted volume".\n\nStep 5 — Sanity check. Does projected_arr (= SOM) make sense relative to the company\'s overall scale? Flag and adjust if the number seems too low or too high — explain why.\n\nAlways show full inline math in som_calculation in this format:\n"[Volume driver] x [adoption %] = [crypto volume] x 0.5% fee = [SOM]"\nExample: "$500B AUM x 10% crypto adoption = $50B crypto volume x 0.5% fee = $250M SOM"\n\nOutput fields: tam = broad industry TAM for reference only (not used in calculation), som = crypto adoption volume x 0.5% fee, projected_arr = SOM (they are identical for non-FX/Broker targets), upside_arr = SOM × 3.\n\nFX / BROKER VERTICAL OVERRIDE — For any target identified as FX / Broker (broker, FX firm, prop trading firm, market maker, institutional trading desk), ignore the general ARR formula above and use this DETERMINISTIC basis points model. Apply it exactly — no other multipliers, capture rates, or haircuts are allowed for FX/Broker:\n\nFormula (apply exactly):\nprojected_arr = annual_volume × 0.003% (= 0.00003 decimal = 0.3bps = $3 per $1,000,000 annual volume)\nupside_arr = projected_arr × 1.5\nsom = projected_arr (FX/Broker has no separate SOM step; set som equal to projected_arr)\n\nExample: $500B annual volume → projected_arr = $500B × 0.00003 = $15M, upside_arr = $22.5M\n\nStep 1 — Find 2025 total trading/transaction volume. Use the full volume number — not crypto volume, not an adoption subset. Priority: (1) annual trading or transaction volume; (2) daily average volume × 252 trading days to annualize; (3) comparable firm benchmarks for their size/category. If not publicly disclosed, extrapolate from most recent disclosed figure adjusted for growth rate. Always state the source or methodology used.\n\nShow the full inline math in som_calculation in this exact format:\n"$[total volume] annual volume × 0.003% (0.3bps per $1M) = $[Projected ARR] ARR"\nExample: "$100B annual volume × 0.003% (0.3bps per $1M) = $3M ARR"\n\nFor FX / Broker: SOM = projected_arr (identical — FX/Broker has no separate SOM step). TAM = total addressable market for their specific segment (retail FX, institutional FX, equity brokerage, prop trading) — for reference only. All figures in USD — convert any non-USD volumes at current approximate exchange rates and state the conversion used.\n\nESCROW VERTICAL OVERRIDE — For any target identified as an escrow company or escrow services provider, ignore Step 4 (the capture rate multiplication) from the general ARR formula above. Use this simplified formula instead:\n\nFormula:\nStep 1 — Find annual escrow transaction volume (total dollar value of transactions held in escrow annually).\nStep 2 — Apply crypto adoption rate using the same tiers as the general methodology: 15-25% if already offering crypto, 8-15% if actively exploring, 3-8% if early stage or none.\nStep 3 — SOM = crypto adoption volume × 0.5% CoinPayments fee rate.\nProjected ARR = SOM. The 0.5% fee on crypto-adopted volume IS the projected ARR. Do NOT apply a further capture rate multiplier.\nUpside ARR = crypto adoption volume × 1.5% (triple the base fee rate as the upside scenario).\n\nShow the full inline math in som_calculation in this exact format:\n"$[escrow volume] annual escrow volume × [adoption %] = $[crypto volume] × 0.5% fee = $[Projected ARR] ARR"\nExample: "$2B annual escrow volume × 10% crypto adoption = $200M × 0.5% fee = $1M ARR"\n\nFor Escrow: set capture_rate to "N/A — fee applies directly to crypto-adopted volume".\n\nLUXURY TRAVEL VERTICAL OVERRIDE — For any target identified as a Luxury Travel company (hotel group, airline, cruise line, luxury travel agency, private aviation, tour operator), ignore Steps 2–4 of the general ARR formula above and use this simplified formula instead:\n\nFormula:\nStep 1 — Find annual booking volume or GMV (total dollar value of bookings or revenue).\nStep 2 — Apply a fixed 10% crypto adoption rate. Do NOT use the general maturity tiers for Luxury Travel — always use 10%.\nStep 3 — Projected ARR = crypto adoption volume × 0.5% CoinPayments fee rate. The 0.5% fee on crypto-adopted volume IS the projected ARR. Do NOT apply a further capture rate multiplier after the 0.5% fee.\nUpside ARR = crypto adoption volume × 1.5% (triple the base fee rate as the upside scenario).\n\nShow the full inline math in som_calculation in this exact format:\n"$[booking volume] annual booking volume × 10% crypto adoption = $[crypto volume] crypto volume × 0.5% fee = $[ARR] ARR"\nExample: "$500M annual booking volume × 10% crypto adoption = $50M crypto volume × 0.5% fee = $250K ARR"\n\nFor Luxury Travel: set capture_rate to "N/A — fee applies directly to crypto-adopted volume".\n\nLUXURY GOODS VERTICAL OVERRIDE — For any target identified as a Luxury Goods company (luxury fashion brand, jewelry, watches, high-end retail, luxury e-commerce, art), ignore Step 4 (the capture rate multiplication) from the general ARR formula above. Use this simplified formula instead:\n\nFormula:\nStep 1 — Find annual GMV or revenue (total dollar value of goods sold).\nStep 2 — Apply crypto adoption rate using the standard maturity tiers: 15-25% if already accepting crypto, 8-15% if actively exploring, 3-8% if early stage or no crypto yet.\nStep 3 — Projected ARR = crypto adoption volume × 0.5% CoinPayments fee rate. The 0.5% fee on crypto-adopted volume IS the projected ARR. Do NOT apply a further capture rate multiplier.\nUpside ARR = crypto adoption volume × 1.5% (triple the base fee rate as the upside scenario).\n\nShow the full inline math in som_calculation in this exact format:\n"$[GMV] annual GMV × [adoption %] crypto adoption = $[crypto volume] crypto volume × 0.5% fee = $[ARR] ARR"\nExample: "$500M annual GMV × 15% crypto adoption = $75M crypto volume × 0.5% fee = $375K ARR"\n\nFor Luxury Goods: set capture_rate to "N/A — fee applies directly to crypto-adopted volume".';
 
+  // Phase 0 variables declared here so phase0Snap can populate them before phase 1.
+  let ctx = "", rawNews = [], contacts = [], coInfo = null, rawEvents = [], njEvtCtx = "";
+  const _useCache = !!_phase0Snap;
+  if (_useCache) {
+    ctx = _phase0Snap.ctx; rawNews = _phase0Snap.rawNews; contacts = _phase0Snap.contacts;
+    coInfo = _phase0Snap.coInfo; rawEvents = _phase0Snap.rawEvents; njEvtCtx = _phase0Snap.njEvtCtx;
+    onStep("⏭ Resuming from Phase 1 (phase 0 cached)...");
+    console.log('[Analysis ' + company + '] Phase 0 skipped (cache hit)');
+  }
+
   // Phase 0a — News
-  let ctx = "";
-  let rawNews = [];
-  if (tKey) {
+  var _t0a = Date.now();
+  if (!_useCache && tKey) {
     onStep("🌐 Searching live news...");
     const results = await Promise.all([
       tavilyRaw(company + " partnership deal integration 2025 2026", tKey, 8, 180),
@@ -200,14 +225,17 @@ async function runAnalysis(company, onStep, keys) {
     }
   }
 
+  if (!_useCache) console.log('[Analysis ' + company + '] Phase 0a: ' + (Date.now() - _t0a) + 'ms, ' + rawNews.length + ' articles');
+
   // Phase 0b — NinjaPear
-  onStep("🎯 Finding executives via NinjaPear...");
-  var contacts = [];
-  var coInfo = null;
-  if (njKey) {
+  var _t0b = Date.now();
+  if (!_useCache) onStep("🎯 Finding executives via NinjaPear...");
+  if (!_useCache && njKey) {
     const ROLES = ["CEO", "CMO", "CPO", "CTO", "COO", "CFO", "VP Product", "VP Payments", "VP Partnerships", "VP Growth", "VP Engineering", "Head of Business Development"];
-    const [co, ...people] = await Promise.all([njCompany(domain, njKey), ...ROLES.map(r => njRole(r, domain, njKey))]);
-    coInfo = co;
+    var _njCalls = [function() { return njCompany(domain, njKey); }].concat(ROLES.map(function(r) { return function() { return njRole(r, domain, njKey); }; }));
+    var _njRes = await throttleAll(_njCalls, 4, function(fn) { return fn(); });
+    coInfo = _njRes[0];
+    const people = _njRes.slice(1);
     const seen = new Set();
     for (const p of people) {
       const c = profileToContact(p, "ninjapear");
@@ -219,8 +247,11 @@ async function runAnalysis(company, onStep, keys) {
     }
   }
 
+  if (!_useCache) console.log('[Analysis ' + company + '] Phase 0b: ' + (Date.now() - _t0b) + 'ms, ' + contacts.length + ' contacts');
+
   // Phase 0c — Deep scraping + multi-step verification
-  if (tKey) {
+  var _t0c = Date.now();
+  if (!_useCache && tKey) {
     onStep("\U0001f50d Scraping executive mentions for " + company + "...");
     const [r1, r2, r3, r4, r5, rPart] = await Promise.all([
       tavilyRaw(company + " VP Director Head Chief executive linkedin.com 2024 2025", tKey, 10, 730),
@@ -253,8 +284,8 @@ async function runAnalysis(company, onStep, keys) {
     // Step B: NinjaPear first/last name verification of each scraped candidate
     if (scrapedCandidates.length && njKey) {
       onStep("\U0001f3af Verifying " + scrapedCandidates.length + " scraped names via NinjaPear...");
-      const verifyResults = await Promise.all(
-        scrapedCandidates.slice(0, 8).map(async function(cand) {
+      const verifyResults = await throttleAll(
+        scrapedCandidates.slice(0, 8), 3, async function(cand) {
           const parts = (cand.name || "").trim().split(" ");
           const firstName = parts[0];
           const lastName = parts.slice(1).join(" ");
@@ -268,7 +299,7 @@ async function runAnalysis(company, onStep, keys) {
             const d = await res.json();
             return { cand: cand, verified: (d.first_name || d.full_name) ? d : null };
           } catch { return { cand: cand, verified: null }; }
-        })
+        }
       );
 
       // Step C: Tavily web confirmation for names NinjaPear didn't find
@@ -334,10 +365,11 @@ async function runAnalysis(company, onStep, keys) {
     if (rPart.length) { ctx += "PARTNER SIGNALS:\n" + rPart.slice(0, 4).map(function(r) { return r.title + ": " + (r.content || "").slice(0, 150); }).join("\n") + "\n\n"; }
   }
 
+  if (!_useCache) console.log('[Analysis ' + company + '] Phase 0c: ' + (Date.now() - _t0c) + 'ms, ' + contacts.length + ' total contacts');
+
   // Phase 0d — Upcoming events research: targeted conference + exec social searches
-  var rawEvents = [];
-  var njEvtCtx = "";
-  if (tKey || njKey) {
+  var _t0d = Date.now();
+  if (!_useCache && (tKey || njKey)) {
     onStep("🗓️ Researching upcoming events...");
     var evtSearches = [];
 
@@ -391,7 +423,14 @@ async function runAnalysis(company, onStep, keys) {
     }
   }
 
+  if (!_useCache) {
+    console.log('[Analysis ' + company + '] Phase 0d: ' + (Date.now() - _t0d) + 'ms, ' + rawEvents.length + ' events');
+    // Cache phase 0 results so a failed phase 1+ can retry without re-running phase 0
+    if (_onPhase0Done) _onPhase0Done({ ctx, rawNews, contacts, coInfo, rawEvents, njEvtCtx });
+  }
+
   // Phase 1 — Core intelligence (Grok primary, Claude fallback)
+  var _t1 = Date.now();
   onStep("🧠 Grok core analysis...");
   var P1_USER = CP_CAPABILITIES + "\n\nWhen describing CoinPayments in the executive summary, opportunity analysis, positioning statement, or any other output section, always use the COINPAYMENTS AUTHORITATIVE CAPABILITY DATA above as your reference. Do not describe CoinPayments as a generic crypto payment processor — always reference the four specific capabilities by name where relevant. The four capabilities are: Stablecoin + Blockchain Rails, Fiat On/Off Ramps, Third-Party Wallet Hosting, Compliance-as-a-Service.\n\n" + sanitize(ctx) + "\n\nAnalyze " + company + " as a CoinPayments sales target. Today: " + todayStr + ".\n\nIMPORTANT: Ground all financial estimates, scale metrics, and key facts in the Tavily news, NinjaPear enrichment, and scraped web content provided above. When you cite a specific number (users, revenue, volume), name which source it came from. If sources conflict, prefer the most specific and recent data point over generic industry stats.\n\nUse your real-time access to X (Twitter) to find recent posts from " + company + " executives or official accounts mentioning crypto, stablecoins, digital assets, payment infrastructure, or blockchain. Include specific post summaries with approximate dates as intent signals in the intent_data array. For each intent signal, provide a source URL if you have one. IMPORTANT source URL rules: (1) only include a URL if it points to a specific article, post, or press release — never a homepage or search results page; (2) if you cannot provide a specific verified URL, set source_url to null and set source_type to 'Grok real-time knowledge'; (3) never fabricate URLs — a null with an honest source_type is far better than a made-up link. Set verified: true only if you have a specific URL, false if based on your knowledge without a specific URL.\n\nCRYPTO INFRASTRUCTURE PARTNERSHIPS — CRITICAL RESEARCH REQUIREMENT:\nCarefully research ALL existing crypto infrastructure partnerships for " + company + " and all their subsidiaries. Pay specific attention to relationships with the following known crypto infrastructure providers — these are commonly used by financial firms and are often underreported in general news:\n- Fireblocks (MPC custody, digital asset infrastructure)\n- Anchorage Digital (institutional custody)\n- Coinbase Prime (institutional trading and custody)\n- Zero Hash (crypto-as-a-service, stablecoin settlement)\n- Paxos (regulated blockchain infrastructure, stablecoins)\n- BitGo (institutional custody and wallets)\n- Bakkt (digital asset platform)\n- Chainalysis (blockchain analytics and compliance)\n- Ledger Enterprise (hardware custody)\n- Copper (institutional custody)\n- Talos (institutional trading infrastructure)\n- Blockdaemon (node infrastructure)\n- Alchemy (blockchain developer platform)\n\nFor each partnership found:\n- Name the specific provider and the nature of the relationship (custody, settlement, compliance, trading infrastructure etc)\n- State when the partnership was announced if known\n- Explain what this tells us about " + company + "'s existing crypto infrastructure maturity\n- Flag if this partnership overlaps with or complements CoinPayments' capabilities\n- Flag if this partnership means " + company + " already has a solution CoinPayments would need to displace or complement\n\nIf a partnership with any of the above providers is found, this is critical intelligence for the competitive comparison — " + company + " already has crypto infrastructure and the CoinPayments pitch must be framed as complementary or superior, not introductory. Adjust the opportunity framing accordingly.\n\nNever return an empty partnerships section without first exhausting searches for all providers listed above. If no partnerships are found after thorough research, state explicitly in the partnerships array: 'No confirmed crypto infrastructure partnerships found. " + company + " appears to be building or exploring independently.'\n\nTAM REFERENCE FIGURES — use these benchmarks for the tam_usd field based on the company's segment:\n- FX / Broker: TAM = total addressable FX and brokerage market for their specific segment. Used as reference only — ARR is calculated from payment/FX volume × 0.003%, TAM does not feed into the ARR calculation.\n- Neobanks: Default to the global digital banking market (~$9T). Only deviate if the company is a clear specialist: cross-border remittance neobank ($150T global cross-border flows), B2B payments only ($125T global B2B payments), pure consumer digital payments ($2.8T). Always state which figure is used and why. Always use a figure ≥ $500B — a TAM below $500B for a neobank indicates the wrong reference market was selected.\n- Remittance Fintechs: Use the global remittance market TAM — approximately $48B–$54B annually for formal remittance channels, or the broader $150T global cross-border payment flows if the company operates at that scale. Choose based on company scope and state which you used.\n- Escrow: Use the global escrow and trust services market TAM as reference.\n- Corporate Treasury: Use the total addressable digital banking and payments market for their regional scope as reference.\n\nOutput ONLY this JSON:\n{\n  \"company\": \"" + company + "\",\n  \"segment\": \"e.g. Neo-bank\",\n  \"hq\": \"City, Country\",\n  \"website\": \"domain.com\",\n  \"employees\": \"count or range\",\n  \"revenue\": \"annual revenue\",\n  \"executive_summary\": \"3-sentence opportunity summary\",\n  \"tam_som_arr\": {\n    \"tam_usd\": \"$X broad industry TAM for reference only — see TAM REFERENCE FIGURES above for segment benchmarks (neobanks ≥$500B; FX / Broker TAM is reference only, ARR uses volume × 0.003%)\",\n    \"scale_metric\": \"e.g. 15M active users or $2B annual payment volume\",\n    \"penetration_rate\": \"e.g. 6% (Remittance Fintech range 12-18%)\",\n    \"addressable_base\": \"e.g. 900K crypto-addressable users\",\n    \"avg_transaction_value\": \"e.g. $450/user/year (default)\",\n    \"som\": \"e.g. $405M\",\n    \"capture_rate\": \"N/A — fee applies directly to crypto-adopted volume (FX/Broker uses bps model instead)\",\n    \"projected_arr\": \"e.g. $405M (= SOM — no further capture rate for non-FX/Broker targets)\",\n    \"upside_arr\": \"e.g. $1.215B (SOM × 3)\",\n    \"som_calculation\": \"show full math inline e.g. 15M users × 6% = 900K × $450 = $405M SOM\",\n    \"assumptions\": [\"assumption 1\", \"assumption 2\"]\n  },\n  \"partnerships\": [{ \"partner\": \"Name\", \"type\": \"type\", \"what_they_provide\": \"what\", \"dependency\": \"Critical|Important|Minor\", \"cp_angle\": \"how CP fits\" }],\n  \"geography\": { \"markets\": [\"list\"], \"gaps\": \"key gaps\" },\n  \"incumbent\": { \"name\": \"provider or null\", \"weaknesses\": \"why switch\" },\n  \"missed_opportunity\": { \"headline\": \"punchy sentence\", \"competitor_threat\": \"who is stealing users\", \"market_stat_1\": \"stat\", \"market_stat_2\": \"stat\", \"narrative\": \"5-sentence argument\", \"urgency\": \"High|Medium|Low\", \"urgency_reason\": \"why now\" },\n  \"intent_data\": [{ \"signal\": \"observation or X post summary\", \"type\": \"Funding|Hiring|Product|Partnership|Regulatory|X_Signal\", \"date\": \"when\", \"implication\": \"what it means\", \"source_url\": \"specific URL to the exact article, post, or press release — or null if you cannot provide a verified specific URL (never use homepage URLs like reuters.com or linkedin.com; never fabricate)\", \"source_type\": \"X Post|News Article|LinkedIn Post|Press Release|Grok real-time knowledge\", \"verified\": false }],\n  \"recent_news\": [],\n  \"alert_keywords\": [\"kw1\", \"kw2\", \"kw3\"]\n}";
   var p1raw;
@@ -411,8 +450,10 @@ async function runAnalysis(company, onStep, keys) {
   const p1 = parseJSON(p1raw);
   p1.model_used = p1UsedGrok ? 'grok-3' : 'claude';
   if (p1GrokError) p1.grok_error = p1GrokError;
+  console.log('[Analysis ' + company + '] Phase 1: ' + (Date.now() - _t1) + 'ms (model: ' + (p1UsedGrok ? 'grok-3' : 'claude') + ')');
 
   // Phase 1c — Tavily verification of unverified intent signals
+  var _t1c = Date.now();
   if (tKey && Array.isArray(p1.intent_data) && p1.intent_data.length > 0) {
     const needsVerify = p1.intent_data.filter(function(s) {
       var url = s.source_url;
@@ -445,10 +486,13 @@ async function runAnalysis(company, onStep, keys) {
     }
   }
 
+  console.log('[Analysis ' + company + '] Phase 1c: ' + (Date.now() - _t1c) + 'ms');
+
   // Merge contacts
   p1.key_contacts = contacts.length > 0 ? contacts : (p1.key_contacts || []);
 
   // Phase 1b — News categories (Grok-fast primary, Claude fallback)
+  var _t1b = Date.now();
   if (rawNews.length > 0) {
     onStep("📰 Categorizing news...");
     try {
@@ -465,7 +509,10 @@ async function runAnalysis(company, onStep, keys) {
     } catch { p1.recent_news = rawNews.slice(0, 6).map(r => ({ title: r.title, url: r.url, date: r.published_date || "", source: r.url.split("/")[2] || "" })); }
   }
 
+  console.log('[Analysis ' + company + '] Phase 1b: ' + (Date.now() - _t1b) + 'ms');
+
   // Phase 2 — Competitive + GTM + Events (parallel)
+  var _t234 = Date.now();
   onStep("⚔️ Competitive analysis & GTM plan...");
   var evtCtx = "";
   if (rawEvents.length) {
@@ -525,6 +572,9 @@ async function runAnalysis(company, onStep, keys) {
         });
     }
   } catch { p1.upcoming_events = []; }
+
+  console.log('[Analysis ' + company + '] Phase 2/3/4: ' + (Date.now() - _t234) + 'ms');
+  console.log('[Analysis ' + company + '] TOTAL: ' + (Date.now() - _tTotal) + 'ms' + (_useCache ? ' (phase 0 from cache)' : ''));
 
   p1.analyzedAt = new Date().toISOString();
   return p1;
@@ -964,6 +1014,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   var s30 = useState(null); var bulkRunConfirm = s30[0]; var setBulkRunConfirm = s30[1];
   var s31 = useState(null); var bulkRunProgress = s31[0]; var setBulkRunProgress = s31[1];
   var bulkAbortRef = useRef(false);
+  var phaseCacheRef = useRef({});
   var sUVSel = useState({}); var uvSelected = sUVSel[0]; var setUVSelected = sUVSel[1];
   var sUVBulkVert = useState(""); var uvBulkVert = sUVBulkVert[0]; var setUVBulkVert = sUVBulkVert[1];
   var sUVAutoTag = useState(null); var uvAutoTag = sUVAutoTag[0]; var setUVAutoTag = sUVAutoTag[1];
@@ -1591,10 +1642,15 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
   function updateDeal(id, updates) { setDeals(function(prev){ return prev.map(function(d){ return d.id===id?Object.assign({},d,updates):d; }); }); setEditId(null); }
   function removeDeal(id) { setDeals(function(prev){ return prev.filter(function(d){ return d.id!==id; }); }); }
   function rerunAnalysis(deal) {
-    setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Starting..."}); });
+    var _savedSnap = phaseCacheRef.current[deal.id] || null;
+    if (_savedSnap) setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Resuming from Phase 1 (phase 0 cached)..."}); });
+    else setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:"Starting..."}); });
     runAnalysis(deal.company, function(step){
       setRerunStatus(function(prev){ return Object.assign({},prev,{[deal.id]:step}); });
-    }, { tavily:tKey||"", ninjapear:njKey||"" }).then(function(data) {
+    }, { tavily:tKey||"", ninjapear:njKey||"" }, {
+      phase0Snapshot: _savedSnap,
+      onPhase0Done: function(snap) { phaseCacheRef.current[deal.id] = snap; },
+    }).then(function(data) {
       var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
       var t = (data && data.tam_som_arr) || {};
       var freshArr = t.projected_arr || t.likely_arr_usd || getDealArr(deal);
@@ -1656,7 +1712,10 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
         return Object.assign({}, prev, { statuses: ns });
       });
       await Promise.all(batch.map(function(deal) {
-        return runAnalysis(deal.company, function(){}, { tavily:tKey||"", ninjapear:njKey||"" })
+        return runAnalysis(deal.company, function(){}, { tavily:tKey||"", ninjapear:njKey||"" }, {
+          phase0Snapshot: phaseCacheRef.current[deal.id] || null,
+          onPhase0Done: function(snap) { phaseCacheRef.current[deal.id] = snap; },
+        })
           .then(function(data) {
             var freshGeo = detectGeo(data.hq||"") || deal.geography || "";
             var t = (data && data.tam_som_arr) || {};

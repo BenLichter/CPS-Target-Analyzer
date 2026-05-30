@@ -1,4 +1,5 @@
 import { verifyAuth } from './_lib/auth.js';
+export const maxDuration = 800;
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
