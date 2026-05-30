@@ -193,6 +193,7 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
   var pendingItemsRef = useRef([]);
   var mountChecked = useRef(false);
   var abortControllersRef = useRef({});
+  var phaseCacheRef = useRef({});
 
   useEffect(function() {
     try {
@@ -289,9 +290,12 @@ export default function BulkAnalyze({ runAnalysis, tKey, njKey, pipelineDeals, a
           controller.signal.addEventListener('abort', function() { reject(new Error('Aborted')); }, { once: true });
         });
         var data = await Promise.race([
-          runAnalysis(companyName, function() {}, { tavily: tKey, ninjapear: njKey }),
+          runAnalysis(companyName, function() {}, { tavily: tKey, ninjapear: njKey }, {
+            phase0Snapshot: phaseCacheRef.current[idx] || null,
+            onPhase0Done: function(snap) { phaseCacheRef.current[idx] = snap; },
+          }),
           new Promise(function(_, reject) {
-            setTimeout(function() { reject(new Error("Timed out after 3 minutes")); }, 180000);
+            setTimeout(function() { reject(new Error("Timed out after 12 minutes")); }, 720000);
           }),
           abortPromise,
         ]);
