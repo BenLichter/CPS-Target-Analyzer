@@ -10,7 +10,7 @@
     "api/analysis.js":   { "maxDuration": 800 }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
