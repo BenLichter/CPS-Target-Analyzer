@@ -17,7 +17,7 @@ const COMPARE_ROWS = [
 ];
 
 async function callAPI(system, user, maxTokens) {
-  const MODEL = "claude-sonnet-4-5";
+  const MODEL = "claude-sonnet-4-6";
   const res = await fetch("/api/anthropic", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: MODEL, max_tokens: maxTokens || 6000, system, messages: [{ role: "user", content: user }] }),

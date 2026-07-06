@@ -8,7 +8,7 @@ import "leaflet/dist/leaflet.css";
 
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MODEL    = "claude-sonnet-4-5";
+const MODEL    = "claude-sonnet-4-6";
 const TKEY_LS  = "cp_tavily_key";
 const NJKEY_LS = "cp_ninjapear_key";
 const HIST_LS  = "cp_history";
