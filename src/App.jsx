@@ -1791,7 +1791,7 @@ function PipelineTab({ deals, setDeals, history, onViewResult, tKey, njKey, onOp
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
+            model: 'claude-haiku-4-5',
             max_tokens: 120,
             messages: [{ role: 'user', content: 'Classify this company into ONE tier. Company: "' + deal.company + '". Vertical: ' + deal.vertical + '. Notes: "' + (deal.notes||'').slice(0,200) + '".\n\nTier options: ' + tierOptions + '.\n\nReturn ONLY valid JSON (no markdown): {"tier":"tier_id","confidence":0.0-1.0,"reasoning":"one sentence"}' }]
           })
